@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
-import visitorLogo from './assets/visitor-logo.png'
+import visitorLogo from './assets/vistor_logo_verde2.png'
 
 const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
 
@@ -352,7 +352,6 @@ function App() {
       <aside className="sidebar">
         <div className="sidebar__header">
           <div className="sidebar__brand">
-            <div className="sidebar__title">Visitor Tools</div>
             <img src={visitorLogo} alt="Visitor Tools" className="sidebar__logo" />
           </div>
         </div>

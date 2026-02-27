@@ -1,5 +1,4 @@
 import { useMemo, useState, type ChangeEvent } from 'react'
-import * as XLSX from 'xlsx'
 
 type XmlRow = Record<string, string>
 type WarningItem = { fileName: string; detail: string }
@@ -219,6 +218,8 @@ function XmlToExcelTool() {
       const sheetName = 'Consolidado'
 
       const body = finalRows.map((row) => headers.map((header) => row[header] ?? ''))
+
+      const XLSX = await import('xlsx')
 
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...body])
       const workbook = XLSX.utils.book_new()

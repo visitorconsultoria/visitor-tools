@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import JSZip from 'jszip'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
-import XmlToExcelTool from './components/XmlToExcelTool'
 import visitorLogo from './assets/visitor-logo.png'
+
+const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
 
 type CsvData = {
   headers: string[]
@@ -164,6 +164,8 @@ async function scanCompressedFiles(
   files: FileList,
   results: MatchItem[],
 ): Promise<void> {
+  const { default: JSZip } = await import('jszip')
+
   for (const file of Array.from(files)) {
     try {
       const zip = new JSZip()
@@ -707,7 +709,16 @@ function App() {
         </section>
         </div>
         ) : xmlExcelRoutine === 's-5002' ? (
-          <XmlToExcelTool />
+          <Suspense
+            fallback={(
+              <section className="card">
+                <h2>Item S-5002</h2>
+                <p className="muted">Carregando rotina...</p>
+              </section>
+            )}
+          >
+            <XmlToExcelTool />
+          </Suspense>
         ) : (
           <section className="card">
             <h2>{selectedXmlRoutine.label}</h2>

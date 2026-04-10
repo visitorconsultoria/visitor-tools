@@ -7,15 +7,27 @@ dotenv.config()
 const app = express()
 const port = Number(process.env.API_PORT || 8787)
 
+function normalizeOriginValue(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  try {
+    return new URL(raw).origin
+  } catch {
+    return raw.replace(/\/$/, '')
+  }
+}
+
 const configuredCorsOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
   .split(',')
-  .map((item) => item.trim())
+  .map((item) => normalizeOriginValue(item))
   .filter(Boolean)
 
 function getCorsOrigin(originHeader) {
-  if (!originHeader) return '*'
+  const requestOrigin = normalizeOriginValue(originHeader)
+  if (!requestOrigin) return '*'
   if (!configuredCorsOrigins.length) return '*'
-  return configuredCorsOrigins.includes(originHeader) ? originHeader : ''
+  return configuredCorsOrigins.includes(requestOrigin) ? requestOrigin : ''
 }
 
 function getSupabaseConfig() {

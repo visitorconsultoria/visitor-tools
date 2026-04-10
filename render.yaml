@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: visitor-tools-api
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run start
+    autoDeploy: true
+    envVars:
+      - key: API_PORT
+        value: 10000
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ESTIMATIVAS_TABLE
+        value: estimativas
+      - key: SUPABASE_ESTIMATIVA_ITEMS_TABLE
+        value: estimativa_items
+      - key: SUPABASE_DAILY_ACTIVITIES_TABLE
+        value: daily_activities
+      - key: SUPABASE_USERS_TABLE
+        value: app_users
+      - key: GITHUB_MODELS_TOKEN
+        sync: false
+      - key: GITHUB_MODELS_MODEL
+        value: gpt-4o-mini

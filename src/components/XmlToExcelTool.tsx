@@ -2,6 +2,7 @@ import { useMemo, useState, type ChangeEvent } from 'react'
 
 type XmlRow = Record<string, string>
 type WarningItem = { fileName: string; detail: string }
+type GenerationMode = 'full' | 'totalizers'
 
 const MAX_PREVIEW_ROWS = 8
 
@@ -42,6 +43,42 @@ const TOTAL_FIELDS = [
   'vlrCR13Men',
 ] as const
 
+const TOTALIZER_FIELDS = [
+  'CRMen',
+  'vlrRendTrib',
+  'vlrRendTrib13',
+  'vlrPrevOficial',
+  'vlrPrevOficial13',
+  'vlrCRMen',
+  'vlrCR13Men',
+  'vlrParcIsenta65',
+  'vlrParcIsenta65Dec',
+  'vlrDiarias',
+  'vlrAjudaCusto',
+  'vlrIndResContrato',
+  'vlrAbonoPec',
+  'vlrRendMoleGrave',
+  'vlrRendMoleGrave13',
+  'vlrAuxMoradia',
+  'vlrBolsaMedico',
+  'vlrBolsaMedico13',
+  'vlrJurosMora',
+  'vlrIsenOutros',
+] as const
+
+const TOTALIZER_HEADERS = [
+  'arquivoOrigem',
+  'statusRegistro',
+  'avisoProcessamento',
+  'idEvento',
+  'nrRecArqBase',
+  'perApur',
+  'tpInsc',
+  'nrInsc',
+  'cpfBenef',
+  ...TOTALIZER_FIELDS,
+] as const
+
 function directChildByName(parent: Element | null, name: string): Element | null {
   if (!parent) return null
   const children = Array.from(parent.children) as Element[]
@@ -63,7 +100,11 @@ function textOf(parent: Element | null, name: string): string {
   return directChildByName(parent, name)?.textContent?.trim() ?? ''
 }
 
-function collectHeaders(rows: XmlRow[]): string[] {
+function collectHeaders(rows: XmlRow[], mode: GenerationMode): string[] {
+  if (mode === 'totalizers') {
+    return [...TOTALIZER_HEADERS]
+  }
+
   const infoHeaders = new Set<string>()
   rows.forEach((row) => {
     Object.keys(row)
@@ -82,7 +123,7 @@ function buildWarningRow(fileName: string, detail: string): XmlRow {
   }
 }
 
-function parseXmlContent(xml: string, fileName: string): XmlRow[] {
+function parseXmlContent(xml: string, fileName: string, mode: GenerationMode): XmlRow[] {
   const doc = new DOMParser().parseFromString(xml, 'application/xml')
   if (doc.getElementsByTagName('parsererror').length > 0) {
     throw new Error('XML inválido')
@@ -97,15 +138,7 @@ function parseXmlContent(xml: string, fileName: string): XmlRow[] {
   const ideEmpregador = directChildByName(evtIrrfBenef, 'ideEmpregador')
   const ideTrabalhador = directChildByName(evtIrrfBenef, 'ideTrabalhador')
 
-  const infoIRComplem = directChildByName(ideTrabalhador, 'infoIRComplem')
-  const planSaude = directChildByName(infoIRComplem, 'planSaude')
-  const infoIRCR = directChildByName(infoIRComplem, 'infoIRCR')
-  const previdCompl = directChildByName(infoIRCR, 'previdCompl')
-
-  const dmDevs = directChildrenByName(ideTrabalhador, 'dmDev')
-  const dependentCount = String(directChildrenByName(infoIRComplem, 'ideDep').length)
-
-  const baseRow: XmlRow = {
+  const eventBaseRow: XmlRow = {
     arquivoOrigem: fileName,
     statusRegistro: 'OK',
     avisoProcessamento: '',
@@ -115,6 +148,35 @@ function parseXmlContent(xml: string, fileName: string): XmlRow[] {
     tpInsc: textOf(ideEmpregador, 'tpInsc'),
     nrInsc: textOf(ideEmpregador, 'nrInsc'),
     cpfBenef: textOf(ideTrabalhador, 'cpfBenef'),
+  }
+
+  if (mode === 'totalizers') {
+    const totInfoIR = directChildByName(ideTrabalhador, 'totInfoIR')
+    const consolidApurMenList = directChildrenByName(totInfoIR, 'consolidApurMen')
+
+    if (!consolidApurMenList.length) {
+      return [eventBaseRow]
+    }
+
+    return consolidApurMenList.map((consolidApurMen) => {
+      const row: XmlRow = { ...eventBaseRow }
+      TOTALIZER_FIELDS.forEach((field) => {
+        row[field] = textOf(consolidApurMen, field)
+      })
+      return row
+    })
+  }
+
+  const infoIRComplem = directChildByName(ideTrabalhador, 'infoIRComplem')
+  const planSaude = directChildByName(infoIRComplem, 'planSaude')
+  const infoIRCR = directChildByName(infoIRComplem, 'infoIRCR')
+  const previdCompl = directChildByName(infoIRCR, 'previdCompl')
+
+  const dmDevs = directChildrenByName(ideTrabalhador, 'dmDev')
+  const dependentCount = String(directChildrenByName(infoIRComplem, 'ideDep').length)
+
+  const baseRow: XmlRow = {
+    ...eventBaseRow,
     qtdDependentes: dependentCount,
     vlrDedPC: textOf(previdCompl, 'vlrDedPC'),
     vlrDedPC13: textOf(previdCompl, 'vlrDedPC13'),
@@ -154,6 +216,7 @@ function parseXmlContent(xml: string, fileName: string): XmlRow[] {
 
 function XmlToExcelTool() {
   const [xmlFiles, setXmlFiles] = useState<File[]>([])
+  const [generationMode, setGenerationMode] = useState<GenerationMode>('full')
   const [error, setError] = useState<string | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
@@ -197,7 +260,7 @@ function XmlToExcelTool() {
       for (const file of xmlFiles) {
         try {
           const content = await file.text()
-          const parsed = parseXmlContent(content, file.name)
+          const parsed = parseXmlContent(content, file.name, generationMode)
           rows.push(...parsed)
         } catch (parseError) {
           const detail = parseError instanceof Error ? parseError.message : 'falha ao processar XML'
@@ -214,8 +277,8 @@ function XmlToExcelTool() {
         return
       }
 
-      const headers = collectHeaders(finalRows)
-      const sheetName = 'Consolidado'
+      const headers = collectHeaders(finalRows, generationMode)
+      const sheetName = generationMode === 'totalizers' ? 'Totalizadores' : 'Consolidado'
 
       const body = finalRows.map((row) => headers.map((header) => row[header] ?? ''))
 
@@ -226,7 +289,10 @@ function XmlToExcelTool() {
       XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
 
       const dateTag = new Date().toISOString().slice(0, 10)
-      const fileName = `xml-consolidado-${dateTag}.xlsx`
+      const fileName =
+        generationMode === 'totalizers'
+          ? `xml-s-5002-totalizadores-${dateTag}.xlsx`
+          : `xml-consolidado-${dateTag}.xlsx`
       XLSX.writeFile(workbook, fileName)
 
       setPreviewHeaders(headers)
@@ -254,14 +320,40 @@ function XmlToExcelTool() {
             : 'Nenhum XML selecionado.'}
         </p>
 
-        <h2 style={{ marginTop: '1.25rem' }}>2) Gerar planilha consolidada</h2>
+        <h2 style={{ marginTop: '1.25rem' }}>2) Tipo de geracao</h2>
+        <div style={{ display: 'grid', gap: '0.4rem' }}>
+          <label className="checkbox" style={{ alignItems: 'flex-start' }}>
+            <input
+              type="radio"
+              name="generationMode"
+              checked={generationMode === 'full'}
+              onChange={() => setGenerationMode('full')}
+            />
+            Consolidado detalhado (dmDev/totApurMen)
+          </label>
+          <label className="checkbox" style={{ alignItems: 'flex-start' }}>
+            <input
+              type="radio"
+              name="generationMode"
+              checked={generationMode === 'totalizers'}
+              onChange={() => setGenerationMode('totalizers')}
+            />
+            Somente totalizadores (totInfoIR/consolidApurMen)
+          </label>
+        </div>
+
+        <h2 style={{ marginTop: '1.25rem' }}>3) Gerar planilha consolidada</h2>
         <button
           type="button"
           className="button-primary"
           onClick={handleGenerate}
           disabled={isGenerating || !xmlFiles.length}
         >
-          {isGenerating ? 'Gerando...' : 'Gerar Excel consolidado'}
+          {isGenerating
+            ? 'Gerando...'
+            : generationMode === 'totalizers'
+              ? 'Gerar Excel de totalizadores'
+              : 'Gerar Excel consolidado'}
         </button>
 
         {lastGeneratedFile && <p className="success">Arquivo gerado: {lastGeneratedFile}</p>}

@@ -1,8 +1,13 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
 import visitorLogo from './assets/vistor_logo_verde2.png'
+import { apiUrl } from './lib/api'
 
 const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
+const ResumeRankingTool = lazy(() => import('./components/ResumeRankingTool'))
+const EstimativasTool = lazy(() => import('./components/EstimativasTool'))
+const UserAccessTool = lazy(() => import('./components/UserAccessTool'))
+const DailyActivityTool = lazy(() => import('./components/DailyActivityTool'))
 
 type CsvData = {
   headers: string[]
@@ -24,7 +29,26 @@ type XmlExcelRoutineOption = {
   available: boolean
 }
 
+type MenuPage = 'home' | 'process' | 'xml-excel' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'user-admin'
+
+type AllowedMenu = Exclude<MenuPage, 'home'>
+
+type UserSession = {
+  username: string
+  displayName: string
+  allowedMenus: AllowedMenu[]
+}
+
 const MAX_PREVIEW_ROWS = 8
+const AUTH_STORAGE_KEY = 'vt_authenticated'
+const MENU_LABELS: Record<AllowedMenu, string> = {
+  process: 'Comparar Projeto',
+  'xml-excel': 'XML para Excel',
+  'resume-ranking': 'Ranking de Curriculos',
+  estimativas: 'Estimativas',
+  'daily-activities': 'Apontamento Diario',
+  'user-admin': 'Usuarios e Acessos',
+}
 
 const XML_EXCEL_ROUTINES: XmlExcelRoutineOption[] = [
   { id: 's-5002', label: 'Item S-5002', available: true },
@@ -56,6 +80,48 @@ const EXCLUDED_FILES = new Set(['_binary_class', '_binary_functions'])
 function isExcludedFile(item: MatchItem): boolean {
   const nameWithoutExt = item.name.replace(/\.(prw|tlpp)$/i, '').toLowerCase()
   return EXCLUDED_FILES.has(nameWithoutExt)
+}
+
+function normalizeAllowedMenus(input: unknown): AllowedMenu[] {
+  const raw = Array.isArray(input) ? input : []
+  const asText = raw.map((item) => String(item || '').trim())
+  const result = Array.from(new Set(asText.filter((item): item is AllowedMenu => item in MENU_LABELS)))
+  return result
+}
+
+function parseStoredSession(raw: string | null): UserSession | null {
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<UserSession>
+    const username = String(parsed.username ?? '').trim().toLowerCase()
+    if (!username) return null
+
+    if (username === 'visitor') {
+      return {
+        username,
+        displayName: String(parsed.displayName ?? ''),
+        allowedMenus: Object.keys(MENU_LABELS) as AllowedMenu[],
+      }
+    }
+
+    const allowedMenus = normalizeAllowedMenus(parsed.allowedMenus)
+
+    return {
+      username,
+      displayName: String(parsed.displayName ?? ''),
+      allowedMenus,
+    }
+  } catch {
+    return null
+  }
+}
+
+function canAccessPage(page: MenuPage, session: UserSession | null): boolean {
+  if (page === 'home') return true
+  if (!session) return false
+  if (session.username === 'visitor') return true
+  return session.allowedMenus.includes(page)
 }
 
 function parseCsv(text: string): CsvData {
@@ -190,6 +256,12 @@ async function scanCompressedFiles(
 }
 
 function App() {
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(() => parseStoredSession(localStorage.getItem(AUTH_STORAGE_KEY)))
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(parseStoredSession(localStorage.getItem(AUTH_STORAGE_KEY))))
+  const [loginUser, setLoginUser] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginError, setLoginError] = useState<string | null>(null)
+
   const [csvFileName, setCsvFileName] = useState<string | null>(null)
   const [csvData, setCsvData] = useState<CsvData | null>(null)
   const [csvError, setCsvError] = useState<string | null>(null)
@@ -202,7 +274,7 @@ function App() {
   const [filterText, setFilterText] = useState('')
   const [showOnlyNotFound, setShowOnlyNotFound] = useState(false)
   const [showSourceMenu, setShowSourceMenu] = useState(false)
-  const [currentPage, setCurrentPage] = useState<'home' | 'process' | 'xml-excel'>('home')
+  const [currentPage, setCurrentPage] = useState<MenuPage>('home')
   const [xmlExcelRoutine, setXmlExcelRoutine] = useState<XmlExcelRoutine>('s-5002')
   const sourceMenuRef = useRef<HTMLDivElement | null>(null)
 
@@ -240,6 +312,17 @@ function App() {
     () => XML_EXCEL_ROUTINES.find((item) => item.id === xmlExcelRoutine) ?? XML_EXCEL_ROUTINES[0],
     [xmlExcelRoutine],
   )
+
+  const currentUserName = useMemo(() => {
+    if (!currentUser) return ''
+    const displayName = currentUser.displayName.trim()
+    return displayName || currentUser.username
+  }, [currentUser])
+
+  useEffect(() => {
+    if (canAccessPage(currentPage, currentUser)) return
+    setCurrentPage('home')
+  }, [currentPage, currentUser])
 
   const handleExportReport = () => {
     const reportMatches = matches.filter((item) => item.ext === '.prw' || item.ext === '.tlpp')
@@ -347,6 +430,116 @@ function App() {
     }
   }
 
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    try {
+      setLoginError(null)
+      const response = await fetch(apiUrl('/api/auth/login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: loginUser.trim(),
+          password: loginPassword,
+        }),
+      })
+
+      if (!response.ok) {
+        let detail = 'Usuario ou senha invalidos.'
+        try {
+          const err = await response.json()
+          detail = (err as { error?: string })?.error ?? detail
+        } catch {
+          detail = response.statusText || detail
+        }
+        throw new Error(detail)
+      }
+
+      const data = await response.json() as { user?: Partial<UserSession> }
+      const user = data.user
+      const username = String(user?.username ?? '').trim().toLowerCase()
+      if (!username) {
+        throw new Error('Resposta de autenticacao invalida.')
+      }
+
+      const allowedMenus = normalizeAllowedMenus(user?.allowedMenus)
+      if (username === 'visitor' && !allowedMenus.includes('user-admin')) {
+        allowedMenus.push('user-admin')
+      }
+
+      const session: UserSession = {
+        username,
+        displayName: String(user?.displayName ?? ''),
+        allowedMenus,
+      }
+
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
+      setCurrentUser(session)
+      setIsAuthenticated(true)
+      setLoginError(null)
+      setLoginPassword('')
+      setCurrentPage('home')
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Falha ao autenticar.'
+      setLoginError(detail)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem(AUTH_STORAGE_KEY)
+    setCurrentUser(null)
+    setIsAuthenticated(false)
+    setLoginUser('')
+    setLoginPassword('')
+    setLoginError(null)
+    setCurrentPage('home')
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="login-screen">
+        <section className="login-card" aria-label="Tela de login">
+          <img src={visitorLogo} alt="Visitor Tools" className="login-card__logo" />
+          <h1>Acesso ao Visitor Tools</h1>
+          <p className="muted">
+            Faça login para acessar a aplicação.
+          </p>
+
+          <form onSubmit={handleLogin} className="login-form">
+            <label>
+              Usuário
+              <input
+                type="text"
+                value={loginUser}
+                onChange={(event) => setLoginUser(event.target.value)}
+                placeholder="Digite seu usuário"
+                autoComplete="username"
+                required
+              />
+            </label>
+            <label>
+              Senha
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                placeholder="Digite sua senha"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+
+            {loginError && <p className="error">{loginError}</p>}
+
+            <button type="submit" className="button-primary">
+              Entrar
+            </button>
+          </form>
+        </section>
+      </main>
+    )
+  }
+
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -368,32 +561,36 @@ function App() {
             <span className="sidebar__icon">VT</span>
             <span>Visitor Tools</span>
           </button>
-          <button
-            type="button"
-            className={`sidebar__link ${currentPage === 'process' ? 'sidebar__link--active' : ''}`}
-            onClick={() => {
-              setCurrentPage('process')
-              setShowSourceMenu(false)
-            }}
-            aria-current={currentPage === 'process' ? 'page' : undefined}
-          >
-            <span className="sidebar__icon">CP</span>
-            <span>Comparar Projeto</span>
-          </button>
-          <button
-            type="button"
-            className={`sidebar__link ${currentPage === 'xml-excel' ? 'sidebar__link--active' : ''}`}
-            onClick={() => {
-              setCurrentPage('xml-excel')
-              setXmlExcelRoutine('s-5002')
-              setShowSourceMenu(false)
-            }}
-            aria-current={currentPage === 'xml-excel' ? 'page' : undefined}
-          >
-            <span className="sidebar__icon">XE</span>
-            <span>XML para Excel</span>
-          </button>
-          {currentPage === 'xml-excel' && (
+          {canAccessPage('process', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'process' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('process')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'process' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">CP</span>
+              <span>Comparar Projeto</span>
+            </button>
+          )}
+          {canAccessPage('xml-excel', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'xml-excel' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('xml-excel')
+                setXmlExcelRoutine('s-5002')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'xml-excel' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">XE</span>
+              <span>XML para Excel</span>
+            </button>
+          )}
+          {canAccessPage('xml-excel', currentUser) && currentPage === 'xml-excel' && (
             <div className="sidebar__subnav" aria-label="Rotinas XML para Excel">
               {XML_EXCEL_ROUTINES.map((routine) => (
                 <button
@@ -413,10 +610,66 @@ function App() {
               ))}
             </div>
           )}
+          {canAccessPage('resume-ranking', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'resume-ranking' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('resume-ranking')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'resume-ranking' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">RR</span>
+              <span>Ranking de Currículos</span>
+            </button>
+          )}
+          {canAccessPage('estimativas', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'estimativas' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('estimativas')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'estimativas' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">ES</span>
+              <span>Estimativas</span>
+            </button>
+          )}
+          {canAccessPage('daily-activities', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'daily-activities' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('daily-activities')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'daily-activities' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">AD</span>
+              <span>Apontamento Diario</span>
+            </button>
+          )}
+          {canAccessPage('user-admin', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'user-admin' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('user-admin')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'user-admin' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">UA</span>
+              <span>Usuarios e Acessos</span>
+            </button>
+          )}
         </nav>
         <div className="sidebar__spacer" />
       </aside>
-      <div className="app">
+      <div className={`app app--${currentPage}`}>
         <header className="app__header">
           <div>
             <h1>
@@ -424,18 +677,41 @@ function App() {
                 ? 'Visitor Tools'
                 : currentPage === 'process'
                   ? 'Compara Projeto'
-                  : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
+                  : currentPage === 'resume-ranking'
+                    ? 'Ranking de Currículos'
+                : currentPage === 'estimativas'
+                  ? 'Controle de Estimativas'
+                : currentPage === 'daily-activities'
+                  ? 'Apontamento Diario'
+                : currentPage === 'user-admin'
+                  ? 'Usuarios e Acessos'
+                    : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
               {currentPage === 'home'
                 ? 'Central de ferramentas da Visitor Consultoria.'
                 : currentPage === 'process'
                   ? 'Comparar projeto com o inspetor de objetos'
-                  : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
+                  : currentPage === 'resume-ranking'
+                    ? 'Avalie e ranqueie currículos com base na descrição da vaga'
+                : currentPage === 'estimativas'
+                  ? 'Controle e acompanhamento de envio de estimativas de demandas'
+                : currentPage === 'daily-activities'
+                  ? 'Registro diario das atividades executadas por recurso.'
+                : currentPage === 'user-admin'
+                  ? 'Cadastro de usuarios e definicao de acesso aos itens de menu.'
+                    : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
+          </div>
+          <div className="app__actions">
+            <span className="app__hello">Olá, {currentUserName}</span>
+            <button type="button" className="button-secondary" onClick={handleLogout}>
+              Sair
+            </button>
           </div>
         </header>
 
+        <div key={currentPage} className="page-transition">
         {currentPage === 'home' ? (
           <div className="home">
             <section className="card home-hero">
@@ -445,49 +721,136 @@ function App() {
                 unico lugar.
               </p>
               <div className="home-actions">
-                <button
-                  type="button"
-                  className="button-primary"
-                  onClick={() => setCurrentPage('process')}
-                >
-                  Abrir Comparar Projeto
-                </button>
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={() => setCurrentPage('xml-excel')}
-                >
-                  Abrir XML para Excel
-                </button>
+                {canAccessPage('process', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-primary"
+                    onClick={() => setCurrentPage('process')}
+                  >
+                    Abrir Comparar Projeto
+                  </button>
+                )}
+                {canAccessPage('xml-excel', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('xml-excel')}
+                  >
+                    Abrir XML para Excel
+                  </button>
+                )}
+                {canAccessPage('estimativas', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('estimativas')}
+                  >
+                    Abrir Estimativas
+                  </button>
+                )}
+                {canAccessPage('daily-activities', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('daily-activities')}
+                  >
+                    Abrir Apontamento Diario
+                  </button>
+                )}
+                {canAccessPage('user-admin', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('user-admin')}
+                  >
+                    Abrir Usuarios e Acessos
+                  </button>
+                )}
               </div>
             </section>
             <div className="grid">
-              <section className="card home-tool">
-                <h3>Comparar Projeto</h3>
-                <p>Importe o CSV do inspetor e compare com arquivos da pasta ou zip.</p>
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={() => setCurrentPage('process')}
-                >
-                  Acessar
-                </button>
-              </section>
-              <section className="card home-tool">
-                <h3>XML para Excel</h3>
-                <p>Leia múltiplos XMLs e consolide tudo em uma única planilha .xlsx.</p>
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={() => setCurrentPage('xml-excel')}
-                >
-                  Acessar
-                </button>
-              </section>
+              {canAccessPage('process', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Comparar Projeto</h3>
+                  <p>Importe o CSV do inspetor e compare com arquivos da pasta ou zip.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('process')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('xml-excel', currentUser) && (
+                <section className="card home-tool">
+                  <h3>XML para Excel</h3>
+                  <p>Leia múltiplos XMLs e consolide tudo em uma única planilha .xlsx.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('xml-excel')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('resume-ranking', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Ranking de Currículos</h3>
+                  <p>Avalie múltiplos currículos (PDF/DOC) e gere um ranking por aderência à vaga.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('resume-ranking')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('estimativas', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Estimativas</h3>
+                  <p>Controle envios de estimativas de demandas com base na planilha do Google Docs.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('estimativas')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('daily-activities', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Apontamento Diario</h3>
+                  <p>Registre atividades, horas e observacoes executadas por recurso em cada dia.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('daily-activities')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('user-admin', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Usuarios e Acessos</h3>
+                  <p>Cadastre usuarios e defina quais itens do menu cada um pode acessar.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('user-admin')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
             </div>
           </div>
         ) : currentPage === 'process' ? (
-        <div className="grid">
+        <div className="grid page-process">
         <section className="card">
           <h2>1) Importar arquivo CSV</h2>
           <label className="file-input">
@@ -707,6 +1070,50 @@ function App() {
           </div>
         </section>
         </div>
+        ) : currentPage === 'resume-ranking' ? (
+          <Suspense
+            fallback={(
+              <section className="card">
+                <h2>Ranking de Currículos</h2>
+                <p className="muted">Carregando rotina...</p>
+              </section>
+            )}
+          >
+            <ResumeRankingTool />
+          </Suspense>
+        ) : currentPage === 'estimativas' ? (
+          <Suspense
+            fallback={(
+              <section className="card">
+                <h2>Estimativas</h2>
+                <p className="muted">Carregando rotina...</p>
+              </section>
+            )}
+          >
+            <EstimativasTool />
+          </Suspense>
+        ) : currentPage === 'daily-activities' ? (
+          <Suspense
+            fallback={(
+              <section className="card">
+                <h2>Apontamento Diario</h2>
+                <p className="muted">Carregando rotina...</p>
+              </section>
+            )}
+          >
+            <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} />
+          </Suspense>
+        ) : currentPage === 'user-admin' ? (
+          <Suspense
+            fallback={(
+              <section className="card">
+                <h2>Usuarios e Acessos</h2>
+                <p className="muted">Carregando rotina...</p>
+              </section>
+            )}
+          >
+            <UserAccessTool currentUsername={currentUser?.username || ''} />
+          </Suspense>
         ) : xmlExcelRoutine === 's-5002' ? (
           <Suspense
             fallback={(
@@ -724,6 +1131,7 @@ function App() {
             <p className="muted">Esta rotina estará disponível em breve.</p>
           </section>
         )}
+        </div>
       </div>
     </div>
   )

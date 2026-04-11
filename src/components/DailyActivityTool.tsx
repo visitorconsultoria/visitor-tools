@@ -380,7 +380,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       <section className="card">
         <div className="estimativas-header-row">
           <div>
-            <h2>Apontamento Diario</h2>
+            <h2>Apontamentos</h2>
             <p className="muted">Registre as atividades executadas por recurso em cada dia.</p>
           </div>
           <button type="button" className="button-primary" onClick={openModal}>Novo apontamento</button>

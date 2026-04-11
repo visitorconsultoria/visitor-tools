@@ -28,7 +28,7 @@ const MENU_OPTIONS: Array<{ key: MenuPermission, label: string }> = [
   { key: 'xml-excel', label: 'XML para Excel' },
   { key: 'resume-ranking', label: 'Ranking de Curriculos' },
   { key: 'estimativas', label: 'Estimativas' },
-  { key: 'daily-activities', label: 'Apontamento Diario' },
+  { key: 'daily-activities', label: 'Apontamentos' },
 ]
 
 const EMPTY_FORM: UserFormState = {

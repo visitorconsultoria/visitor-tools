@@ -46,7 +46,7 @@ const MENU_LABELS: Record<AllowedMenu, string> = {
   'xml-excel': 'XML para Excel',
   'resume-ranking': 'Ranking de Curriculos',
   estimativas: 'Estimativas',
-  'daily-activities': 'Apontamento Diario',
+  'daily-activities': 'Apontamentos',
   'user-admin': 'Usuarios e Acessos',
 }
 
@@ -649,7 +649,7 @@ function App() {
               aria-current={currentPage === 'daily-activities' ? 'page' : undefined}
             >
               <span className="sidebar__icon">AD</span>
-              <span>Apontamento Diario</span>
+              <span>Apontamentos</span>
             </button>
           )}
           {canAccessPage('user-admin', currentUser) && (
@@ -682,7 +682,7 @@ function App() {
                 : currentPage === 'estimativas'
                   ? 'Controle de Estimativas'
                 : currentPage === 'daily-activities'
-                  ? 'Apontamento Diario'
+                  ? 'Apontamentos'
                 : currentPage === 'user-admin'
                   ? 'Usuarios e Acessos'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
@@ -754,7 +754,7 @@ function App() {
                     className="button-secondary"
                     onClick={() => setCurrentPage('daily-activities')}
                   >
-                    Abrir Apontamento Diario
+                    Abrir Apontamentos
                   </button>
                 )}
                 {canAccessPage('user-admin', currentUser) && (
@@ -823,7 +823,7 @@ function App() {
               )}
               {canAccessPage('daily-activities', currentUser) && (
                 <section className="card home-tool">
-                  <h3>Apontamento Diario</h3>
+                  <h3>Apontamentos</h3>
                   <p>Registre atividades, horas e observacoes executadas por recurso em cada dia.</p>
                   <button
                     type="button"
@@ -1096,7 +1096,7 @@ function App() {
           <Suspense
             fallback={(
               <section className="card">
-                <h2>Apontamento Diario</h2>
+                <h2>Apontamentos</h2>
                 <p className="muted">Carregando rotina...</p>
               </section>
             )}

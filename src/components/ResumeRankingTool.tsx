@@ -1,13 +1,33 @@
 import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import * as pdfjsLib from 'pdfjs-dist'
-import mammoth from 'mammoth'
 import { jsPDF } from 'jspdf'
 import { apiUrl } from '../lib/api'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).href
+type MammothModule = {
+  extractRawText: (input: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }>
+}
+
+let pdfjsModulePromise: Promise<typeof import('pdfjs-dist')> | null = null
+let mammothModulePromise: Promise<MammothModule> | null = null
+
+async function loadPdfjs() {
+  if (!pdfjsModulePromise) {
+    pdfjsModulePromise = import('pdfjs-dist').then((lib) => {
+      lib.GlobalWorkerOptions.workerSrc = new URL(
+        'pdfjs-dist/build/pdf.worker.min.mjs',
+        import.meta.url,
+      ).href
+      return lib
+    })
+  }
+  return pdfjsModulePromise
+}
+
+async function loadMammoth() {
+  if (!mammothModulePromise) {
+    mammothModulePromise = import('mammoth').then((mod) => (mod.default ?? mod) as MammothModule)
+  }
+  return mammothModulePromise
+}
 
 // ─── AI analysis ──────────────────────────────────────────────────────────────
 
@@ -65,6 +85,7 @@ async function analyzeResume(
 // ─── PDF / DOC / DOCX text extraction ───────────────────────────────────────
 
 async function extractTextFromPdf(file: File): Promise<string> {
+  const pdfjsLib = await loadPdfjs()
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
   const pageTexts: string[] = []
@@ -73,8 +94,8 @@ async function extractTextFromPdf(file: File): Promise<string> {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
     const pageText = content.items
-      .filter((item): item is import('pdfjs-dist/types/src/display/api').TextItem => 'str' in item)
-      .map((item) => item.str)
+      .map((item) => ('str' in item ? item.str : ''))
+      .filter(Boolean)
       .join(' ')
     pageTexts.push(pageText)
   }
@@ -82,12 +103,14 @@ async function extractTextFromPdf(file: File): Promise<string> {
 }
 
 async function extractTextFromDocx(file: File): Promise<string> {
+  const mammoth = await loadMammoth()
   const arrayBuffer = await file.arrayBuffer()
   const result = await mammoth.extractRawText({ arrayBuffer })
   return result.value
 }
 
 async function extractTextFromDoc(file: File): Promise<string> {
+  const mammoth = await loadMammoth()
   const arrayBuffer = await file.arrayBuffer()
 
   // Some .doc files are actually .docx renamed; try mammoth first.

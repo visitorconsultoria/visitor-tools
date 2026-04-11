@@ -23,6 +23,12 @@ type DailyActivityToolProps = {
   currentDisplayName?: string
 }
 
+type UserResourceOption = {
+  username: string
+  displayName: string
+  isActive: boolean
+}
+
 const EMPTY_FORM: DailyActivityForm = {
   date: '',
   resource: '',
@@ -111,6 +117,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [resourceOptions, setResourceOptions] = useState<string[]>([])
 
   const normalizedUsername = currentUsername.trim().toLowerCase()
   const loggedResourceName = currentDisplayName.trim() || currentUsername.trim()
@@ -118,6 +125,48 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
   const userHeaders = {
     'x-user': currentUsername.trim(),
     'x-user-display': currentDisplayName.trim(),
+  }
+
+  const adminHeaders = {
+    'x-admin-user': currentUsername.trim().toLowerCase(),
+  }
+
+  const fetchResourceOptions = async () => {
+    if (!isVisitorUser) return
+
+    try {
+      const response = await fetch(apiUrl('/api/users'), {
+        headers: adminHeaders,
+      })
+
+      if (!response.ok) {
+        return
+      }
+
+      const data = await response.json() as { items?: unknown[] }
+      const users = Array.isArray(data.items) ? data.items : []
+
+      const options = users
+        .map((input) => {
+          const user = input as Partial<UserResourceOption>
+          const username = String(user.username ?? '').trim()
+          const displayName = String(user.displayName ?? '').trim()
+          const isActive = Boolean(user.isActive)
+          return {
+            username,
+            displayName,
+            isActive,
+          }
+        })
+        .filter((user) => user.isActive)
+        .map((user) => user.displayName || user.username)
+        .filter(Boolean)
+
+      setResourceOptions(Array.from(new Set(options)).sort((a, b) => a.localeCompare(b, 'pt-BR')))
+    } catch {
+      // Keep form usable even if users endpoint fails.
+      setResourceOptions([])
+    }
   }
 
   const fetchActivities = async () => {
@@ -152,6 +201,11 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
   useEffect(() => {
     void fetchActivities()
   }, [])
+
+  useEffect(() => {
+    if (!isVisitorUser) return
+    void fetchResourceOptions()
+  }, [isVisitorUser])
 
   const monthItems = useMemo(() => {
     if (!monthFilter) return items
@@ -483,12 +537,23 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
               </label>
               <label>
                 Recurso *
-                <input
-                  value={editingId || isVisitorUser ? form.resource : loggedResourceName}
-                  onChange={(event) => setFormValue('resource', event.target.value)}
-                  placeholder="Nome do recurso"
-                  readOnly={!editingId && !isVisitorUser}
-                />
+                {!editingId && isVisitorUser ? (
+                  <select value={form.resource} onChange={(event) => setFormValue('resource', event.target.value)}>
+                    <option value="">Selecione o recurso</option>
+                    {resourceOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={editingId || isVisitorUser ? form.resource : loggedResourceName}
+                    onChange={(event) => setFormValue('resource', event.target.value)}
+                    placeholder="Nome do recurso"
+                    readOnly={!editingId && !isVisitorUser}
+                  />
+                )}
               </label>
               <label>
                 Horas *

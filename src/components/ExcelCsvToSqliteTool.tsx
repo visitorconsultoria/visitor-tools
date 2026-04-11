@@ -23,7 +23,18 @@ const MAX_PREVIEW_ROWS = 8
 const DICTIONARY_FIELD_COLUMN = 'X3_CAMPO'
 const DICTIONARY_TYPE_COLUMN = 'X3_TIPO'
 const DICTIONARY_SYNC_CHUNK_SIZE = 500
-const DEFAULT_PUBLIC_DICTIONARY_PATHS = ['/dicionario.xlsx', '/dicionario.xls', '/dicionario-padrao.csv']
+
+const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '')
+const SUPABASE_ANON_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
+const SUPABASE_DICTIONARY_TABLE = String(import.meta.env.VITE_SUPABASE_DATA_DICTIONARY_TABLE || 'data_dictionary').trim()
+
+function withBaseUrl(fileName: string): string {
+  const baseUrl = String(import.meta.env.BASE_URL || '/').trim()
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+  return `${normalizedBase}${fileName.replace(/^\/+/, '')}`
+}
+
+const DEFAULT_PUBLIC_DICTIONARY_PATHS = ['dicionario.xlsx', 'dicionario.xls', 'dicionario-padrao.csv'].map(withBaseUrl)
 
 type FieldTypeMap = Map<string, string>
 
@@ -34,7 +45,7 @@ type DataDictionarySyncItem = {
 
 type ResolvedDictionary = {
   map: FieldTypeMap
-  source: 'file' | 'supabase' | 'public'
+  source: 'file' | 'supabase' | 'supabase-direct' | 'public'
 }
 
 function sanitizeIdentifier(input: string, fallback: string): string {
@@ -343,15 +354,58 @@ async function readFieldTypeDictionaryFromApi(): Promise<FieldTypeMap> {
   return map
 }
 
+async function readFieldTypeDictionaryFromSupabaseDirect(): Promise<FieldTypeMap> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_DICTIONARY_TABLE) {
+    throw new Error('Fallback direto no Supabase indisponivel: configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.')
+  }
+
+  const url = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_DICTIONARY_TABLE)}?select=field_name,field_type&order=field_name.asc`
+  const response = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  })
+
+  const payload = await response.json().catch(() => ([]))
+  if (!response.ok) {
+    const detail = typeof payload?.message === 'string' ? payload.message : `HTTP ${response.status}`
+    throw new Error(`Falha ao consultar dicionario no Supabase direto: ${detail}`)
+  }
+
+  const rows = Array.isArray(payload) ? payload : []
+  const map: FieldTypeMap = new Map()
+  for (const row of rows) {
+    const field = normalizeFieldName(String(row?.field_name ?? ''))
+    const type = normalizeFieldName(String(row?.field_type ?? ''))
+    if (!field || !type) continue
+    map.set(field, type)
+  }
+
+  if (!map.size) {
+    throw new Error('Nenhum dicionario encontrado no Supabase (consulta direta).')
+  }
+
+  return map
+}
+
 async function readFieldTypeDictionaryFromPublic(): Promise<FieldTypeMap> {
   for (const path of DEFAULT_PUBLIC_DICTIONARY_PATHS) {
     const response = await fetch(path, { cache: 'no-store' })
     if (!response.ok) continue
 
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+    if (contentType.includes('text/html')) continue
+
     const normalizedPath = path.toLowerCase()
     if (normalizedPath.endsWith('.xlsx') || normalizedPath.endsWith('.xls')) {
-      const arrayBuffer = await response.arrayBuffer()
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+      let workbook: XLSX.WorkBook
+      try {
+        const arrayBuffer = await response.arrayBuffer()
+        workbook = XLSX.read(arrayBuffer, { type: 'array' })
+      } catch {
+        continue
+      }
 
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName]
@@ -370,13 +424,14 @@ async function readFieldTypeDictionaryFromPublic(): Promise<FieldTypeMap> {
     }
 
     const text = await response.text()
+    if (/^\s*<!doctype html|^\s*<html/i.test(text)) continue
     const matrix = parseCsv(text)
     if (!matrix.length) continue
     return matrixToFieldTypeDictionary(matrix)
   }
 
   throw new Error(
-    `Nao foi possivel carregar dicionario em public. Caminhos testados: ${DEFAULT_PUBLIC_DICTIONARY_PATHS.join(', ')}`,
+    `Nao foi possivel carregar dicionario em public. Caminhos testados: ${DEFAULT_PUBLIC_DICTIONARY_PATHS.join(', ')}.`,
   )
 }
 
@@ -394,14 +449,21 @@ async function resolveFieldTypeDictionary(dictionaryFile: File | null): Promise<
       source: 'supabase',
     }
   } catch (error) {
-    const detail = error instanceof Error ? error.message : ''
-    if (!/HTTP 404/i.test(detail)) {
-      throw error
-    }
+    try {
+      return {
+        map: await readFieldTypeDictionaryFromSupabaseDirect(),
+        source: 'supabase-direct',
+      }
+    } catch {
+      const detail = error instanceof Error ? error.message : ''
+      if (!/HTTP 404/i.test(detail)) {
+        throw error
+      }
 
-    return {
-      map: await readFieldTypeDictionaryFromPublic(),
-      source: 'public',
+      return {
+        map: await readFieldTypeDictionaryFromPublic(),
+        source: 'public',
+      }
     }
   }
 }

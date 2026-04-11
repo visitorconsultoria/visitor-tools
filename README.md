@@ -77,8 +77,13 @@ No seu terminal local, defina a URL da API para o build da Vite e publique:
 
 ```bash
 $env:VITE_API_BASE_URL="https://visitor-tools-api.onrender.com"
+$env:VITE_SUPABASE_URL="https://xxxx.supabase.co"
+$env:VITE_SUPABASE_ANON_KEY="eyJ..."
+$env:VITE_SUPABASE_DATA_DICTIONARY_TABLE="data_dictionary"
 npm run deploy
 ```
+
+As variaveis `VITE_SUPABASE_*` permitem que a rotina `Excel/CSV para SQL` consulte o dicionario diretamente no Supabase quando a rota da API nao estiver disponivel.
 
 ### 3) Resultado
 
@@ -165,6 +170,13 @@ SUPABASE_DATA_DICTIONARY_TABLE=data_dictionary
 ```
 
 3. Sempre que um dicionario for selecionado na rotina `Excel/CSV para SQL`, os dados sao atualizados nessa tabela.
+4. Para fallback direto no frontend (sem depender da rota da API), configure tambem no build:
+
+```bash
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+VITE_SUPABASE_DATA_DICTIONARY_TABLE=data_dictionary
+```
 
 ## Apontamento diario de atividades
 

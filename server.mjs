@@ -791,16 +791,30 @@ async function syncDataDictionary(payload) {
 
 async function listDataDictionary() {
   const { client, dataDictionaryTable } = getSupabaseClient()
-  const { data: rows, error } = await client
-    .from(dataDictionaryTable)
-    .select('field_name, field_type')
-    .order('field_name', { ascending: true })
+  const pageSize = 1000
+  let from = 0
+  const rows = []
 
-  if (error) {
-    throw new Error(error.message)
+  while (true) {
+    const to = from + pageSize - 1
+    const { data: pageRows, error } = await client
+      .from(dataDictionaryTable)
+      .select('field_name, field_type')
+      .order('field_name', { ascending: true })
+      .range(from, to)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const batch = pageRows || []
+    rows.push(...batch)
+
+    if (batch.length < pageSize) break
+    from += pageSize
   }
 
-  const items = (rows || [])
+  const items = rows
     .map((row) => ({
       fieldName: String(row.field_name ?? '').trim().toUpperCase(),
       fieldType: String(row.field_type ?? '').trim().toUpperCase(),

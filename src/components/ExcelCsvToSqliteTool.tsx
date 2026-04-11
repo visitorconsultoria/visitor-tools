@@ -111,6 +111,10 @@ function normalizeFieldName(value: string): string {
   return String(value ?? '').trim().toUpperCase()
 }
 
+function normalizeDictionaryKey(value: string): string {
+  return normalizeFieldName(sanitizeIdentifier(normalizeFieldName(value), ''))
+}
+
 function toSqlLiteral(value: SqlValue): string {
   if (value === null) return "''"
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : "''"
@@ -310,6 +314,10 @@ function matrixToFieldTypeDictionary(matrix: unknown[][]): FieldTypeMap {
     const type = normalizeFieldName(String(safeRow[typeIndex] ?? ''))
     if (!field || !type) continue
     map.set(field, type)
+    const sanitizedField = normalizeDictionaryKey(field)
+    if (sanitizedField && sanitizedField !== field) {
+      map.set(sanitizedField, type)
+    }
   }
 
   if (!map.size) {
@@ -345,6 +353,10 @@ async function readFieldTypeDictionaryFromApi(): Promise<FieldTypeMap> {
     const type = normalizeFieldName(String(item?.fieldType ?? item?.field_type ?? ''))
     if (!field || !type) continue
     map.set(field, type)
+    const sanitizedField = normalizeDictionaryKey(field)
+    if (sanitizedField && sanitizedField !== field) {
+      map.set(sanitizedField, type)
+    }
   }
 
   if (!map.size) {
@@ -359,27 +371,42 @@ async function readFieldTypeDictionaryFromSupabaseDirect(): Promise<FieldTypeMap
     throw new Error('Fallback direto no Supabase indisponivel: configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.')
   }
 
-  const url = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_DICTIONARY_TABLE)}?select=field_name,field_type&order=field_name.asc`
-  const response = await fetch(url, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  })
+  const pageSize = 1000
+  let offset = 0
+  const rows: Array<{ field_name?: string, field_type?: string }> = []
 
-  const payload = await response.json().catch(() => ([]))
-  if (!response.ok) {
-    const detail = typeof payload?.message === 'string' ? payload.message : `HTTP ${response.status}`
-    throw new Error(`Falha ao consultar dicionario no Supabase direto: ${detail}`)
+  while (true) {
+    const url = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_DICTIONARY_TABLE)}?select=field_name,field_type&order=field_name.asc&limit=${pageSize}&offset=${offset}`
+    const response = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    })
+
+    const payload = await response.json().catch(() => ([]))
+    if (!response.ok) {
+      const detail = typeof payload?.message === 'string' ? payload.message : `HTTP ${response.status}`
+      throw new Error(`Falha ao consultar dicionario no Supabase direto: ${detail}`)
+    }
+
+    const batch = Array.isArray(payload) ? payload : []
+    rows.push(...batch)
+
+    if (batch.length < pageSize) break
+    offset += pageSize
   }
 
-  const rows = Array.isArray(payload) ? payload : []
   const map: FieldTypeMap = new Map()
   for (const row of rows) {
     const field = normalizeFieldName(String(row?.field_name ?? ''))
     const type = normalizeFieldName(String(row?.field_type ?? ''))
     if (!field || !type) continue
     map.set(field, type)
+    const sanitizedField = normalizeDictionaryKey(field)
+    if (sanitizedField && sanitizedField !== field) {
+      map.set(sanitizedField, type)
+    }
   }
 
   if (!map.size) {
@@ -482,6 +509,47 @@ function getMissingDictionaryFields(tables: SourceTable[], fieldTypeMap: FieldTy
   }
 
   return Array.from(missing).sort()
+}
+
+function getMatchedDictionaryFieldCount(tables: SourceTable[], fieldTypeMap: FieldTypeMap): number {
+  let matched = 0
+
+  for (const table of tables) {
+    for (const column of table.columns) {
+      const normalized = normalizeFieldName(column)
+      if (!normalized || normalized === 'R_E_C_N_O_') continue
+
+      if (resolveFieldTypeForColumn(column, fieldTypeMap)) {
+        matched += 1
+      }
+    }
+  }
+
+  return matched
+}
+
+function resolveFieldTypeForColumn(column: string, fieldTypeMap: FieldTypeMap): string | undefined {
+  const normalized = normalizeFieldName(column)
+  if (!normalized || normalized === 'R_E_C_N_O_') return undefined
+
+  const sanitized = normalizeDictionaryKey(column)
+  const direct = fieldTypeMap.get(normalized) ?? (sanitized ? fieldTypeMap.get(sanitized) : undefined)
+  if (direct) return direct
+
+  // Heuristica: permite casar colunas como CODPROD com chaves de dicionario como A1_CODPROD.
+  const suffix = `_${normalized}`
+  const matchedTypes = new Set<string>()
+  for (const [key, type] of fieldTypeMap.entries()) {
+    if (key.endsWith(suffix)) {
+      matchedTypes.add(type)
+    }
+  }
+
+  if (matchedTypes.size === 1) {
+    return Array.from(matchedTypes)[0]
+  }
+
+  return undefined
 }
 
 async function syncDataDictionaryToApi(sourceFileName: string, fieldTypeMap: FieldTypeMap): Promise<number> {
@@ -674,6 +742,7 @@ function buildInsertScript(
 
   const lines: string[] = []
   let recno = recnoStart
+  const fieldTypeCache = new Map<string, string | undefined>()
 
   for (const sourceTable of tables) {
     const sourceIndexByColumn = new Map<string, number>()
@@ -690,7 +759,11 @@ function buildInsertScript(
         if (orderedIndex === recnoColumnIndex) return String(recno)
         const sourceIndex = sourceIndexByColumn.get(column)
         if (sourceIndex === undefined) return "''"
-        const fieldType = fieldTypeMap.get(normalizeFieldName(column))
+        const cached = fieldTypeCache.get(column)
+        const fieldType = cached !== undefined ? cached : resolveFieldTypeForColumn(column, fieldTypeMap)
+        if (!fieldTypeCache.has(column)) {
+          fieldTypeCache.set(column, fieldType)
+        }
         return toSqlLiteralByType(row[sourceIndex] ?? null, fieldType)
       })
 
@@ -803,6 +876,11 @@ export default function ExcelCsvToSqliteTool() {
         try {
           const tables = await readSourceFile(file)
           let warningDetail = ''
+
+          const matchedFields = getMatchedDictionaryFieldCount(tables, fieldTypeMap)
+          if (matchedFields === 0) {
+            warningDetail = ' Nenhum campo da origem foi casado com o dicionario; os valores foram gerados sem tipagem por X3_TIPO. Selecione o arquivo atualizado do dicionario ou revise o cabecalho da planilha.'
+          }
 
           if (resolvedDictionary.source === 'supabase') {
             const missingFields = getMissingDictionaryFields(tables, fieldTypeMap)

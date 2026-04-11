@@ -63,6 +63,7 @@ SUPABASE_ESTIMATIVAS_TABLE=estimativas
 SUPABASE_ESTIMATIVA_ITEMS_TABLE=estimativa_items
 SUPABASE_DAILY_ACTIVITIES_TABLE=daily_activities
 SUPABASE_USERS_TABLE=app_users
+SUPABASE_DATA_DICTIONARY_TABLE=data_dictionary
 CORS_ALLOWED_ORIGINS=https://SEU_USUARIO.github.io
 ```
 
@@ -127,7 +128,7 @@ A aplicacao agora autentica usuarios no Supabase e permite cadastro de novos usu
 
 Regras:
 - A rotina `Usuarios e Acessos` e exclusiva do usuario `visitor`.
-- Cada usuario pode receber acesso aos menus: `Comparar Projeto`, `XML para Excel`, `Ranking de Curriculos` e `Estimativas`.
+- Cada usuario pode receber acesso aos menus: `Comparar Projeto`, `XML para Excel`, `Excel/CSV para SQL`, `Ranking de Curriculos`, `Estimativas` e `Apontamentos`.
 
 1. Crie a tabela de usuarios no Supabase (exemplo em [scripts/supabase-users.sql](scripts/supabase-users.sql)).
 2. Configure o `.env`:
@@ -137,6 +138,33 @@ SUPABASE_USERS_TABLE=app_users
 ```
 
 3. Utilize o login inicial `visitor / Visitor@2026` e cadastre os demais usuarios pela nova rotina.
+
+## Excel/CSV para SQL (.sql)
+
+Nova rotina para converter arquivos `.csv`, `.xlsx` e `.xls` em script SQL com instrucoes de `INSERT`.
+
+Como usar:
+1. Abra o menu `Excel/CSV para SQL`.
+2. Selecione um ou mais arquivos de origem.
+3. Informe a tabela de destino (ex.: `SR4020`) e o ultimo valor de `R_E_C_N_O_` existente.
+4. Clique em `Gerar arquivo .sql`.
+
+Observacoes:
+- Cada arquivo selecionado gera um `.sql` separado.
+- O campo `R_E_C_N_O_` e preenchido automaticamente e incrementado a partir do ultimo valor informado.
+- Em arquivos Excel com multiplas abas, todas as linhas sao consolidadas no script gerado.
+- Ao selecionar manualmente um dicionario (`X3_CAMPO`/`X3_TIPO`), o sistema sincroniza os campos no Supabase.
+
+### Dicionario de dados no Supabase
+
+1. Crie a tabela no Supabase (exemplo em [scripts/supabase-data-dictionary.sql](scripts/supabase-data-dictionary.sql)).
+2. Configure o `.env` da API:
+
+```bash
+SUPABASE_DATA_DICTIONARY_TABLE=data_dictionary
+```
+
+3. Sempre que um dicionario for selecionado na rotina `Excel/CSV para SQL`, os dados sao atualizados nessa tabela.
 
 ## Apontamento diario de atividades
 

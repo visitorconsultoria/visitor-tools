@@ -675,6 +675,7 @@ button:disabled {
 
 .app--process .card,
 .app--xml-excel .card,
+.app--excel-csv-sqlite .card,
 .app--resume-ranking .card,
 .app--estimativas .card {
   border-top: 4px solid #d3e7e0;
@@ -682,6 +683,10 @@ button:disabled {
 
 .app--xml-excel .app__header {
   background: linear-gradient(130deg, rgba(255, 255, 255, 0.92) 0%, rgba(236, 243, 251, 0.88) 100%);
+}
+
+.app--excel-csv-sqlite .app__header {
+  background: linear-gradient(130deg, rgba(255, 255, 255, 0.92) 0%, rgba(240, 248, 247, 0.9) 100%);
 }
 
 .app--xml-excel .card:nth-child(1) {

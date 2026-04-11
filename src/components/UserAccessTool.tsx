@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
 
-type MenuPermission = 'process' | 'xml-excel' | 'resume-ranking' | 'estimativas' | 'daily-activities'
+type MenuPermission = 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities'
 
 type UserRow = {
   id: number
@@ -26,6 +26,7 @@ type UserAccessToolProps = {
 const MENU_OPTIONS: Array<{ key: MenuPermission, label: string }> = [
   { key: 'process', label: 'Comparar Projeto' },
   { key: 'xml-excel', label: 'XML para Excel' },
+  { key: 'excel-csv-sqlite', label: 'Excel/CSV para SQL' },
   { key: 'resume-ranking', label: 'Ranking de Curriculos' },
   { key: 'estimativas', label: 'Estimativas' },
   { key: 'daily-activities', label: 'Apontamentos' },

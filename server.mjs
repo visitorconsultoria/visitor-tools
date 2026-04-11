@@ -38,6 +38,7 @@ function getSupabaseConfig() {
     estimativaItemsTable: process.env.SUPABASE_ESTIMATIVA_ITEMS_TABLE || 'estimativa_items',
     dailyActivitiesTable: process.env.SUPABASE_DAILY_ACTIVITIES_TABLE || 'daily_activities',
     usersTable: process.env.SUPABASE_USERS_TABLE || 'app_users',
+    dataDictionaryTable: process.env.SUPABASE_DATA_DICTIONARY_TABLE || 'data_dictionary',
   }
 }
 
@@ -73,10 +74,11 @@ function getSupabaseClient() {
     estimativaItemsTable: config.estimativaItemsTable,
     dailyActivitiesTable: config.dailyActivitiesTable,
     usersTable: config.usersTable,
+    dataDictionaryTable: config.dataDictionaryTable,
   }
 }
 
-const MENU_KEYS = ['process', 'xml-excel', 'resume-ranking', 'estimativas', 'daily-activities']
+const MENU_KEYS = ['process', 'xml-excel', 'excel-csv-sqlite', 'resume-ranking', 'estimativas', 'daily-activities']
 
 function normalizeMenuPermissions(value) {
   const items = Array.isArray(value) ? value : []
@@ -734,6 +736,80 @@ async function deleteEstimate(id) {
   }
 }
 
+function parseDataDictionarySyncPayload(payload) {
+  const sourceFileName = String(payload?.sourceFileName ?? '').trim() || null
+  const replaceAll = payload?.replaceAll === true
+  const rawItems = Array.isArray(payload?.items) ? payload.items : []
+
+  const unique = new Map()
+  for (const item of rawItems) {
+    const fieldName = String(item?.fieldName ?? '').trim().toUpperCase()
+    const rawType = String(item?.fieldType ?? '').trim().toUpperCase()
+    const fieldType = rawType ? rawType.slice(0, 1) : ''
+    if (!fieldName || !fieldType) continue
+    unique.set(fieldName, {
+      field_name: fieldName,
+      field_type: fieldType,
+      source_file_name: sourceFileName,
+      updated_at: new Date().toISOString(),
+    })
+  }
+
+  const items = Array.from(unique.values())
+  if (!items.length) {
+    throw new Error('Nenhum mapeamento valido recebido para sincronizacao.')
+  }
+
+  return { items, replaceAll }
+}
+
+async function syncDataDictionary(payload) {
+  const { client, dataDictionaryTable } = getSupabaseClient()
+  const parsed = parseDataDictionarySyncPayload(payload)
+
+  if (parsed.replaceAll) {
+    const { error: clearError } = await client
+      .from(dataDictionaryTable)
+      .delete()
+      .neq('field_name', '')
+
+    if (clearError) {
+      throw new Error(clearError.message)
+    }
+  }
+
+  const { error: insertError } = await client
+    .from(dataDictionaryTable)
+    .upsert(parsed.items, { onConflict: 'field_name' })
+
+  if (insertError) {
+    throw new Error(insertError.message)
+  }
+
+  return { count: parsed.items.length }
+}
+
+async function listDataDictionary() {
+  const { client, dataDictionaryTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(dataDictionaryTable)
+    .select('field_name, field_type')
+    .order('field_name', { ascending: true })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const items = (rows || [])
+    .map((row) => ({
+      fieldName: String(row.field_name ?? '').trim().toUpperCase(),
+      fieldType: String(row.field_type ?? '').trim().toUpperCase(),
+    }))
+    .filter((item) => item.fieldName && item.fieldType)
+
+  return { items }
+}
+
 const SYSTEM_PROMPT = `Voce e um especialista em recrutamento e selecao de RH. Analise o curriculo fornecido em relacao a descricao da vaga e retorne SOMENTE um objeto JSON valido, sem texto adicional, com exatamente esta estrutura:
 {
   "score": <inteiro de 0 a 100 representando a aderencia geral do candidato a vaga>,
@@ -887,6 +963,26 @@ app.put('/api/users/:id', async (req, res) => {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     const status = /acesso negado/i.test(detail) ? 403 : 400
     return res.status(status).json({ error: `Falha ao atualizar usuario: ${detail}` })
+  }
+})
+
+app.post('/api/data-dictionary/sync', async (req, res) => {
+  try {
+    const result = await syncDataDictionary(req.body || {})
+    return res.json({ ok: true, ...result })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao sincronizar dicionario: ${detail}` })
+  }
+})
+
+app.get('/api/data-dictionary', async (_req, res) => {
+  try {
+    const result = await listDataDictionary()
+    return res.json(result)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar dicionario: ${detail}` })
   }
 })
 

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
+    "dev": "concurrently --restart-tries 5 --restart-after 1200 \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "vite",
     "dev:api": "node server.mjs",
     "start": "node server.mjs",
@@ -23,9 +23,11 @@
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
+    "mssql": "^12.2.1",
     "pdfjs-dist": "^5.6.205",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "sql.js": "^1.14.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -34,6 +36,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^5.1.1",
     "concurrently": "^9.2.1",
     "eslint": "^9.39.1",

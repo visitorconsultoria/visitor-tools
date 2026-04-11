@@ -4,6 +4,7 @@ import visitorLogo from './assets/vistor_logo_verde2.png'
 import { apiUrl } from './lib/api'
 
 const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
+const ExcelCsvToSqliteTool = lazy(() => import('./components/ExcelCsvToSqliteTool'))
 const ResumeRankingTool = lazy(() => import('./components/ResumeRankingTool'))
 const EstimativasTool = lazy(() => import('./components/EstimativasTool'))
 const UserAccessTool = lazy(() => import('./components/UserAccessTool'))
@@ -29,7 +30,7 @@ type XmlExcelRoutineOption = {
   available: boolean
 }
 
-type MenuPage = 'home' | 'process' | 'xml-excel' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'user-admin'
+type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'user-admin'
 
 type AllowedMenu = Exclude<MenuPage, 'home'>
 
@@ -44,6 +45,7 @@ const AUTH_STORAGE_KEY = 'vt_authenticated'
 const MENU_LABELS: Record<AllowedMenu, string> = {
   process: 'Comparar Projeto',
   'xml-excel': 'XML para Excel',
+  'excel-csv-sqlite': 'Excel/CSV para SQL',
   'resume-ranking': 'Ranking de Curriculos',
   estimativas: 'Estimativas',
   'daily-activities': 'Apontamentos',
@@ -590,6 +592,20 @@ function App() {
               <span>XML para Excel</span>
             </button>
           )}
+          {canAccessPage('excel-csv-sqlite', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'excel-csv-sqlite' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('excel-csv-sqlite')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'excel-csv-sqlite' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">SQ</span>
+              <span>Excel/CSV para SQL</span>
+            </button>
+          )}
           {canAccessPage('xml-excel', currentUser) && currentPage === 'xml-excel' && (
             <div className="sidebar__subnav" aria-label="Rotinas XML para Excel">
               {XML_EXCEL_ROUTINES.map((routine) => (
@@ -677,6 +693,8 @@ function App() {
                 ? 'Visitor Tools'
                 : currentPage === 'process'
                   ? 'Compara Projeto'
+                  : currentPage === 'excel-csv-sqlite'
+                    ? 'Excel/CSV para SQL'
                   : currentPage === 'resume-ranking'
                     ? 'Ranking de Currículos'
                 : currentPage === 'estimativas'
@@ -692,6 +710,8 @@ function App() {
                 ? 'Central de ferramentas da Visitor Consultoria.'
                 : currentPage === 'process'
                   ? 'Comparar projeto com o inspetor de objetos'
+                  : currentPage === 'excel-csv-sqlite'
+                    ? 'Gere scripts SQL de insercao a partir de planilhas Excel e arquivos CSV.'
                   : currentPage === 'resume-ranking'
                     ? 'Avalie e ranqueie currículos com base na descrição da vaga'
                 : currentPage === 'estimativas'
@@ -737,6 +757,15 @@ function App() {
                     onClick={() => setCurrentPage('xml-excel')}
                   >
                     Abrir XML para Excel
+                  </button>
+                )}
+                {canAccessPage('excel-csv-sqlite', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('excel-csv-sqlite')}
+                  >
+                    Abrir Excel/CSV para SQL
                   </button>
                 )}
                 {canAccessPage('estimativas', currentUser) && (
@@ -790,6 +819,19 @@ function App() {
                     type="button"
                     className="button-secondary"
                     onClick={() => setCurrentPage('xml-excel')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('excel-csv-sqlite', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Excel/CSV para SQL</h3>
+                  <p>Converta arquivos .xlsx, .xls e .csv em script SQL com INSERT para tabela destino.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('excel-csv-sqlite')}
                   >
                     Acessar
                   </button>
@@ -1070,6 +1112,17 @@ function App() {
           </div>
         </section>
         </div>
+        ) : currentPage === 'excel-csv-sqlite' ? (
+          <Suspense
+            fallback={(
+              <section className="card">
+                <h2>Excel/CSV para SQL</h2>
+                <p className="muted">Carregando rotina...</p>
+              </section>
+            )}
+          >
+            <ExcelCsvToSqliteTool />
+          </Suspense>
         ) : currentPage === 'resume-ranking' ? (
           <Suspense
             fallback={(

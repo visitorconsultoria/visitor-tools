@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { jsPDF } from 'jspdf'
+import internalPartnerLogo from '../assets/logo_3.png'
 import { apiUrl } from '../lib/api'
-
-const INTERNAL_PARTNER_LOGO_SRC = '/favicon-visitor.png'
 
 type EstimateStatus = 'pending' | 'sent'
 
@@ -512,7 +511,7 @@ export default function EstimativasTool() {
         doc.setFillColor(228, 242, 237)
         doc.roundedRect(margin, y, contentWidth, 98, 10, 10, 'F')
 
-        const logoDataUrl = await loadImageAsDataUrl(INTERNAL_PARTNER_LOGO_SRC)
+        const logoDataUrl = await loadImageAsDataUrl(internalPartnerLogo)
         doc.addImage(logoDataUrl, 'PNG', margin + 14, y + 12, 56, 56)
 
         doc.setFont('helvetica', 'bold')

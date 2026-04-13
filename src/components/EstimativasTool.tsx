@@ -104,19 +104,21 @@ function isInternalPartner(partner: string): boolean {
   return partner.trim().toLowerCase() === 'interno'
 }
 
-async function loadImageAsDataUrl(src: string): Promise<string> {
-  const response = await fetch(src)
-  if (!response.ok) {
-    throw new Error('Nao foi possivel carregar o logo para o PDF.')
-  }
+async function loadImageAsDataUrl(src: string): Promise<string | null> {
+  try {
+    const response = await fetch(src)
+    if (!response.ok) return null
 
-  const blob = await response.blob()
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error('Falha ao processar logo para PDF.'))
-    reader.readAsDataURL(blob)
-  })
+    const blob = await response.blob()
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(new Error('Falha ao processar logo para PDF.'))
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
 }
 
 function normalizeEstimateResponse(input: unknown): EstimateRow {
@@ -512,7 +514,9 @@ export default function EstimativasTool() {
         doc.roundedRect(margin, y, contentWidth, 98, 10, 10, 'F')
 
         const logoDataUrl = await loadImageAsDataUrl(internalPartnerLogo)
-        doc.addImage(logoDataUrl, 'PNG', margin + 14, y + 12, 56, 56)
+        if (logoDataUrl) {
+          doc.addImage(logoDataUrl, 'PNG', margin + 14, y + 12, 56, 56)
+        }
 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(18)

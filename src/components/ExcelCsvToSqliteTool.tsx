@@ -85,6 +85,11 @@ function toSqlValue(input: unknown): SqlValue {
   const text = String(input).trim()
   if (!text.length) return null
 
+  const isIntegerLikeWithLeadingZero = /^[-+]?0\d+$/.test(text)
+  if (isIntegerLikeWithLeadingZero) {
+    return text
+  }
+
   const normalized = text.replace(',', '.')
   if (/^-?\d+$/.test(normalized)) {
     const parsedInt = Number.parseInt(normalized, 10)

@@ -83,6 +83,12 @@ $env:VITE_SUPABASE_DATA_DICTIONARY_TABLE="data_dictionary"
 npm run deploy
 ```
 
+Ou, se as variaveis `VITE_*` ja estiverem no seu `.env`, use o atalho:
+
+```bash
+npm run deploy:prod
+```
+
 As variaveis `VITE_SUPABASE_*` permitem que a rotina `Excel/CSV para SQL` consulte o dicionario diretamente no Supabase quando a rota da API nao estiver disponivel.
 
 ### 3) Resultado
@@ -100,6 +106,7 @@ As variaveis `VITE_SUPABASE_*` permitem que a rotina `Excel/CSV para SQL` consul
 - `npm run build`: build de produção
 - `npm run preview`: pré-visualização do build
 - `npm run deploy`: publica versão atual no GitHub Pages
+- `npm run deploy:prod`: deploy com variaveis de producao carregadas via `.env`
 
 ## Estimativas via Supabase
 

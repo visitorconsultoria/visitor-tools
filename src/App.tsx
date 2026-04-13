@@ -447,6 +447,9 @@ function App() {
       })
 
       if (!response.ok) {
+        if (response.status === 405) {
+          throw new Error('Login indisponivel no host atual (HTTP 405). O frontend publicado precisa de VITE_API_BASE_URL apontando para a API Node.')
+        }
         let detail = 'Usuario ou senha invalidos.'
         try {
           const err = await response.json()

@@ -517,8 +517,8 @@ export default function EstimativasTool() {
         if (logoDataUrl) {
           const logoAnchorX = margin + 14
           const logoCenterY = y + 49
-          const logoTargetHeight = 56
-          const logoMaxWidth = 170
+          const logoTargetHeight = 70
+          const logoMaxWidth = 213
           const logoProps = doc.getImageProperties(logoDataUrl)
           const logoRatio = logoProps.width / logoProps.height
           const targetWidth = logoTargetHeight * logoRatio

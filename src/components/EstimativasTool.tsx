@@ -515,7 +515,19 @@ export default function EstimativasTool() {
 
         const logoDataUrl = await loadImageAsDataUrl(internalPartnerLogo)
         if (logoDataUrl) {
-          doc.addImage(logoDataUrl, 'PNG', margin + 14, y + 25, 150, 48)
+          const logoBoxX = margin + 14
+          const logoBoxY = y + 18
+          const logoBoxWidth = 150
+          const logoBoxHeight = 62
+          const logoProps = doc.getImageProperties(logoDataUrl)
+          const widthScale = logoBoxWidth / logoProps.width
+          const heightScale = logoBoxHeight / logoProps.height
+          const scale = Math.min(widthScale, heightScale)
+          const drawWidth = logoProps.width * scale
+          const drawHeight = logoProps.height * scale
+          const drawX = logoBoxX + (logoBoxWidth - drawWidth) / 2
+          const drawY = logoBoxY + (logoBoxHeight - drawHeight) / 2
+          doc.addImage(logoDataUrl, 'PNG', drawX, drawY, drawWidth, drawHeight)
         }
 
         doc.setFont('helvetica', 'bold')

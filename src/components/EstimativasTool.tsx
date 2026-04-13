@@ -515,7 +515,7 @@ export default function EstimativasTool() {
 
         const logoDataUrl = await loadImageAsDataUrl(internalPartnerLogo)
         if (logoDataUrl) {
-          doc.addImage(logoDataUrl, 'PNG', margin + 14, y + 12, 56, 56)
+          doc.addImage(logoDataUrl, 'PNG', margin + 14, y + 25, 150, 48)
         }
 
         doc.setFont('helvetica', 'bold')

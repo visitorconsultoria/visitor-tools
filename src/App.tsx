@@ -1,14 +1,13 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
 import visitorLogo from './assets/vistor_logo_verde2.png'
 import { apiUrl } from './lib/api'
-
-const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
-const ExcelCsvToSqliteTool = lazy(() => import('./components/ExcelCsvToSqliteTool'))
-const ResumeRankingTool = lazy(() => import('./components/ResumeRankingTool'))
-const EstimativasTool = lazy(() => import('./components/EstimativasTool'))
-const UserAccessTool = lazy(() => import('./components/UserAccessTool'))
-const DailyActivityTool = lazy(() => import('./components/DailyActivityTool'))
+import XmlToExcelTool from './components/XmlToExcelTool'
+import ExcelCsvToSqliteTool from './components/ExcelCsvToSqliteTool'
+import ResumeRankingTool from './components/ResumeRankingTool'
+import EstimativasTool from './components/EstimativasTool'
+import UserAccessTool from './components/UserAccessTool'
+import DailyActivityTool from './components/DailyActivityTool'
 
 type CsvData = {
   headers: string[]
@@ -1116,71 +1115,17 @@ function App() {
         </section>
         </div>
         ) : currentPage === 'excel-csv-sqlite' ? (
-          <Suspense
-            fallback={(
-              <section className="card">
-                <h2>Excel/CSV para SQL</h2>
-                <p className="muted">Carregando rotina...</p>
-              </section>
-            )}
-          >
-            <ExcelCsvToSqliteTool />
-          </Suspense>
+          <ExcelCsvToSqliteTool />
         ) : currentPage === 'resume-ranking' ? (
-          <Suspense
-            fallback={(
-              <section className="card">
-                <h2>Ranking de Currículos</h2>
-                <p className="muted">Carregando rotina...</p>
-              </section>
-            )}
-          >
-            <ResumeRankingTool />
-          </Suspense>
+          <ResumeRankingTool />
         ) : currentPage === 'estimativas' ? (
-          <Suspense
-            fallback={(
-              <section className="card">
-                <h2>Estimativas</h2>
-                <p className="muted">Carregando rotina...</p>
-              </section>
-            )}
-          >
-            <EstimativasTool />
-          </Suspense>
+          <EstimativasTool />
         ) : currentPage === 'daily-activities' ? (
-          <Suspense
-            fallback={(
-              <section className="card">
-                <h2>Apontamentos</h2>
-                <p className="muted">Carregando rotina...</p>
-              </section>
-            )}
-          >
-            <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} />
-          </Suspense>
+          <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} />
         ) : currentPage === 'user-admin' ? (
-          <Suspense
-            fallback={(
-              <section className="card">
-                <h2>Usuarios e Acessos</h2>
-                <p className="muted">Carregando rotina...</p>
-              </section>
-            )}
-          >
-            <UserAccessTool currentUsername={currentUser?.username || ''} />
-          </Suspense>
+          <UserAccessTool currentUsername={currentUser?.username || ''} />
         ) : xmlExcelRoutine === 's-5002' ? (
-          <Suspense
-            fallback={(
-              <section className="card">
-                <h2>Item S-5002</h2>
-                <p className="muted">Carregando rotina...</p>
-              </section>
-            )}
-          >
-            <XmlToExcelTool />
-          </Suspense>
+          <XmlToExcelTool />
         ) : (
           <section className="card">
             <h2>{selectedXmlRoutine.label}</h2>

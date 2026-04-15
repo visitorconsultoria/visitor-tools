@@ -941,6 +941,43 @@ app.post('/api/auth/login', async (req, res) => {
   }
 })
 
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    const usernameHeader = req.headers['x-user']
+    const raw = Array.isArray(usernameHeader) ? usernameHeader[0] : usernameHeader
+    const username = String(raw || '').trim().toLowerCase()
+
+    if (!username) {
+      return res.status(400).json({ error: 'Usuario nao informado.' })
+    }
+
+    const { client, usersTable } = getSupabaseClient()
+
+    if (isVisitorAdminUser(username)) {
+      return res.json({
+        ok: true,
+        allowedMenus: Array.from(new Set([...MENU_KEYS, 'user-admin'])),
+      })
+    }
+
+    const { data: row, error } = await client
+      .from(usersTable)
+      .select('is_active, allowed_menus')
+      .eq('username', username)
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!row || !row.is_active) {
+      return res.status(403).json({ error: 'Usuario inativo ou nao encontrado.' })
+    }
+
+    return res.json({ ok: true, allowedMenus: normalizeMenuPermissions(row.allowed_menus) })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao obter permissoes: ${detail}` })
+  }
+})
+
 app.get('/api/users', async (req, res) => {
   try {
     assertVisitorAdmin(req)

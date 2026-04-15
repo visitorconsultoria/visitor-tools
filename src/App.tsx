@@ -327,6 +327,35 @@ function App() {
     setCurrentPage('home')
   }, [currentPage, currentUser])
 
+  useEffect(() => {
+    if (!currentUser) return
+
+    const refresh = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/auth/me'), {
+          headers: { 'x-user': currentUser.username },
+        })
+        if (!response.ok) return
+        const data = await response.json() as { allowedMenus?: unknown[] }
+        const freshMenus = normalizeAllowedMenus(data.allowedMenus)
+        setCurrentUser((prev) => {
+          if (!prev) return prev
+          const same =
+            prev.allowedMenus.length === freshMenus.length &&
+            freshMenus.every((m) => prev.allowedMenus.includes(m))
+          if (same) return prev
+          const updated: UserSession = { ...prev, allowedMenus: freshMenus }
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated))
+          return updated
+        })
+      } catch {
+        // silently ignore: keep existing session
+      }
+    }
+
+    void refresh()
+  }, [currentUser?.username])
+
   const handleExportReport = () => {
     const reportMatches = matches.filter((item) => item.ext === '.prw' || item.ext === '.tlpp')
     if (!reportMatches.length) return

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+﻿import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
 
 type DemandStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
@@ -210,6 +210,7 @@ export default function DigteDemandsTool() {
   }
 
   const closeModal = () => {
+    if (isSaving) return
     setIsModalOpen(false)
     setEditingId(null)
     setForm(EMPTY_FORM)
@@ -307,250 +308,215 @@ export default function DigteDemandsTool() {
   }, [items])
 
   return (
-    <div className="daily-activity-tool">
-      {error && <p className="error" role="alert">{error}</p>}
-      {success && <p className="success" role="status">{success}</p>}
-
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
-          {STATUS_OPTIONS.map((opt) => (
-            <div key={opt.value} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
-              <span style={{ fontSize: '1.5rem', fontWeight: 700 }}>{countByStatus[opt.value]}</span>
-              <span className={toStatusBadgeClass(opt.value)}>{opt.label}</span>
-            </div>
-          ))}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
-            <span style={{ fontSize: '1.5rem', fontWeight: 700 }}>{items.length}</span>
-            <span className="badge">Total</span>
+    <div className="estimativas-layout">
+      <section className="card">
+        <div className="estimativas-header-row">
+          <div>
+            <h2>Demandas DIGTE</h2>
+            <p className="muted">Registro e acompanhamento das demandas atendidas.</p>
           </div>
+          <button type="button" className="button-primary" onClick={openNew}>
+            Nova demanda
+          </button>
         </div>
-      </div>
 
-      <div className="card">
-        <div className="results__header">
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
-            <input
-              type="search"
-              placeholder="Buscar demandas..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ flex: 1, minWidth: '180px' }}
-            />
+        <div className="estimativas-stats">
+          {STATUS_OPTIONS.map((opt) => (
+            <span key={opt.value}>
+              {opt.label}: <strong>{countByStatus[opt.value]}</strong>
+            </span>
+          ))}
+          <span>Total: <strong>{items.length}</strong></span>
+          <div className="daily-activities-controls">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as 'all' | DemandStatus)}
-              style={{ minWidth: '160px' }}
             >
               <option value="all">Todos os status</option>
               {STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
               type="button"
               className="button-secondary"
               onClick={() => { void fetchDemands() }}
               disabled={isLoadingRecords}
             >
-              {isLoadingRecords ? 'Carregando...' : 'Atualizar'}
-            </button>
-            <button
-              type="button"
-              className="button-primary"
-              onClick={openNew}
-            >
-              Nova demanda
+              {isLoadingRecords ? 'Atualizando...' : 'Atualizar'}
             </button>
           </div>
         </div>
 
-        {isLoadingRecords && <p className="muted">Carregando demandas...</p>}
+        <div className="estimativas-filters">
+          <input
+            type="search"
+            placeholder="Buscar por numero, solicitante, descricao..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div />
+        </div>
 
-        {!isLoadingRecords && filteredItems.length === 0 && (
-          <p className="muted">Nenhuma demanda encontrada.</p>
-        )}
-
-        {filteredItems.length > 0 && (
-          <div className="csv-table" style={{ marginTop: '1rem' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Nro</th>
-                  <th>Data</th>
-                  <th>Tipo</th>
-                  <th>Solicitante</th>
-                  <th>Descricao</th>
-                  <th>Responsavel</th>
-                  <th>Status</th>
-                  <th>Acoes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item) => (
-                  <tr key={item.id}>
-                    <td style={{ whiteSpace: 'nowrap' }}>{item.number || `#${item.id}`}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{toDisplayDate(item.date)}</td>
-                    <td>{item.type}</td>
-                    <td>{item.requester}</td>
-                    <td style={{ maxWidth: '260px' }}>{item.description}</td>
-                    <td>{item.responsible}</td>
-                    <td>
-                      <span className={toStatusBadgeClass(item.status)}>
-                        {toStatusLabel(item.status)}
-                      </span>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <button
-                        type="button"
-                        className="button-secondary"
-                        style={{ marginRight: '0.5rem', padding: '0.25rem 0.6rem', fontSize: '0.85rem' }}
-                        onClick={() => openEdit(item)}
-                      >
+        <div className="estimativas-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Numero</th>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Solicitante</th>
+                <th>Descricao</th>
+                <th>Responsavel</th>
+                <th>Status</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.number || `#${item.id}`}</td>
+                  <td>{toDisplayDate(item.date)}</td>
+                  <td>{item.type || '-'}</td>
+                  <td>{item.requester}</td>
+                  <td>{item.description}</td>
+                  <td>{item.responsible || '-'}</td>
+                  <td>
+                    <span className={toStatusBadgeClass(item.status)}>
+                      {toStatusLabel(item.status)}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="estimativas-actions">
+                      <button type="button" className="button-secondary" onClick={() => openEdit(item)}>
                         Editar
                       </button>
                       <button
                         type="button"
-                        className="button-danger"
-                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.85rem' }}
                         onClick={() => { void handleDelete(item.id) }}
                         disabled={isDeleting === item.id}
                       >
                         {isDeleting === item.id ? '...' : 'Excluir'}
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {!filteredItems.length && <p className="muted">Nenhuma demanda encontrada.</p>}
+        {error && <p className="error">{error}</p>}
+        {success && <p className="success">{success}</p>}
+      </section>
 
       {isModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={editingId !== null ? 'Editar demanda' : 'Nova demanda'}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-          }}
-          onClick={(e) => { if (e.target === e.currentTarget) closeModal() }}
-        >
-          <div
-            style={{
-              background: '#fff', borderRadius: '12px', padding: '2rem',
-              width: '100%', maxWidth: '560px', maxHeight: '90vh', overflowY: 'auto',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-            }}
+        <div className="estimativas-modal-overlay" role="presentation" onClick={closeModal}>
+          <section
+            className="estimativas-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '1.5rem' }}>
-              {editingId !== null ? 'Editar demanda' : 'Nova demanda'}
-            </h2>
+            <div className="estimativas-modal__header">
+              <h3>{editingId !== null ? 'Editar demanda' : 'Nova demanda'}</h3>
+              <button type="button" className="button-secondary" onClick={closeModal} disabled={isSaving}>
+                Fechar
+              </button>
+            </div>
 
-            {error && <p className="error" role="alert">{error}</p>}
-
-            <form onSubmit={(e) => { void handleSubmit(e) }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <label>
-                  Numero
-                  <input
-                    type="text"
-                    value={form.number}
-                    readOnly={editingId === null}
-                    onChange={(e) => handleFormChange('number', e.target.value)}
-                    placeholder="Ex: DIG-2026-001"
-                    style={editingId === null ? { background: '#f0f7f5', cursor: 'default' } : undefined}
-                  />
-                </label>
-                <label>
-                  Data <span style={{ color: '#d97706' }}>*</span>
-                  <input
-                    type="date"
-                    value={form.date}
-                    onChange={(e) => handleFormChange('date', e.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  Tipo
-                  <input
-                    type="text"
-                    value={form.type}
-                    onChange={(e) => handleFormChange('type', e.target.value)}
-                    placeholder="Ex: Desenvolvimento, Suporte"
-                  />
-                </label>
-                <label>
-                  Status
-                  <select
-                    value={form.status}
-                    onChange={(e) => handleFormChange('status', e.target.value)}
-                  >
-                    {STATUS_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Solicitante <span style={{ color: '#d97706' }}>*</span>
-                  <input
-                    type="text"
-                    value={form.requester}
-                    onChange={(e) => handleFormChange('requester', e.target.value)}
-                    placeholder="Nome do solicitante"
-                    required
-                  />
-                </label>
-                <label>
-                  Responsavel <span style={{ color: '#d97706' }}>*</span>
-                  <input
-                    type="text"
-                    value={form.responsible}
-                    onChange={(e) => handleFormChange('responsible', e.target.value)}
-                    placeholder="Responsavel pelo atendimento"
-                    required
-                  />
-                </label>
-              </div>
-
-              <label style={{ marginTop: '1rem', display: 'block' }}>
-                Descricao <span style={{ color: '#d97706' }}>*</span>
+            <form className="estimativas-form" onSubmit={(e) => { void handleSubmit(e) }}>
+              <label>
+                Numero
+                <input
+                  type="text"
+                  value={form.number}
+                  readOnly={editingId === null}
+                  onChange={(e) => handleFormChange('number', e.target.value)}
+                  placeholder="Gerado automaticamente"
+                  style={editingId === null ? { background: '#f0f7f5', cursor: 'default' } : undefined}
+                />
+              </label>
+              <label>
+                Data *
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => handleFormChange('date', e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Tipo
+                <input
+                  type="text"
+                  value={form.type}
+                  onChange={(e) => handleFormChange('type', e.target.value)}
+                  placeholder="Ex: Desenvolvimento, Suporte"
+                />
+              </label>
+              <label>
+                Status
+                <select
+                  value={form.status}
+                  onChange={(e) => handleFormChange('status', e.target.value)}
+                >
+                  {STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Solicitante *
+                <input
+                  type="text"
+                  value={form.requester}
+                  onChange={(e) => handleFormChange('requester', e.target.value)}
+                  placeholder="Nome do solicitante"
+                  required
+                />
+              </label>
+              <label>
+                Responsavel *
+                <input
+                  type="text"
+                  value={form.responsible}
+                  onChange={(e) => handleFormChange('responsible', e.target.value)}
+                  placeholder="Responsavel pelo atendimento"
+                  required
+                />
+              </label>
+              <label className="estimativas-form__full">
+                Descricao *
                 <textarea
+                  rows={3}
                   value={form.description}
                   onChange={(e) => handleFormChange('description', e.target.value)}
                   placeholder="Descricao detalhada da demanda"
-                  rows={3}
                   required
-                  style={{ width: '100%', resize: 'vertical' }}
                 />
               </label>
-
-              <label style={{ marginTop: '1rem', display: 'block' }}>
+              <label className="estimativas-form__full">
                 Observacoes
                 <textarea
+                  rows={2}
                   value={form.notes}
                   onChange={(e) => handleFormChange('notes', e.target.value)}
                   placeholder="Informacoes adicionais (opcional)"
-                  rows={2}
-                  style={{ width: '100%', resize: 'vertical' }}
                 />
               </label>
 
-              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
-                <button type="button" className="button-secondary" onClick={closeModal} disabled={isSaving}>
-                  Cancelar
-                </button>
+              <div className="estimativas-actions estimativas-form__full">
                 <button type="submit" className="button-primary" disabled={isSaving}>
-                  {isSaving ? 'Salvando...' : editingId !== null ? 'Salvar alteracoes' : 'Cadastrar'}
+                  {isSaving ? 'Salvando...' : editingId !== null ? 'Atualizar' : 'Salvar'}
                 </button>
               </div>
             </form>
-          </div>
+          </section>
         </div>
       )}
     </div>
   )
 }
+

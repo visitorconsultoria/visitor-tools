@@ -39,6 +39,7 @@ function getSupabaseConfig() {
     dailyActivitiesTable: process.env.SUPABASE_DAILY_ACTIVITIES_TABLE || 'daily_activities',
     usersTable: process.env.SUPABASE_USERS_TABLE || 'app_users',
     dataDictionaryTable: process.env.SUPABASE_DATA_DICTIONARY_TABLE || 'data_dictionary',
+    digtDemandsTable: process.env.SUPABASE_DIGTE_DEMANDS_TABLE || 'digte_demands',
   }
 }
 
@@ -75,10 +76,11 @@ function getSupabaseClient() {
     dailyActivitiesTable: config.dailyActivitiesTable,
     usersTable: config.usersTable,
     dataDictionaryTable: config.dataDictionaryTable,
+    digtDemandsTable: config.digtDemandsTable,
   }
 }
 
-const MENU_KEYS = ['process', 'xml-excel', 'excel-csv-sqlite', 'resume-ranking', 'estimativas', 'daily-activities']
+const MENU_KEYS = ['process', 'xml-excel', 'excel-csv-sqlite', 'resume-ranking', 'estimativas', 'daily-activities', 'digte-demands']
 
 function normalizeMenuPermissions(value) {
   const items = Array.isArray(value) ? value : []
@@ -1050,6 +1052,169 @@ app.delete('/api/estimativas/:id', async (req, res) => {
     return res.status(500).json({ error: `Falha ao excluir estimativa: ${detail}` })
   }
 })
+
+// ---- DIGTE Demands ----
+
+const DIGTE_DEMAND_STATUSES = ['open', 'in_progress', 'done', 'cancelled']
+
+function normalizeDigteDemandStatus(value) {
+  const s = String(value || '').trim()
+  return DIGTE_DEMAND_STATUSES.includes(s) ? s : 'open'
+}
+
+function parseDigteDemandIdInput(value) {
+  const id = Number(String(value ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('ID da demanda invalido.')
+  }
+  return id
+}
+
+function normalizeDigteDemandRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    number: String(row.number ?? ''),
+    date: String(row.date ?? ''),
+    type: String(row.type ?? ''),
+    requester: String(row.requester ?? ''),
+    description: String(row.description ?? ''),
+    responsible: String(row.responsible ?? ''),
+    status: normalizeDigteDemandStatus(row.status),
+    notes: String(row.notes ?? ''),
+  }
+}
+
+function parseDigteDemandPayload(payload) {
+  return {
+    number: String(payload.number ?? '').trim(),
+    date: normalizeDateInput(String(payload.date ?? '')),
+    type: String(payload.type ?? '').trim(),
+    requester: String(payload.requester ?? '').trim(),
+    description: String(payload.description ?? '').trim(),
+    responsible: String(payload.responsible ?? '').trim(),
+    status: normalizeDigteDemandStatus(payload.status),
+    notes: String(payload.notes ?? '').trim(),
+  }
+}
+
+function validateDigteDemandPayload(parsed) {
+  const missing = []
+  if (!parsed.date) missing.push('date')
+  if (!parsed.requester) missing.push('requester')
+  if (!parsed.description) missing.push('description')
+  if (!parsed.responsible) missing.push('responsible')
+  if (missing.length) {
+    throw new Error(`Campos obrigatorios ausentes: ${missing.join(', ')}`)
+  }
+}
+
+async function listDigteDemands() {
+  const { client, digtDemandsTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(digtDemandsTable)
+    .select('id, number, date, type, requester, description, responsible, status, notes, created_at')
+    .order('date', { ascending: false })
+    .order('id', { ascending: false })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return (rows || []).map(normalizeDigteDemandRow)
+}
+
+async function createDigteDemand(payload) {
+  const parsed = parseDigteDemandPayload(payload)
+  validateDigteDemandPayload(parsed)
+
+  const { client, digtDemandsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(digtDemandsTable)
+    .insert(parsed)
+    .select('id, number, date, type, requester, description, responsible, status, notes')
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return normalizeDigteDemandRow(row)
+}
+
+async function updateDigteDemand(id, payload) {
+  const parsed = parseDigteDemandPayload(payload)
+  validateDigteDemandPayload(parsed)
+
+  const { client, digtDemandsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(digtDemandsTable)
+    .update(parsed)
+    .eq('id', id)
+    .select('id, number, date, type, requester, description, responsible, status, notes')
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return normalizeDigteDemandRow(row)
+}
+
+async function deleteDigteDemand(id) {
+  const { client, digtDemandsTable } = getSupabaseClient()
+  const { error } = await client
+    .from(digtDemandsTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+}
+
+app.get('/api/digte-demands', async (_req, res) => {
+  try {
+    const items = await listDigteDemands()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar demandas: ${detail}` })
+  }
+})
+
+app.post('/api/digte-demands', async (req, res) => {
+  try {
+    const item = await createDigteDemand(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar demanda: ${detail}` })
+  }
+})
+
+app.put('/api/digte-demands/:id', async (req, res) => {
+  try {
+    const id = parseDigteDemandIdInput(req.params.id)
+    const item = await updateDigteDemand(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar demanda: ${detail}` })
+  }
+})
+
+app.delete('/api/digte-demands/:id', async (req, res) => {
+  try {
+    const id = parseDigteDemandIdInput(req.params.id)
+    await deleteDigteDemand(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir demanda: ${detail}` })
+  }
+})
+
+// ---- Resume Ranking ----
 
 app.post('/api/resume-ranking/analyze', async (req, res) => {
   try {

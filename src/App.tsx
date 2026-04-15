@@ -8,6 +8,7 @@ import ResumeRankingTool from './components/ResumeRankingTool'
 import EstimativasTool from './components/EstimativasTool'
 import UserAccessTool from './components/UserAccessTool'
 import DailyActivityTool from './components/DailyActivityTool'
+import DigteDemandsTool from './components/DigteDemandsTool'
 
 type CsvData = {
   headers: string[]
@@ -29,7 +30,7 @@ type XmlExcelRoutineOption = {
   available: boolean
 }
 
-type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'user-admin'
+type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'user-admin'
 
 type AllowedMenu = Exclude<MenuPage, 'home'>
 
@@ -48,6 +49,7 @@ const MENU_LABELS: Record<AllowedMenu, string> = {
   'resume-ranking': 'Ranking de Curriculos',
   estimativas: 'Estimativas',
   'daily-activities': 'Apontamentos',
+  'digte-demands': 'Demandas DIGTE',
   'user-admin': 'Usuarios e Acessos',
 }
 
@@ -670,6 +672,20 @@ function App() {
               <span>Apontamentos</span>
             </button>
           )}
+          {canAccessPage('digte-demands', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'digte-demands' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('digte-demands')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'digte-demands' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">DG</span>
+              <span>Demandas DIGTE</span>
+            </button>
+          )}
           {canAccessPage('user-admin', currentUser) && (
             <button
               type="button"
@@ -703,6 +719,8 @@ function App() {
                   ? 'Controle de Estimativas'
                 : currentPage === 'daily-activities'
                   ? 'Apontamentos'
+                : currentPage === 'digte-demands'
+                  ? 'Demandas DIGTE'
                 : currentPage === 'user-admin'
                   ? 'Usuarios e Acessos'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
@@ -720,6 +738,8 @@ function App() {
                   ? 'Controle e acompanhamento de envio de estimativas de demandas'
                 : currentPage === 'daily-activities'
                   ? 'Registro diario das atividades executadas por recurso.'
+                : currentPage === 'digte-demands'
+                  ? 'Registro e acompanhamento das demandas atendidas para a DIGTE.'
                 : currentPage === 'user-admin'
                   ? 'Cadastro de usuarios e definicao de acesso aos itens de menu.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
@@ -786,6 +806,15 @@ function App() {
                     onClick={() => setCurrentPage('daily-activities')}
                   >
                     Abrir Apontamentos
+                  </button>
+                )}
+                {canAccessPage('digte-demands', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('digte-demands')}
+                  >
+                    Abrir Demandas DIGTE
                   </button>
                 )}
                 {canAccessPage('user-admin', currentUser) && (
@@ -873,6 +902,19 @@ function App() {
                     type="button"
                     className="button-secondary"
                     onClick={() => setCurrentPage('daily-activities')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('digte-demands', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Demandas DIGTE</h3>
+                  <p>Registre e acompanhe as demandas atendidas para a DIGTE por status e responsavel.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('digte-demands')}
                   >
                     Acessar
                   </button>
@@ -1122,6 +1164,8 @@ function App() {
           <EstimativasTool />
         ) : currentPage === 'daily-activities' ? (
           <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} />
+        ) : currentPage === 'digte-demands' ? (
+          <DigteDemandsTool />
         ) : currentPage === 'user-admin' ? (
           <UserAccessTool currentUsername={currentUser?.username || ''} />
         ) : xmlExcelRoutine === 's-5002' ? (

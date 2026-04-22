@@ -9,6 +9,7 @@ import EstimativasTool from './components/EstimativasTool'
 import UserAccessTool from './components/UserAccessTool'
 import DailyActivityTool from './components/DailyActivityTool'
 import DigteDemandsTool from './components/DigteDemandsTool'
+import ChangePasswordTool from './components/ChangePasswordTool'
 
 type CsvData = {
   headers: string[]
@@ -30,7 +31,7 @@ type XmlExcelRoutineOption = {
   available: boolean
 }
 
-type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'user-admin'
+type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'user-admin' | 'change-password'
 
 type AllowedMenu = Exclude<MenuPage, 'home'>
 
@@ -51,6 +52,7 @@ const MENU_LABELS: Record<AllowedMenu, string> = {
   'daily-activities': 'Apontamentos',
   'digte-demands': 'Demandas DIGTE',
   'user-admin': 'Usuarios e Acessos',
+  'change-password': 'Alterar Senha',
 }
 
 const XML_EXCEL_ROUTINES: XmlExcelRoutineOption[] = [
@@ -729,6 +731,20 @@ function App() {
               <span>Usuarios e Acessos</span>
             </button>
           )}
+          {currentUser && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'change-password' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('change-password')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'change-password' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon">CS</span>
+              <span>Alterar Senha</span>
+            </button>
+          )}
         </nav>
         <div className="sidebar__spacer" />
       </aside>
@@ -752,6 +768,8 @@ function App() {
                   ? 'Demandas DIGTE'
                 : currentPage === 'user-admin'
                   ? 'Usuarios e Acessos'
+                : currentPage === 'change-password'
+                  ? 'Alterar Senha'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
@@ -771,6 +789,8 @@ function App() {
                   ? 'Registro e acompanhamento das demandas atendidas para a DIGTE.'
                 : currentPage === 'user-admin'
                   ? 'Cadastro de usuarios e definicao de acesso aos itens de menu.'
+                : currentPage === 'change-password'
+                  ? 'Altere sua senha de acesso ao sistema.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -926,7 +946,7 @@ function App() {
               {canAccessPage('daily-activities', currentUser) && (
                 <section className="card home-tool">
                   <h3>Apontamentos</h3>
-                  <p>Registre atividades, horas e observacoes executadas por recurso em cada dia.</p>
+                  <p>Registre atividades, horas e observações executadas por recurso em cada dia.</p>
                   <button
                     type="button"
                     className="button-secondary"
@@ -939,7 +959,7 @@ function App() {
               {canAccessPage('digte-demands', currentUser) && (
                 <section className="card home-tool">
                   <h3>Demandas DIGTE</h3>
-                  <p>Registre e acompanhe as demandas atendidas para a DIGTE por status e responsavel.</p>
+                  <p>Registre e acompanhe as demandas atendidas para a DIGTE por status e responsável.</p>
                   <button
                     type="button"
                     className="button-secondary"
@@ -1192,11 +1212,13 @@ function App() {
         ) : currentPage === 'estimativas' ? (
           <EstimativasTool />
         ) : currentPage === 'daily-activities' ? (
-          <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} />
+          <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} hasDigteDemandsAccess={currentUser?.allowedMenus.includes('digte-demands') ?? false} />
         ) : currentPage === 'digte-demands' ? (
           <DigteDemandsTool />
         ) : currentPage === 'user-admin' ? (
           <UserAccessTool currentUsername={currentUser?.username || ''} />
+        ) : currentPage === 'change-password' ? (
+          <ChangePasswordTool currentUsername={currentUser?.username || ''} />
         ) : xmlExcelRoutine === 's-5002' ? (
           <XmlToExcelTool />
         ) : (

@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { apiUrl } from '../lib/api'
+import RichTextEditor from './RichTextEditor'
 
 type DemandStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
 
@@ -131,6 +133,7 @@ export default function DigteDemandsTool() {
   const [isLoadingRecords, setIsLoadingRecords] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [formVersion, setFormVersion] = useState(0)
   const [form, setForm] = useState<DigteDemandForm>(EMPTY_FORM)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState<number | null>(null)
@@ -187,6 +190,7 @@ export default function DigteDemandsTool() {
   const openNew = () => {
     setEditingId(null)
     setForm({ ...EMPTY_FORM, date: getCurrentDateISO(), number: generateNextNumber(items) })
+    setFormVersion((v) => v + 1)
     setError(null)
     setSuccess(null)
     setIsModalOpen(true)
@@ -204,6 +208,7 @@ export default function DigteDemandsTool() {
       status: item.status,
       notes: item.notes,
     })
+    setFormVersion((v) => v + 1)
     setError(null)
     setSuccess(null)
     setIsModalOpen(true)
@@ -366,10 +371,10 @@ export default function DigteDemandsTool() {
                 <th>Data</th>
                 <th>Tipo</th>
                 <th>Solicitante</th>
-                <th>Descricao</th>
-                <th>Responsavel</th>
+                <th>Descrição</th>
+                <th>Responsável</th>
                 <th>Status</th>
-                <th>Acoes</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -379,7 +384,12 @@ export default function DigteDemandsTool() {
                   <td>{toDisplayDate(item.date)}</td>
                   <td>{item.type || '-'}</td>
                   <td>{item.requester}</td>
-                  <td>{item.description}</td>
+                  <td>
+                    <div
+                      className="rich-preview"
+                      dangerouslySetInnerHTML={{ __html: item.description }}
+                    />
+                  </td>
                   <td>{item.responsible || '-'}</td>
                   <td>
                     <span className={toStatusBadgeClass(item.status)}>
@@ -411,7 +421,7 @@ export default function DigteDemandsTool() {
         {success && <p className="success">{success}</p>}
       </section>
 
-      {isModalOpen && (
+      {isModalOpen && typeof document !== 'undefined' && createPortal(
         <div className="estimativas-modal-overlay" role="presentation" onClick={closeModal}>
           <section
             className="estimativas-modal"
@@ -478,34 +488,37 @@ export default function DigteDemandsTool() {
                 />
               </label>
               <label>
-                Responsavel *
+                Responsável *
                 <input
                   type="text"
                   value={form.responsible}
                   onChange={(e) => handleFormChange('responsible', e.target.value)}
-                  placeholder="Responsavel pelo atendimento"
+                  placeholder="Responsável pelo atendimento"
                   required
                 />
               </label>
-              <label className="estimativas-form__full">
-                Descricao *
-                <textarea
-                  rows={3}
+              <div className="estimativas-form__full" style={{ display: 'grid', gap: '0.38rem', fontSize: '0.88rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
+                Descrição *
+                <RichTextEditor
+                  key={`desc-${formVersion}`}
                   value={form.description}
-                  onChange={(e) => handleFormChange('description', e.target.value)}
-                  placeholder="Descricao detalhada da demanda"
-                  required
+                  onChange={(html) => handleFormChange('description', html)}
+                  placeholder="Descrição detalhada da demanda"
+                  rows={4}
+                  disabled={isSaving}
                 />
-              </label>
-              <label className="estimativas-form__full">
-                Observacoes
-                <textarea
-                  rows={2}
+              </div>
+              <div className="estimativas-form__full" style={{ display: 'grid', gap: '0.38rem', fontSize: '0.88rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
+                Observações
+                <RichTextEditor
+                  key={`notes-${formVersion}`}
                   value={form.notes}
-                  onChange={(e) => handleFormChange('notes', e.target.value)}
-                  placeholder="Informacoes adicionais (opcional)"
+                  onChange={(html) => handleFormChange('notes', html)}
+                  placeholder="Informações adicionais (opcional)"
+                  rows={3}
+                  disabled={isSaving}
                 />
-              </label>
+              </div>
 
               <div className="estimativas-actions estimativas-form__full">
                 <button type="submit" className="button-primary" disabled={isSaving}>
@@ -514,7 +527,8 @@ export default function DigteDemandsTool() {
               </div>
             </form>
           </section>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

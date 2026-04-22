@@ -304,6 +304,62 @@ async function updateUser(id, payload) {
   return normalizeUserRow(row)
 }
 
+async function changeUserPassword(username, currentPassword, newPassword) {
+  const { client, usersTable } = getSupabaseClient()
+
+  const normalizedUsername = String(username || '').trim().toLowerCase()
+  const normalizedCurrentPassword = String(currentPassword || '')
+  const normalizedNewPassword = String(newPassword || '').trim()
+
+  if (!normalizedUsername) {
+    throw new Error('Usuario nao informado.')
+  }
+
+  if (!normalizedCurrentPassword) {
+    throw new Error('Senha atual obrigatoria.')
+  }
+
+  if (!normalizedNewPassword) {
+    throw new Error('Nova senha obrigatoria.')
+  }
+
+  if (normalizedCurrentPassword === normalizedNewPassword) {
+    throw new Error('Nova senha deve ser diferente da senha atual.')
+  }
+
+  const { data: row, error } = await client
+    .from(usersTable)
+    .select('id, username, password, is_active')
+    .eq('username', normalizedUsername)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  if (!row) {
+    throw new Error('Usuario nao encontrado.')
+  }
+
+  if (String(row.password || '') !== normalizedCurrentPassword) {
+    throw new Error('Senha atual incorreta.')
+  }
+
+  if (!row.is_active) {
+    throw new Error('Usuario inativo. Contate o administrador.')
+  }
+
+  const { error: updateError } = await client
+    .from(usersTable)
+    .update({ password: normalizedNewPassword })
+    .eq('id', row.id)
+
+  if (updateError) {
+    throw new Error(updateError.message)
+  }
+
+  return { ok: true }
+
 function normalizeDateInput(value) {
   if (typeof value !== 'string') return ''
   const trimmed = value.trim()
@@ -345,6 +401,7 @@ function normalizeDailyActivityRow(row) {
     activity: String(row.activity ?? ''),
     hours: String(row.hours ?? ''),
     notes: String(row.notes ?? ''),
+    demand: String(row.demand ?? ''),
   }
 }
 
@@ -355,6 +412,7 @@ function parseDailyActivityPayload(payload) {
     activity: String(payload.activity ?? '').trim(),
     hours: String(payload.hours ?? '').replace(',', '.').trim(),
     notes: String(payload.notes ?? '').trim(),
+    demand: String(payload.demand ?? '').trim(),
   }
 }
 
@@ -379,7 +437,7 @@ async function listDailyActivities(scope) {
 
   let query = client
     .from(dailyActivitiesTable)
-    .select('id, date, resource, activity, hours, notes, created_at')
+    .select('id, date, resource, activity, hours, notes, demand, created_at')
     .order('date', { ascending: false })
     .order('id', { ascending: false })
 
@@ -410,12 +468,13 @@ async function createDailyActivity(payload, scope) {
     activity: parsed.activity,
     hours: Number(parsed.hours),
     notes: parsed.notes,
+    demand: parsed.demand,
   }
 
   const { data: row, error } = await client
     .from(dailyActivitiesTable)
     .insert(insertPayload)
-    .select('id, date, resource, activity, hours, notes')
+    .select('id, date, resource, activity, hours, notes, demand')
     .single()
 
   if (error) {
@@ -457,13 +516,14 @@ async function updateDailyActivity(id, payload, scope) {
     activity: parsed.activity,
     hours: Number(parsed.hours),
     notes: parsed.notes,
+    demand: parsed.demand,
   }
 
   const { data: row, error } = await client
     .from(dailyActivitiesTable)
     .update(updatePayload)
     .eq('id', id)
-    .select('id, date, resource, activity, hours, notes')
+    .select('id, date, resource, activity, hours, notes, demand')
     .single()
 
   if (error) {
@@ -975,6 +1035,33 @@ app.get('/api/auth/me', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao obter permissoes: ${detail}` })
+  }
+})
+
+app.post('/api/auth/change-password', async (req, res) => {
+  try {
+    const usernameHeader = req.headers['x-user']
+    const raw = Array.isArray(usernameHeader) ? usernameHeader[0] : usernameHeader
+    const username = String(raw || '').trim().toLowerCase()
+
+    if (!username) {
+      return res.status(400).json({ error: 'Usuario nao informado.' })
+    }
+
+    const currentPassword = String(req.body?.currentPassword || '')
+    const newPassword = String(req.body?.newPassword || '').trim()
+    const confirmPassword = String(req.body?.confirmPassword || '').trim()
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'Nova senha e confirmacao nao conferem.' })
+    }
+
+    await changeUserPassword(username, currentPassword, newPassword)
+    return res.json({ ok: true, message: 'Senha alterada com sucesso.' })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /incorreta|nao encontrado|inativo/i.test(detail) ? 401 : 400
+    return res.status(status).json({ error: detail })
   }
 })
 

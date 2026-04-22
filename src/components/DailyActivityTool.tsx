@@ -8,6 +8,7 @@ type DailyActivityRow = {
   activity: string
   hours: string
   notes: string
+  demand: string
 }
 
 type DailyActivityForm = {
@@ -16,11 +17,19 @@ type DailyActivityForm = {
   activity: string
   hours: string
   notes: string
+  demand: string
+}
+
+type DailyDemandOption = {
+  id: number
+  number: string
+  description: string
 }
 
 type DailyActivityToolProps = {
   currentUsername: string
   currentDisplayName?: string
+  hasDigteDemandsAccess?: boolean
 }
 
 type UserResourceOption = {
@@ -35,6 +44,7 @@ const EMPTY_FORM: DailyActivityForm = {
   activity: '',
   hours: '',
   notes: '',
+  demand: '',
 }
 
 function getCurrentMonthKey(): string {
@@ -103,10 +113,11 @@ function normalizeActivityResponse(input: unknown): DailyActivityRow {
     activity: String(row.activity ?? ''),
     hours: String(row.hours ?? ''),
     notes: String(row.notes ?? ''),
+    demand: String(row.demand ?? ''),
   }
 }
 
-export default function DailyActivityTool({ currentUsername, currentDisplayName = '' }: DailyActivityToolProps) {
+export default function DailyActivityTool({ currentUsername, currentDisplayName = '', hasDigteDemandsAccess = false }: DailyActivityToolProps) {
   const [items, setItems] = useState<DailyActivityRow[]>([])
   const [search, setSearch] = useState('')
   const [monthFilter, setMonthFilter] = useState(getCurrentMonthKey)
@@ -118,6 +129,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [resourceOptions, setResourceOptions] = useState<string[]>([])
+  const [demandOptions, setDemandOptions] = useState<DailyDemandOption[]>([])
 
   const normalizedUsername = currentUsername.trim().toLowerCase()
   const loggedResourceName = currentDisplayName.trim() || currentUsername.trim()
@@ -206,6 +218,36 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
     if (!isVisitorUser) return
     void fetchResourceOptions()
   }, [isVisitorUser])
+
+  const fetchDemandOptions = async () => {
+    if (!hasDigteDemandsAccess) return
+    try {
+      const response = await fetch(apiUrl('/api/digte-demands'))
+      if (!response.ok) return
+      const data = await response.json() as { items?: unknown[] }
+      const demands = Array.isArray(data.items) ? data.items : []
+      const options = demands
+        .map((input) => {
+          const d = input as { id?: unknown; number?: unknown; description?: unknown; status?: unknown }
+          return {
+            id: Number(d.id ?? 0),
+            number: String(d.number ?? ''),
+            description: String(d.description ?? ''),
+            status: String(d.status ?? ''),
+          }
+        })
+        .filter((d) => d.status !== 'cancelled' && d.status !== 'done')
+        .sort((a, b) => a.number.localeCompare(b.number, 'pt-BR'))
+      setDemandOptions(options)
+    } catch {
+      setDemandOptions([])
+    }
+  }
+
+  useEffect(() => {
+    if (!hasDigteDemandsAccess) return
+    void fetchDemandOptions()
+  }, [hasDigteDemandsAccess])
 
   const monthItems = useMemo(() => {
     if (!monthFilter) return items
@@ -319,6 +361,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       activity: item.activity,
       hours: item.hours,
       notes: item.notes,
+      demand: item.demand,
     })
     setIsModalOpen(true)
   }
@@ -384,6 +427,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       activity: form.activity.trim(),
       hours: numericHours,
       notes: form.notes.trim(),
+      demand: form.demand.trim(),
     }
 
     try {
@@ -482,6 +526,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                 <th>Recurso</th>
                 <th>Atividade</th>
                 <th>Horas</th>
+                {hasDigteDemandsAccess && <th>Demanda</th>}
                 <th>Observacoes</th>
                 <th>Acoes</th>
               </tr>
@@ -494,6 +539,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                   <td>{item.resource}</td>
                   <td>{item.activity}</td>
                   <td>{formatHoursValue(parseHoursValue(item.hours))}</td>
+                  {hasDigteDemandsAccess && <td>{item.demand || '-'}</td>}
                   <td>{item.notes || '-'}</td>
                   <td>
                     <div className="estimativas-actions">
@@ -563,6 +609,19 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                 Atividade *
                 <textarea rows={2} value={form.activity} onChange={(event) => setFormValue('activity', event.target.value)} placeholder="Descreva a atividade executada" />
               </label>
+              {hasDigteDemandsAccess && (
+                <label>
+                  Demanda DIGTE
+                  <select value={form.demand} onChange={(event) => setFormValue('demand', event.target.value)}>
+                    <option value="">Sem demanda vinculada</option>
+                    {demandOptions.map((d) => (
+                      <option key={d.id} value={d.number}>
+                        {d.number}{d.description ? ` - ${d.description}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="estimativas-form__full">
                 Observacoes
                 <textarea rows={2} value={form.notes} onChange={(event) => setFormValue('notes', event.target.value)} placeholder="Informacoes adicionais" />

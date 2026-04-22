@@ -18,6 +18,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
+    "@tiptap/extension-image": "^3.22.3",
+    "@tiptap/extension-placeholder": "^3.22.3",
+    "@tiptap/pm": "^3.22.3",
+    "@tiptap/react": "^3.22.3",
+    "@tiptap/starter-kit": "^3.22.3",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
     "fast-xml-parser": "^5.4.1",

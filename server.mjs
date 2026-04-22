@@ -359,6 +359,7 @@ async function changeUserPassword(username, currentPassword, newPassword) {
   }
 
   return { ok: true }
+}
 
 function normalizeDateInput(value) {
   if (typeof value !== 'string') return ''

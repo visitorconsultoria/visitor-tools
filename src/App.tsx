@@ -61,6 +61,45 @@ const XML_EXCEL_ROUTINES: XmlExcelRoutineOption[] = [
   { id: 's-5501', label: 'Item S-5501', available: false },
 ]
 
+type SidebarIconName =
+  | 'home'
+  | 'process'
+  | 'xml-excel'
+  | 'excel-csv-sqlite'
+  | 'resume-ranking'
+  | 'estimativas'
+  | 'daily-activities'
+  | 'digte-demands'
+  | 'user-admin'
+  | 'change-password'
+
+function SidebarIcon({ name }: { name: SidebarIconName }) {
+  switch (name) {
+    case 'home':
+      return <path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-9.5z" />
+    case 'process':
+      return <path d="M4 6h7v5H4V6zm9 0h7v3h-7V6zM4 13h7v5H4v-5zm9-2h7v7h-7v-7z" />
+    case 'xml-excel':
+      return <path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm6 1.5V9h4.5M9 13h8M9 16h8" />
+    case 'excel-csv-sqlite':
+      return <path d="M12 4c4.97 0 9 1.57 9 3.5S16.97 11 12 11 3 9.43 3 7.5 7.03 4 12 4zm-9 7v5.5C3 18.43 7.03 20 12 20s9-1.57 9-3.5V11" />
+    case 'resume-ranking':
+      return <path d="M5 20V10m7 10V6m7 14v-8M4 4h16" />
+    case 'estimativas':
+      return <path d="M8 4h8l3 3v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h2zm2 6h6M10 14h6M10 18h4" />
+    case 'daily-activities':
+      return <path d="M12 7v5l3 2m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+    case 'digte-demands':
+      return <path d="M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9zm5-4h6a2 2 0 0 1 2 2v2H7V7a2 2 0 0 1 2-2z" />
+    case 'user-admin':
+      return <path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm8 2c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-1.79-4-4-4zM8 14c-2.67 0-6 1.34-6 4v2h4" />
+    case 'change-password':
+      return <path d="M7 11V8a5 5 0 1 1 10 0v3m-8 0h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
+    default:
+      return <path d="M4 12h16" />
+  }
+}
+
 function extractCsvNames(csvData: CsvData | null): Set<string> {
   if (!csvData) return new Set()
   const names = new Set<string>()
@@ -125,6 +164,7 @@ function parseStoredSession(raw: string | null): UserSession | null {
 function canAccessPage(page: MenuPage, session: UserSession | null): boolean {
   if (page === 'home') return true
   if (!session) return false
+  if (page === 'change-password') return true
   if (session.username === 'visitor') return true
   return session.allowedMenus.includes(page)
 }
@@ -595,7 +635,11 @@ function App() {
             }}
             aria-current={currentPage === 'home' ? 'page' : undefined}
           >
-            <span className="sidebar__icon">VT</span>
+            <span className="sidebar__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <SidebarIcon name="home" />
+              </svg>
+            </span>
             <span>Visitor Tools</span>
           </button>
           {canAccessPage('process', currentUser) && (
@@ -608,7 +652,11 @@ function App() {
               }}
               aria-current={currentPage === 'process' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">CP</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="process" />
+                </svg>
+              </span>
               <span>Comparar Projeto</span>
             </button>
           )}
@@ -623,7 +671,11 @@ function App() {
               }}
               aria-current={currentPage === 'xml-excel' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">XE</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="xml-excel" />
+                </svg>
+              </span>
               <span>XML para Excel</span>
             </button>
           )}
@@ -637,7 +689,11 @@ function App() {
               }}
               aria-current={currentPage === 'excel-csv-sqlite' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">SQ</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="excel-csv-sqlite" />
+                </svg>
+              </span>
               <span>Excel/CSV para SQL</span>
             </button>
           )}
@@ -671,7 +727,11 @@ function App() {
               }}
               aria-current={currentPage === 'resume-ranking' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">RR</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="resume-ranking" />
+                </svg>
+              </span>
               <span>Ranking de Currículos</span>
             </button>
           )}
@@ -685,7 +745,11 @@ function App() {
               }}
               aria-current={currentPage === 'estimativas' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">ES</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="estimativas" />
+                </svg>
+              </span>
               <span>Estimativas</span>
             </button>
           )}
@@ -699,7 +763,11 @@ function App() {
               }}
               aria-current={currentPage === 'daily-activities' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">AD</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="daily-activities" />
+                </svg>
+              </span>
               <span>Apontamentos</span>
             </button>
           )}
@@ -713,7 +781,11 @@ function App() {
               }}
               aria-current={currentPage === 'digte-demands' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">DG</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="digte-demands" />
+                </svg>
+              </span>
               <span>Demandas DIGTE</span>
             </button>
           )}
@@ -727,26 +799,34 @@ function App() {
               }}
               aria-current={currentPage === 'user-admin' ? 'page' : undefined}
             >
-              <span className="sidebar__icon">UA</span>
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="user-admin" />
+                </svg>
+              </span>
               <span>Usuarios e Acessos</span>
-            </button>
-          )}
-          {currentUser && (
-            <button
-              type="button"
-              className={`sidebar__link ${currentPage === 'change-password' ? 'sidebar__link--active' : ''}`}
-              onClick={() => {
-                setCurrentPage('change-password')
-                setShowSourceMenu(false)
-              }}
-              aria-current={currentPage === 'change-password' ? 'page' : undefined}
-            >
-              <span className="sidebar__icon">CS</span>
-              <span>Alterar Senha</span>
             </button>
           )}
         </nav>
         <div className="sidebar__spacer" />
+        {currentUser && (
+          <button
+            type="button"
+            className={`sidebar__link ${currentPage === 'change-password' ? 'sidebar__link--active' : ''}`}
+            onClick={() => {
+              setCurrentPage('change-password')
+              setShowSourceMenu(false)
+            }}
+            aria-current={currentPage === 'change-password' ? 'page' : undefined}
+          >
+            <span className="sidebar__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <SidebarIcon name="change-password" />
+              </svg>
+            </span>
+            <span>Alterar Senha</span>
+          </button>
+        )}
       </aside>
       <div className={`app app--${currentPage}`}>
         <header className="app__header">

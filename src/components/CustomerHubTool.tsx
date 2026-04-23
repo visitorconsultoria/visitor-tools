@@ -1,9 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { apiUrl } from '../lib/api'
 
 export type CustomerHubPage = 'dashboard' | 'clientes' | 'contatos' | 'sistemas' | 'processos' | 'historico'
 
-type ClienteStatus = 'Ativo' | 'Inativo' | 'Em Implantação'
-type ContatoTipo = 'Gestão' | 'Usuário' | 'Técnico'
+type ClienteStatus = 'Ativo' | 'Inativo' | 'Em Implantacao'
+type ContatoTipo = 'Gestao' | 'Usuario' | 'Tecnico'
+
+const CLIENTE_STATUS_LABEL: Record<ClienteStatus, string> = {
+  Ativo: 'Ativo',
+  Inativo: 'Inativo',
+  'Em Implantacao': 'Em Implantação',
+}
+
+const CONTATO_TIPO_LABEL: Record<ContatoTipo, string> = {
+  Gestao: 'Gestão',
+  Usuario: 'Usuário',
+  Tecnico: 'Técnico',
+}
 
 type Cliente = {
   id: string
@@ -57,45 +70,72 @@ function emptyModal<T>(): ModalState<T> {
   return { open: false, data: {} }
 }
 
-function generateId(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+// Convert API rows (numeric IDs) to frontend strings
+function mapCliente(r: Record<string, unknown>): Cliente {
+  return {
+    id: String(r.id ?? ''),
+    nome: String(r.nome ?? ''),
+    cnpj: String(r.cnpj ?? ''),
+    segmento: String(r.segmento ?? ''),
+    cidade: String(r.cidade ?? ''),
+    status: (r.status as ClienteStatus) ?? 'Ativo',
+    parceiro: String(r.parceiro ?? ''),
+  }
 }
 
-const INITIAL_CLIENTES: Cliente[] = [
-  { id: '1', nome: 'CETESB - Companhia Ambiental do Estado de SP', cnpj: '43.776.491/0017-0', segmento: 'Setor Público', cidade: 'São Paulo - SP', status: 'Ativo', parceiro: 'Totvs' },
-  { id: '2', nome: 'FIERN - Federação das Industrias do Estado do RN', cnpj: '84.357.780/0013-5', segmento: 'Sistema Indústria', cidade: 'Natal - RN', status: 'Ativo', parceiro: 'Totvs' },
-]
+function mapContato(r: Record<string, unknown>): Contato {
+  return {
+    id: String(r.id ?? ''),
+    nome: String(r.nome ?? ''),
+    clienteId: String(r.clienteId ?? ''),
+    cargo: String(r.cargo ?? ''),
+    departamento: String(r.departamento ?? ''),
+    email: String(r.email ?? ''),
+    telefone: String(r.telefone ?? ''),
+    tipo: (r.tipo as ContatoTipo) ?? 'Usuario',
+  }
+}
 
-const INITIAL_CONTATOS: Contato[] = [
-  { id: '1', nome: 'Marley Fugita', clienteId: '1', cargo: 'Gerente TI', departamento: 'TI', email: 'aic_cetesb@sp.gov.br', telefone: '11 99677-1399', tipo: 'Gestão' },
-  { id: '2', nome: 'Maria Antonieta', clienteId: '1', cargo: 'Gerente RH', departamento: 'RH', email: 'mapereira@sp.gov.br', telefone: '11 98152-3082', tipo: 'Gestão' },
-  { id: '3', nome: 'José Maria Delfim', clienteId: '1', cargo: 'Gerente Benefícios', departamento: 'RH', email: 'jdelfim@sp.gov.br', telefone: '11 99471-4541', tipo: 'Gestão' },
-  { id: '4', nome: 'KENIA COSTA', clienteId: '2', cargo: 'Gerência RH', departamento: 'RH', email: 'keniacosta@fiern.org.br', telefone: '84994071127', tipo: 'Gestão' },
-  { id: '5', nome: 'Oberdan Silva Costa', clienteId: '2', cargo: 'Analista de RH', departamento: 'RH', email: 'oberdancosta@fiern.org.br', telefone: '(84) 99431-6411', tipo: 'Usuário' },
-  { id: '6', nome: 'Seleucia Freitas', clienteId: '2', cargo: 'Oficial ADM', departamento: 'RH', email: 'sflima@fiern.org.br', telefone: '(84) 98834-8024', tipo: 'Usuário' },
-  { id: '7', nome: 'Cyntia Maria', clienteId: '2', cargo: 'Técnico de Segurança do Trabalho', departamento: 'RH', email: 'cyntialeite@rn.senai.br', telefone: '(84) 98852-5363', tipo: 'Usuário' },
-  { id: '8', nome: 'Elizziane Gama', clienteId: '2', cargo: 'Assistente ADM', departamento: 'RH', email: 'elizzianegama@rn.senai.br', telefone: '(84) 99992-0256', tipo: 'Usuário' },
-]
+function mapSistema(r: Record<string, unknown>): Sistema {
+  return {
+    id: String(r.id ?? ''),
+    produto: String(r.produto ?? ''),
+    clienteId: String(r.clienteId ?? ''),
+    modulo: String(r.modulo ?? ''),
+    versao: String(r.versao ?? ''),
+    contatoId: r.contatoId == null ? '' : String(r.contatoId),
+  }
+}
 
-const INITIAL_SISTEMAS: Sistema[] = [
-  { id: '1', produto: 'Protheus', clienteId: '1', modulo: 'ERP', versao: '-', contatoId: '1' },
-  { id: '2', produto: 'Protheus', clienteId: '1', modulo: 'SIGAGPE', versao: '-', contatoId: '2' },
-  { id: '3', produto: 'Protheus', clienteId: '1', modulo: 'SIGAPLS', versao: '-', contatoId: '3' },
-  { id: '4', produto: 'Protheus', clienteId: '2', modulo: 'SIGAGPE', versao: '24', contatoId: '4' },
-  { id: '5', produto: 'Protheus', clienteId: '2', modulo: 'SIGAPON', versao: '24', contatoId: '4' },
-  { id: '6', produto: 'Protheus', clienteId: '2', modulo: 'SIGAMDT', versao: '24', contatoId: '4' },
-  { id: '7', produto: 'Protheus', clienteId: '2', modulo: 'SIGATAF', versao: '12.1.2410', contatoId: '4' },
-  { id: '8', produto: 'Protheus', clienteId: '2', modulo: 'SIGATRM', versao: '24', contatoId: '4' },
-  { id: '9', produto: 'Protheus', clienteId: '2', modulo: 'MeuRH', versao: '24', contatoId: '4' },
-  { id: '10', produto: 'Outros', clienteId: '2', modulo: 'SURICATO', versao: '12.12.12', contatoId: '4' },
-]
+function mapProcesso(r: Record<string, unknown>): Processo {
+  return {
+    id: String(r.id ?? ''),
+    clienteId: String(r.clienteId ?? ''),
+    nome: String(r.nome ?? ''),
+    descricao: String(r.descricao ?? ''),
+    criadoEm: String(r.criadoEm ?? ''),
+  }
+}
+
+function mapAtividade(r: Record<string, unknown>): Atividade {
+  return {
+    id: String(r.id ?? ''),
+    clienteId: String(r.clienteId ?? ''),
+    tipo: String(r.tipo ?? ''),
+    descricao: String(r.descricao ?? ''),
+    data: String(r.data ?? ''),
+  }
+}
 
 export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage }) {
-  const [clientes, setClientes] = useState<Cliente[]>(INITIAL_CLIENTES)
-  const [contatos, setContatos] = useState<Contato[]>(INITIAL_CONTATOS)
-  const [sistemas, setSistemas] = useState<Sistema[]>(INITIAL_SISTEMAS)
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [contatos, setContatos] = useState<Contato[]>([])
+  const [sistemas, setSistemas] = useState<Sistema[]>([])
   const [processos, setProcessos] = useState<Processo[]>([])
   const [atividades, setAtividades] = useState<Atividade[]>([])
+
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const [clienteModal, setClienteModal] = useState<ModalState<Cliente>>(emptyModal())
   const [contatoModal, setContatoModal] = useState<ModalState<Contato>>(emptyModal())
@@ -105,6 +145,26 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
 
   const [filterClienteId, setFilterClienteId] = useState('')
 
+  // Bootstrap: load all data on mount
+  useEffect(() => {
+    setIsLoading(true)
+    setError(null)
+    fetch(apiUrl('/api/customer-hub/bootstrap'))
+      .then((res) => {
+        if (!res.ok) return res.json().then((b) => Promise.reject(new Error(b.error ?? `HTTP ${res.status}`)))
+        return res.json()
+      })
+      .then((data) => {
+        setClientes((data.clients ?? []).map(mapCliente))
+        setContatos((data.contacts ?? []).map(mapContato))
+        setSistemas((data.systems ?? []).map(mapSistema))
+        setProcessos((data.processes ?? []).map(mapProcesso))
+        setAtividades((data.activities ?? []).map(mapAtividade))
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Erro ao carregar dados.'))
+      .finally(() => setIsLoading(false))
+  }, [])
+
   const getClienteNome = (id: string) => clientes.find((c) => c.id === id)?.nome ?? '-'
   const getContatoNome = (id: string) => contatos.find((c) => c.id === id)?.nome ?? '-'
 
@@ -112,103 +172,178 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
     totalClientes: clientes.length,
     ativos: clientes.filter((c) => c.status === 'Ativo').length,
     inativos: clientes.filter((c) => c.status === 'Inativo').length,
-    emImplantacao: clientes.filter((c) => c.status === 'Em Implantação').length,
+    emImplantacao: clientes.filter((c) => c.status === 'Em Implantacao').length,
     totalContatos: contatos.length,
     totalSistemas: sistemas.length,
     totalAtividades: atividades.length,
   }), [clientes, contatos, sistemas, atividades])
 
   // CRUD — Clientes
-  const handleSaveCliente = () => {
+  const handleSaveCliente = async () => {
     const d = clienteModal.data
     if (!d.nome?.trim()) return
-    if (d.id) {
-      setClientes((prev) => prev.map((c) => (c.id === d.id ? { ...c, ...d } as Cliente : c)))
-    } else {
-      setClientes((prev) => [...prev, { id: generateId(), nome: '', cnpj: '', segmento: '', cidade: '', status: 'Ativo', parceiro: '', ...d } as Cliente])
+    const isEdit = !!d.id
+    const url = isEdit ? apiUrl(`/api/customer-hub/clients/${d.id}`) : apiUrl('/api/customer-hub/clients')
+    const method = isEdit ? 'PUT' : 'POST'
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const saved = mapCliente(body.item as Record<string, unknown>)
+      setClientes((prev) => isEdit ? prev.map((c) => c.id === saved.id ? saved : c) : [...prev, saved])
+      setClienteModal(emptyModal())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar cliente.')
     }
-    setClienteModal(emptyModal())
   }
 
-  const handleDeleteCliente = (id: string) => {
+  const handleDeleteCliente = async (id: string) => {
     if (!window.confirm('Excluir este cliente e todos os registros vinculados?')) return
-    setClientes((prev) => prev.filter((c) => c.id !== id))
-    setContatos((prev) => prev.filter((c) => c.clienteId !== id))
-    setSistemas((prev) => prev.filter((s) => s.clienteId !== id))
-    setProcessos((prev) => prev.filter((p) => p.clienteId !== id))
-    setAtividades((prev) => prev.filter((a) => a.clienteId !== id))
+    try {
+      const res = await fetch(apiUrl(`/api/customer-hub/clients/${id}`), { method: 'DELETE' })
+      if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setClientes((prev) => prev.filter((c) => c.id !== id))
+      setContatos((prev) => prev.filter((c) => c.clienteId !== id))
+      setSistemas((prev) => prev.filter((s) => s.clienteId !== id))
+      setProcessos((prev) => prev.filter((p) => p.clienteId !== id))
+      setAtividades((prev) => prev.filter((a) => a.clienteId !== id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir cliente.')
+    }
   }
 
   // CRUD — Contatos
-  const handleSaveContato = () => {
+  const handleSaveContato = async () => {
     const d = contatoModal.data
     if (!d.nome?.trim() || !d.clienteId) return
-    if (d.id) {
-      setContatos((prev) => prev.map((c) => (c.id === d.id ? { ...c, ...d } as Contato : c)))
-    } else {
-      setContatos((prev) => [...prev, { id: generateId(), nome: '', clienteId: '', cargo: '', departamento: '', email: '', telefone: '', tipo: 'Usuário', ...d } as Contato])
+    const isEdit = !!d.id
+    const url = isEdit ? apiUrl(`/api/customer-hub/contacts/${d.id}`) : apiUrl('/api/customer-hub/contacts')
+    const method = isEdit ? 'PUT' : 'POST'
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const saved = mapContato(body.item as Record<string, unknown>)
+      setContatos((prev) => isEdit ? prev.map((c) => c.id === saved.id ? saved : c) : [...prev, saved])
+      setContatoModal(emptyModal())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar contato.')
     }
-    setContatoModal(emptyModal())
   }
 
-  const handleDuplicateContato = (c: Contato) => {
-    setContatos((prev) => [...prev, { ...c, id: generateId(), nome: `${c.nome} (cópia)` }])
+  const handleDuplicateContato = async (c: Contato) => {
+    const payload = { ...c, id: undefined, nome: `${c.nome} (cópia)` }
+    try {
+      const res = await fetch(apiUrl('/api/customer-hub/contacts'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      setContatos((prev) => [...prev, mapContato(body.item as Record<string, unknown>)])
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao duplicar contato.')
+    }
   }
 
-  const handleDeleteContato = (id: string) => {
+  const handleDeleteContato = async (id: string) => {
     if (!window.confirm('Excluir este contato?')) return
-    setContatos((prev) => prev.filter((c) => c.id !== id))
+    try {
+      const res = await fetch(apiUrl(`/api/customer-hub/contacts/${id}`), { method: 'DELETE' })
+      if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setContatos((prev) => prev.filter((c) => c.id !== id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir contato.')
+    }
   }
 
   // CRUD — Sistemas
-  const handleSaveSistema = () => {
+  const handleSaveSistema = async () => {
     const d = sistemaModal.data
     if (!d.produto?.trim() || !d.clienteId) return
-    if (d.id) {
-      setSistemas((prev) => prev.map((s) => (s.id === d.id ? { ...s, ...d } as Sistema : s)))
-    } else {
-      setSistemas((prev) => [...prev, { id: generateId(), produto: '', clienteId: '', modulo: '', versao: '', contatoId: '', ...d } as Sistema])
+    const isEdit = !!d.id
+    const url = isEdit ? apiUrl(`/api/customer-hub/systems/${d.id}`) : apiUrl('/api/customer-hub/systems')
+    const method = isEdit ? 'PUT' : 'POST'
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const saved = mapSistema(body.item as Record<string, unknown>)
+      setSistemas((prev) => isEdit ? prev.map((s) => s.id === saved.id ? saved : s) : [...prev, saved])
+      setSistemaModal(emptyModal())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar sistema.')
     }
-    setSistemaModal(emptyModal())
   }
 
-  const handleDeleteSistema = (id: string) => {
+  const handleDeleteSistema = async (id: string) => {
     if (!window.confirm('Excluir este sistema?')) return
-    setSistemas((prev) => prev.filter((s) => s.id !== id))
+    try {
+      const res = await fetch(apiUrl(`/api/customer-hub/systems/${id}`), { method: 'DELETE' })
+      if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setSistemas((prev) => prev.filter((s) => s.id !== id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir sistema.')
+    }
   }
 
   // CRUD — Processos
-  const handleSaveProcesso = () => {
+  const handleSaveProcesso = async () => {
     const d = processoModal.data
     if (!d.nome?.trim() || !d.clienteId) return
-    if (d.id) {
-      setProcessos((prev) => prev.map((p) => (p.id === d.id ? { ...p, ...d } as Processo : p)))
-    } else {
-      setProcessos((prev) => [...prev, { id: generateId(), clienteId: '', nome: '', descricao: '', criadoEm: new Date().toISOString().slice(0, 10), ...d } as Processo])
+    const isEdit = !!d.id
+    const url = isEdit ? apiUrl(`/api/customer-hub/processes/${d.id}`) : apiUrl('/api/customer-hub/processes')
+    const method = isEdit ? 'PUT' : 'POST'
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const saved = mapProcesso(body.item as Record<string, unknown>)
+      setProcessos((prev) => isEdit ? prev.map((p) => p.id === saved.id ? saved : p) : [...prev, saved])
+      setProcessoModal(emptyModal())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar processo.')
     }
-    setProcessoModal(emptyModal())
   }
 
-  const handleDeleteProcesso = (id: string) => {
+  const handleDeleteProcesso = async (id: string) => {
     if (!window.confirm('Excluir este processo?')) return
-    setProcessos((prev) => prev.filter((p) => p.id !== id))
+    try {
+      const res = await fetch(apiUrl(`/api/customer-hub/processes/${id}`), { method: 'DELETE' })
+      if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setProcessos((prev) => prev.filter((p) => p.id !== id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir processo.')
+    }
   }
 
   // CRUD — Histórico
-  const handleSaveAtividade = () => {
+  const handleSaveAtividade = async () => {
     const d = atividadeModal.data
     if (!d.descricao?.trim() || !d.clienteId) return
-    if (d.id) {
-      setAtividades((prev) => prev.map((a) => (a.id === d.id ? { ...a, ...d } as Atividade : a)))
-    } else {
-      setAtividades((prev) => [...prev, { id: generateId(), clienteId: '', tipo: 'Atividade', descricao: '', data: new Date().toISOString().slice(0, 10), ...d } as Atividade])
+    const isEdit = !!d.id
+    const url = isEdit ? apiUrl(`/api/customer-hub/activities/${d.id}`) : apiUrl('/api/customer-hub/activities')
+    const method = isEdit ? 'PUT' : 'POST'
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const saved = mapAtividade(body.item as Record<string, unknown>)
+      setAtividades((prev) => isEdit ? prev.map((a) => a.id === saved.id ? saved : a) : [...prev, saved])
+      setAtividadeModal(emptyModal())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar atividade.')
     }
-    setAtividadeModal(emptyModal())
   }
 
-  const handleDeleteAtividade = (id: string) => {
+  const handleDeleteAtividade = async (id: string) => {
     if (!window.confirm('Excluir esta atividade?')) return
-    setAtividades((prev) => prev.filter((a) => a.id !== id))
+    try {
+      const res = await fetch(apiUrl(`/api/customer-hub/activities/${id}`), { method: 'DELETE' })
+      if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setAtividades((prev) => prev.filter((a) => a.id !== id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir atividade.')
+    }
   }
 
   const filteredContatos = filterClienteId ? contatos.filter((c) => c.clienteId === filterClienteId) : contatos
@@ -217,6 +352,14 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
   const filteredAtividades = filterClienteId ? atividades.filter((a) => a.clienteId === filterClienteId) : atividades
 
   // ── DASHBOARD ──────────────────────────────────────────────────────────────
+  if (isLoading) {
+    return <div className="customer-hub"><p className="muted">Carregando...</p></div>
+  }
+
+  if (error) {
+    return <div className="customer-hub"><p className="error-message">{error}</p></div>
+  }
+
   if (subPage === 'dashboard') {
     return (
       <div className="customer-hub">
@@ -316,9 +459,9 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                 <label>
                   Status
                   <select value={d.status ?? 'Ativo'} onChange={(e) => setClienteModal((m) => ({ ...m, data: { ...m.data, status: e.target.value as ClienteStatus } }))}>
-                    <option>Ativo</option>
-                    <option>Inativo</option>
-                    <option>Em Implantação</option>
+                    <option value="Ativo">Ativo</option>
+                    <option value="Inativo">Inativo</option>
+                    <option value="Em Implantacao">Em Implantação</option>
                   </select>
                 </label>
                 <label>
@@ -366,7 +509,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                     <td>{c.cidade}</td>
                     <td>
                       <span className={`ch-badge ch-badge--${c.status === 'Ativo' ? 'ativo' : c.status === 'Inativo' ? 'inativo' : 'implantacao'}`}>
-                        {c.status}
+                        {CLIENTE_STATUS_LABEL[c.status] ?? c.status}
                       </span>
                     </td>
                     <td>{c.parceiro}</td>
@@ -428,10 +571,10 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                 </label>
                 <label>
                   Tipo
-                  <select value={d.tipo ?? 'Usuário'} onChange={(e) => setContatoModal((m) => ({ ...m, data: { ...m.data, tipo: e.target.value as ContatoTipo } }))}>
-                    <option>Gestão</option>
-                    <option>Usuário</option>
-                    <option>Técnico</option>
+                  <select value={d.tipo ?? 'Usuario'} onChange={(e) => setContatoModal((m) => ({ ...m, data: { ...m.data, tipo: e.target.value as ContatoTipo } }))}>
+                    <option value="Gestao">Gestão</option>
+                    <option value="Usuario">Usuário</option>
+                    <option value="Tecnico">Técnico</option>
                   </select>
                 </label>
               </div>
@@ -454,7 +597,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                 <option value="">Todos os Clientes</option>
                 {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
-              <button type="button" className="button-primary" onClick={() => setContatoModal({ open: true, data: { tipo: 'Usuário' } })}>
+              <button type="button" className="button-primary" onClick={() => setContatoModal({ open: true, data: { tipo: 'Usuario' } })}>
                 + Novo Contato
               </button>
             </div>
@@ -482,7 +625,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                       {c.telefone && <><br /><span className="muted">{c.telefone}</span></>}
                     </td>
                     <td>
-                      <span className={`ch-badge ch-badge--tipo-${c.tipo.toLowerCase()}`}>{c.tipo}</span>
+                      <span className={`ch-badge ch-badge--tipo-${c.tipo.toLowerCase()}`}>{CONTATO_TIPO_LABEL[c.tipo] ?? c.tipo}</span>
                     </td>
                     <td>
                       <div className="ch-row-actions">

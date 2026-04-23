@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
 
-type MenuPermission = 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands'
+type MenuPermission = 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'customer-hub'
 
 type UserRow = {
   id: number
@@ -31,6 +31,7 @@ const MENU_OPTIONS: Array<{ key: MenuPermission, label: string }> = [
   { key: 'estimativas', label: 'Estimativas' },
   { key: 'daily-activities', label: 'Apontamentos' },
   { key: 'digte-demands', label: 'Demandas DIGTE' },
+  { key: 'customer-hub', label: 'Central de Clientes' },
 ]
 
 const EMPTY_FORM: UserFormState = {

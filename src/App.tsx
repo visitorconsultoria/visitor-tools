@@ -10,6 +10,7 @@ import UserAccessTool from './components/UserAccessTool'
 import DailyActivityTool from './components/DailyActivityTool'
 import DigteDemandsTool from './components/DigteDemandsTool'
 import ChangePasswordTool from './components/ChangePasswordTool'
+import CustomerHubTool, { type CustomerHubPage } from './components/CustomerHubTool'
 
 type CsvData = {
   headers: string[]
@@ -31,7 +32,7 @@ type XmlExcelRoutineOption = {
   available: boolean
 }
 
-type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'user-admin' | 'change-password'
+type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'customer-hub' | 'user-admin' | 'change-password'
 
 type AllowedMenu = Exclude<MenuPage, 'home'>
 
@@ -51,9 +52,19 @@ const MENU_LABELS: Record<AllowedMenu, string> = {
   estimativas: 'Estimativas',
   'daily-activities': 'Apontamentos',
   'digte-demands': 'Demandas DIGTE',
+  'customer-hub': 'Central de Clientes',
   'user-admin': 'Usuarios e Acessos',
   'change-password': 'Alterar Senha',
 }
+
+const CUSTOMER_HUB_PAGES: Array<{ id: CustomerHubPage; label: string }> = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'clientes', label: 'Clientes' },
+  { id: 'contatos', label: 'Contatos' },
+  { id: 'sistemas', label: 'Sistemas' },
+  { id: 'processos', label: 'Processos' },
+  { id: 'historico', label: 'Histórico' },
+]
 
 const XML_EXCEL_ROUTINES: XmlExcelRoutineOption[] = [
   { id: 's-5002', label: 'Item S-5002', available: true },
@@ -70,6 +81,7 @@ type SidebarIconName =
   | 'estimativas'
   | 'daily-activities'
   | 'digte-demands'
+  | 'customer-hub'
   | 'user-admin'
   | 'change-password'
 
@@ -93,6 +105,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9zm5-4h6a2 2 0 0 1 2 2v2H7V7a2 2 0 0 1 2-2z" />
     case 'user-admin':
       return <path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm8 2c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-1.79-4-4-4zM8 14c-2.67 0-6 1.34-6 4v2h4" />
+    case 'customer-hub':
+      return <path d="M17 20h5v-2a3 3 0 0 0-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 0 1 9.288 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
     case 'change-password':
       return <path d="M7 11V8a5 5 0 1 1 10 0v3m-8 0h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
     default:
@@ -321,6 +335,7 @@ function App() {
   const [showSourceMenu, setShowSourceMenu] = useState(false)
   const [currentPage, setCurrentPage] = useState<MenuPage>('home')
   const [xmlExcelRoutine, setXmlExcelRoutine] = useState<XmlExcelRoutine>('s-5002')
+  const [customerHubPage, setCustomerHubPage] = useState<CustomerHubPage>('dashboard')
   const sourceMenuRef = useRef<HTMLDivElement | null>(null)
 
   const csvNames = useMemo(() => extractCsvNames(csvData), [csvData])
@@ -789,6 +804,44 @@ function App() {
               <span>Demandas DIGTE</span>
             </button>
           )}
+          {canAccessPage('customer-hub', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'customer-hub' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('customer-hub')
+                setCustomerHubPage('dashboard')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'customer-hub' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="customer-hub" />
+                </svg>
+              </span>
+              <span>Central de Clientes</span>
+            </button>
+          )}
+          {canAccessPage('customer-hub', currentUser) && currentPage === 'customer-hub' && (
+            <div className="sidebar__subnav" aria-label="Central de Clientes">
+              {CUSTOMER_HUB_PAGES.map((page) => (
+                <button
+                  key={page.id}
+                  type="button"
+                  className={`sidebar__sublink ${customerHubPage === page.id ? 'sidebar__sublink--active' : ''}`}
+                  onClick={() => {
+                    setCurrentPage('customer-hub')
+                    setCustomerHubPage(page.id)
+                    setShowSourceMenu(false)
+                  }}
+                  aria-current={customerHubPage === page.id ? 'page' : undefined}
+                >
+                  {page.label}
+                </button>
+              ))}
+            </div>
+          )}
           {canAccessPage('user-admin', currentUser) && (
             <button
               type="button"
@@ -810,22 +863,24 @@ function App() {
         </nav>
         <div className="sidebar__spacer" />
         {currentUser && (
-          <button
-            type="button"
-            className={`sidebar__link ${currentPage === 'change-password' ? 'sidebar__link--active' : ''}`}
-            onClick={() => {
-              setCurrentPage('change-password')
-              setShowSourceMenu(false)
-            }}
-            aria-current={currentPage === 'change-password' ? 'page' : undefined}
-          >
-            <span className="sidebar__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <SidebarIcon name="change-password" />
-              </svg>
-            </span>
-            <span>Alterar Senha</span>
-          </button>
+          <div className="sidebar__footer">
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'change-password' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('change-password')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'change-password' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="change-password" />
+                </svg>
+              </span>
+              <span>Alterar Senha</span>
+            </button>
+          </div>
         )}
       </aside>
       <div className={`app app--${currentPage}`}>
@@ -850,6 +905,8 @@ function App() {
                   ? 'Usuarios e Acessos'
                 : currentPage === 'change-password'
                   ? 'Alterar Senha'
+                : currentPage === 'customer-hub'
+                  ? 'Central de Clientes'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
@@ -871,6 +928,8 @@ function App() {
                   ? 'Cadastro de usuarios e definicao de acesso aos itens de menu.'
                 : currentPage === 'change-password'
                   ? 'Altere sua senha de acesso ao sistema.'
+                : currentPage === 'customer-hub'
+                  ? 'Gestão de clientes, contatos, sistemas e atividades.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -953,6 +1012,15 @@ function App() {
                     onClick={() => setCurrentPage('user-admin')}
                   >
                     Abrir Usuarios e Acessos
+                  </button>
+                )}
+                {canAccessPage('customer-hub', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => { setCurrentPage('customer-hub'); setCustomerHubPage('dashboard') }}
+                  >
+                    Abrir Central de Clientes
                   </button>
                 )}
               </div>
@@ -1057,6 +1125,19 @@ function App() {
                     type="button"
                     className="button-secondary"
                     onClick={() => setCurrentPage('user-admin')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('customer-hub', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Central de Clientes</h3>
+                  <p>Gerencie clientes, contatos, sistemas implementados, processos e histórico de atividades.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => { setCurrentPage('customer-hub'); setCustomerHubPage('dashboard') }}
                   >
                     Acessar
                   </button>
@@ -1295,6 +1376,8 @@ function App() {
           <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} hasDigteDemandsAccess={currentUser?.allowedMenus.includes('digte-demands') ?? false} />
         ) : currentPage === 'digte-demands' ? (
           <DigteDemandsTool />
+        ) : currentPage === 'customer-hub' ? (
+          <CustomerHubTool subPage={customerHubPage} />
         ) : currentPage === 'user-admin' ? (
           <UserAccessTool currentUsername={currentUser?.username || ''} />
         ) : currentPage === 'change-password' ? (

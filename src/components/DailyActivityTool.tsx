@@ -507,17 +507,22 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
           </div>
         </div>
 
-        <div className="estimativas-filters">
-          <input
-            type="search"
-            placeholder="Buscar por data, recurso, atividade ou observacao..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <div />
+        <div className="ch-table-toolbar ch-table-toolbar--single">
+          <label className="ch-table-search">
+            <span className="ch-table-search__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            </span>
+            <input
+              type="search"
+              placeholder="Buscar por data, recurso, atividade ou observacao..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              aria-label="Buscar apontamento"
+            />
+          </label>
         </div>
 
-        <div className="estimativas-table">
+        <div className="estimativas-table ch-table-theme">
           <table>
             <thead>
               <tr>
@@ -542,12 +547,12 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                   {hasDigteDemandsAccess && <td>{item.demand || '-'}</td>}
                   <td>{item.notes || '-'}</td>
                   <td>
-                    <div className="estimativas-actions">
-                      <button type="button" className="button-secondary" onClick={() => openEditModal(item)}>
-                        Editar
+                    <div className="ch-row-actions ch-row-actions--icons">
+                      <button type="button" className="ch-icon-action" title="Editar" onClick={() => openEditModal(item)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
-                      <button type="button" onClick={() => void removeItem(item.id)}>
-                        Excluir
+                      <button type="button" className="ch-icon-action ch-icon-action--danger" title="Excluir" onClick={() => void removeItem(item.id)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                       </button>
                     </div>
                   </td>

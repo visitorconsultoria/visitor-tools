@@ -223,17 +223,29 @@ function XmlToExcelTool() {
   const [lastGeneratedFile, setLastGeneratedFile] = useState<string | null>(null)
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([])
   const [previewRows, setPreviewRows] = useState<XmlRow[]>([])
+  const [previewSearch, setPreviewSearch] = useState('')
 
   const warningCount = warnings.length
 
+  const filteredPreviewRows = useMemo(() => {
+    const term = previewSearch.trim().toLowerCase()
+    if (!term) return previewRows
+
+    return previewRows.filter((row) => {
+      const haystack = previewHeaders.map((header) => row[header] ?? '').join(' ').toLowerCase()
+      return haystack.includes(term)
+    })
+  }, [previewRows, previewHeaders, previewSearch])
+
   const previewMatrix = useMemo(() => {
-    return previewRows.slice(0, MAX_PREVIEW_ROWS).map((row) => previewHeaders.map((header) => row[header] ?? ''))
-  }, [previewRows, previewHeaders])
+    return filteredPreviewRows.slice(0, MAX_PREVIEW_ROWS).map((row) => previewHeaders.map((header) => row[header] ?? ''))
+  }, [filteredPreviewRows, previewHeaders])
 
   const handleXmlFilesChange = (event: ChangeEvent<HTMLInputElement>) => {
     setError(null)
     setWarnings([])
     setLastGeneratedFile(null)
+    setPreviewSearch('')
 
     const files = event.target.files
     setXmlFiles(files ? Array.from(files) : [])
@@ -297,6 +309,7 @@ function XmlToExcelTool() {
 
       setPreviewHeaders(headers)
       setPreviewRows(finalRows)
+      setPreviewSearch('')
       setWarnings(parseWarnings.map((item) => `${item.fileName}: ${item.detail}`))
       setLastGeneratedFile(fileName)
     } catch (processError) {
@@ -382,9 +395,25 @@ function XmlToExcelTool() {
           <div className="csv-preview">
             <div className="csv-summary">
               <span>Colunas: {previewHeaders.length}</span>
-              <span>Linhas (total): {previewRows.length}</span>
+              <span>Linhas (total): {filteredPreviewRows.length}</span>
             </div>
-            <div className="csv-table">
+
+            <div className="ch-table-toolbar ch-table-toolbar--single">
+              <label className="ch-table-search">
+                <span className="ch-table-search__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+                </span>
+                <input
+                  type="search"
+                  value={previewSearch}
+                  onChange={(event) => setPreviewSearch(event.target.value)}
+                  placeholder="Buscar na pré-visualização por qualquer coluna..."
+                  aria-label="Buscar na pré-visualização"
+                />
+              </label>
+            </div>
+
+            <div className="csv-table ch-table-theme">
               <table>
                 <thead>
                   <tr>
@@ -404,7 +433,7 @@ function XmlToExcelTool() {
                 </tbody>
               </table>
             </div>
-            {previewRows.length > MAX_PREVIEW_ROWS && (
+            {filteredPreviewRows.length > MAX_PREVIEW_ROWS && (
               <p className="muted">Pré-visualização limitada a {MAX_PREVIEW_ROWS} linhas.</p>
             )}
           </div>

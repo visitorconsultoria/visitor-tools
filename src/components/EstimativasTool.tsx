@@ -686,21 +686,27 @@ export default function EstimativasTool() {
           </button>
         </div>
 
-        <div className="estimativas-filters">
-          <input
-            type="search"
-            placeholder="Buscar por codigo, parceiro, cliente, demanda..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | EstimateStatus)}>
+        <div className="ch-table-toolbar">
+          <label className="ch-table-search">
+            <span className="ch-table-search__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            </span>
+            <input
+              type="search"
+              placeholder="Buscar por codigo, parceiro, cliente, demanda..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              aria-label="Buscar estimativa"
+            />
+          </label>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | EstimateStatus)} className="ch-filter-select">
             <option value="all">Todos</option>
             <option value="pending">Pendentes</option>
             <option value="sent">Enviadas</option>
           </select>
         </div>
 
-        <div className="estimativas-table">
+        <div className="estimativas-table ch-table-theme">
           <table>
             <thead>
               <tr>
@@ -729,20 +735,25 @@ export default function EstimativasTool() {
                     </span>
                   </td>
                   <td>
-                    <div className="estimativas-actions">
-                      <button type="button" className="button-secondary" onClick={() => openViewModal(estimate)}>
-                        Visualizar
+                    <div className="ch-row-actions ch-row-actions--icons">
+                      <button type="button" className="ch-icon-action" title="Visualizar" onClick={() => openViewModal(estimate)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
-                      <button type="button" className="button-secondary" onClick={() => void printEstimatePdf(estimate)}>
-                        Imprimir
+                      <button type="button" className="ch-icon-action" title="Imprimir" onClick={() => void printEstimatePdf(estimate)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                       </button>
-                      <button type="button" className="button-secondary" onClick={() => openEditModal(estimate)}>
-                        Editar
+                      <button type="button" className="ch-icon-action" title="Editar" onClick={() => openEditModal(estimate)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
-                      <button type="button" className="button-secondary" onClick={() => void toggleStatus(estimate)}>
-                        {estimate.status === 'sent' ? 'Marcar como pendente' : 'Marcar como enviado'}
+                      <button type="button" className="ch-icon-action" title={estimate.status === 'sent' ? 'Marcar como pendente' : 'Marcar como enviado'} onClick={() => void toggleStatus(estimate)}>
+                        {estimate.status === 'sent'
+                          ? <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+                          : <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        }
                       </button>
-                      <button type="button" onClick={() => void removeEstimate(estimate.id)}>Excluir</button>
+                      <button type="button" className="ch-icon-action ch-icon-action--danger" title="Excluir" onClick={() => void removeEstimate(estimate.id)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -828,7 +839,7 @@ export default function EstimativasTool() {
                     <button type="button" className="button-secondary" onClick={addFormItem}>Adicionar item</button>
                   )}
                 </div>
-                <div className="estimativas-table">
+                <div className="estimativas-table ch-table-theme">
                   <table>
                     <thead>
                       <tr>

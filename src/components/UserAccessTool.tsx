@@ -77,6 +77,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [userSearch, setUserSearch] = useState('')
 
   const isVisitor = currentUsername.trim().toLowerCase() === 'visitor'
   const isEditingVisitor = editingId !== null && form.username.trim().toLowerCase() === 'visitor'
@@ -85,6 +86,24 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
     () => ({ 'x-admin-user': currentUsername.trim().toLowerCase() }),
     [currentUsername],
   )
+
+  const filteredUsers = useMemo(() => {
+    const term = userSearch.trim().toLowerCase()
+    if (!term) return users
+
+    return users.filter((user) => {
+      const haystack = [
+        user.username,
+        user.displayName,
+        user.isActive ? 'ativo' : 'inativo',
+        user.allowedMenus.join(' '),
+      ]
+        .join(' ')
+        .toLowerCase()
+
+      return haystack.includes(term)
+    })
+  }, [users, userSearch])
 
   const fetchUsers = async () => {
     setError(null)
@@ -328,7 +347,22 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
           </button>
         </div>
 
-        <div className="estimativas-table" style={{ marginTop: '0.8rem' }}>
+        <div className="ch-table-toolbar ch-table-toolbar--single" style={{ marginTop: '0.8rem' }}>
+          <label className="ch-table-search">
+            <span className="ch-table-search__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            </span>
+            <input
+              type="search"
+              value={userSearch}
+              onChange={(event) => setUserSearch(event.target.value)}
+              placeholder="Buscar por usuario, nome, status ou permissoes..."
+              aria-label="Buscar usuário"
+            />
+          </label>
+        </div>
+
+        <div className="estimativas-table ch-table-theme">
           <table>
             <thead>
               <tr>
@@ -340,20 +374,22 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
+              {filteredUsers.map((user) => (
                 <tr key={user.id}>
                   <td>{user.username}</td>
                   <td>{user.displayName || '-'}</td>
                   <td>{user.isActive ? 'Ativo' : 'Inativo'}</td>
                   <td>{user.username === 'visitor' ? 'Completo' : user.allowedMenus.join(', ') || '-'}</td>
                   <td>
-                    <button type="button" className="button-secondary" onClick={() => startEdit(user)}>
-                      Editar
-                    </button>
+                    <div className="ch-row-actions ch-row-actions--icons">
+                      <button type="button" className="ch-icon-action" title="Editar" onClick={() => startEdit(user)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
-              {!users.length && (
+              {!filteredUsers.length && (
                 <tr>
                   <td colSpan={5}>Nenhum usuario cadastrado.</td>
                 </tr>

@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "deploy:prod": "node scripts/deploy-prod.mjs"
+    "deploy:prod": "node scripts/deploy-prod.mjs",
+    "import:customer-hub": "node scripts/import-customer-hub-xlsx.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",

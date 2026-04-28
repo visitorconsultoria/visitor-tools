@@ -64,6 +64,11 @@ SUPABASE_ESTIMATIVA_ITEMS_TABLE=estimativa_items
 SUPABASE_DAILY_ACTIVITIES_TABLE=daily_activities
 SUPABASE_USERS_TABLE=app_users
 SUPABASE_DATA_DICTIONARY_TABLE=data_dictionary
+SUPABASE_CUSTOMER_CLIENTS_TABLE=customer_hub_clients
+SUPABASE_CUSTOMER_CONTACTS_TABLE=customer_hub_contacts
+SUPABASE_CUSTOMER_SYSTEMS_TABLE=customer_hub_systems
+SUPABASE_CUSTOMER_PROCESSES_TABLE=customer_hub_processes
+SUPABASE_CUSTOMER_ACTIVITIES_TABLE=customer_hub_activities
 CORS_ALLOWED_ORIGINS=https://SEU_USUARIO.github.io
 ```
 
@@ -140,7 +145,7 @@ A aplicacao agora autentica usuarios no Supabase e permite cadastro de novos usu
 
 Regras:
 - A rotina `Usuarios e Acessos` e exclusiva do usuario `visitor`.
-- Cada usuario pode receber acesso aos menus: `Comparar Projeto`, `XML para Excel`, `Excel/CSV para SQL`, `Ranking de Curriculos`, `Estimativas` e `Apontamentos`.
+- Cada usuario pode receber acesso aos menus: `Comparar Projeto`, `XML para Excel`, `Excel/CSV para SQL`, `Ranking de Curriculos`, `Estimativas`, `Apontamentos`, `Demandas DIGTE` e `Central de Clientes`.
 
 1. Crie a tabela de usuarios no Supabase (exemplo em [scripts/supabase-users.sql](scripts/supabase-users.sql)).
 2. Configure o `.env`:
@@ -200,3 +205,31 @@ SUPABASE_DAILY_ACTIVITIES_TABLE=daily_activities
 ```
 
 3. Libere o menu `Apontamento Diario` no cadastro de usuarios para quem deve acessar a rotina.
+
+## Central de Clientes
+
+Backend implementado com CRUD completo para as rotinas:
+- `Clientes`
+- `Contatos`
+- `Sistemas`
+- `Processos`
+- `Historico`
+
+Endpoints principais:
+- `GET /api/customer-hub/bootstrap`
+- `GET/POST/PUT/DELETE /api/customer-hub/clients`
+- `GET/POST/PUT/DELETE /api/customer-hub/contacts`
+- `GET/POST/PUT/DELETE /api/customer-hub/systems`
+- `GET/POST/PUT/DELETE /api/customer-hub/processes`
+- `GET/POST/PUT/DELETE /api/customer-hub/activities`
+
+1. Crie as tabelas no Supabase com [scripts/supabase-customer-hub.sql](scripts/supabase-customer-hub.sql).
+2. Configure as variaveis no `.env` da API:
+
+```bash
+SUPABASE_CUSTOMER_CLIENTS_TABLE=customer_hub_clients
+SUPABASE_CUSTOMER_CONTACTS_TABLE=customer_hub_contacts
+SUPABASE_CUSTOMER_SYSTEMS_TABLE=customer_hub_systems
+SUPABASE_CUSTOMER_PROCESSES_TABLE=customer_hub_processes
+SUPABASE_CUSTOMER_ACTIVITIES_TABLE=customer_hub_activities
+```

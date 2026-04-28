@@ -40,6 +40,12 @@ function getSupabaseConfig() {
     usersTable: process.env.SUPABASE_USERS_TABLE || 'app_users',
     dataDictionaryTable: process.env.SUPABASE_DATA_DICTIONARY_TABLE || 'data_dictionary',
     digtDemandsTable: process.env.SUPABASE_DIGTE_DEMANDS_TABLE || 'digte_demands',
+    customerClientsTable: process.env.SUPABASE_CUSTOMER_CLIENTS_TABLE || 'customer_hub_clients',
+    customerContactsTable: process.env.SUPABASE_CUSTOMER_CONTACTS_TABLE || 'customer_hub_contacts',
+    customerAccessesTable: process.env.SUPABASE_CUSTOMER_ACCESSES_TABLE || 'customer_hub_accesses',
+    customerSystemsTable: process.env.SUPABASE_CUSTOMER_SYSTEMS_TABLE || 'customer_hub_systems',
+    customerProcessesTable: process.env.SUPABASE_CUSTOMER_PROCESSES_TABLE || 'customer_hub_processes',
+    customerActivitiesTable: process.env.SUPABASE_CUSTOMER_ACTIVITIES_TABLE || 'customer_hub_activities',
   }
 }
 
@@ -77,10 +83,16 @@ function getSupabaseClient() {
     usersTable: config.usersTable,
     dataDictionaryTable: config.dataDictionaryTable,
     digtDemandsTable: config.digtDemandsTable,
+    customerClientsTable: config.customerClientsTable,
+    customerContactsTable: config.customerContactsTable,
+    customerAccessesTable: config.customerAccessesTable,
+    customerSystemsTable: config.customerSystemsTable,
+    customerProcessesTable: config.customerProcessesTable,
+    customerActivitiesTable: config.customerActivitiesTable,
   }
 }
 
-const MENU_KEYS = ['process', 'xml-excel', 'excel-csv-sqlite', 'resume-ranking', 'estimativas', 'daily-activities', 'digte-demands']
+const MENU_KEYS = ['process', 'xml-excel', 'excel-csv-sqlite', 'resume-ranking', 'estimativas', 'daily-activities', 'digte-demands', 'customer-hub']
 
 function normalizeMenuPermissions(value) {
   const items = Array.isArray(value) ? value : []
@@ -887,6 +899,626 @@ async function listDataDictionary() {
   return { items }
 }
 
+// ---- Central de Clientes ----
+
+const CUSTOMER_CLIENT_STATUSES = ['Ativo', 'Inativo', 'Em Implantacao']
+const CUSTOMER_CLIENT_FONTES = ['interno', 'totvs', 'outros']
+const CUSTOMER_CONTACT_TYPES = ['comercial', 'servicos', 'tecnico', 'usuario', 'gestao', 'outros']
+const CUSTOMER_ACCESS_TYPES = ['vpn', 'servidores', 'protheus', 'outros']
+const CUSTOMER_PROCESS_PERIODICITIES = ['diario', 'semanal', 'quinzenal', 'mensal', 'semestral', 'anual', 'sazonal']
+const CUSTOMER_PROCESS_CRITICALITIES = ['baixa', 'media', 'alta']
+
+function parseCustomerHubIdInput(value, label) {
+  const id = Number(String(value ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error(`ID de ${label} invalido.`)
+  }
+  return id
+}
+
+function normalizeCustomerClientStatus(value) {
+  const status = String(value || '').trim()
+  return CUSTOMER_CLIENT_STATUSES.includes(status) ? status : 'Ativo'
+}
+
+function normalizeCustomerClientFonte(value) {
+  const fonte = String(value || '').trim().toLowerCase()
+  return CUSTOMER_CLIENT_FONTES.includes(fonte) ? fonte : 'interno'
+}
+
+function normalizeCustomerContactType(value) {
+  const type = String(value || '').trim().toLowerCase()
+  return CUSTOMER_CONTACT_TYPES.includes(type) ? type : 'comercial'
+}
+
+function normalizeCustomerAccessType(value) {
+  const type = String(value || '').trim().toLowerCase()
+  return CUSTOMER_ACCESS_TYPES.includes(type) ? type : 'vpn'
+}
+
+function normalizeCustomerProcessPeriodicity(value) {
+  const v = String(value || '').trim().toLowerCase()
+  return CUSTOMER_PROCESS_PERIODICITIES.includes(v) ? v : 'mensal'
+}
+
+function normalizeCustomerProcessCriticality(value) {
+  const v = String(value || '').trim().toLowerCase()
+  return CUSTOMER_PROCESS_CRITICALITIES.includes(v) ? v : 'media'
+}
+
+function normalizeCustomerClientRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    nome: String(row.nome ?? ''),
+    cnpj: String(row.cnpj ?? ''),
+    segmento: String(row.segmento ?? ''),
+    cidade: String(row.cidade ?? ''),
+    status: normalizeCustomerClientStatus(row.status),
+    parceiro: String(row.parceiro ?? ''),
+    dataInicio: row.data_inicio ? String(row.data_inicio) : '',
+    fonte: normalizeCustomerClientFonte(row.fonte),
+  }
+}
+
+function normalizeCustomerContactRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    nome: String(row.nome ?? ''),
+    clienteId: Number(row.cliente_id ?? 0),
+    cargo: String(row.cargo ?? ''),
+    departamento: String(row.departamento ?? ''),
+    email: String(row.email ?? ''),
+    telefone: String(row.telefone ?? ''),
+    tipo: normalizeCustomerContactType(row.tipo),
+  }
+}
+
+function normalizeCustomerSystemRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    produto: String(row.produto ?? ''),
+    clienteId: Number(row.cliente_id ?? 0),
+    modulo: String(row.modulo ?? ''),
+    versao: String(row.versao ?? ''),
+    contatoId: row.contato_id == null ? null : Number(row.contato_id),
+    integracoes: String(row.integracoes ?? ''),
+    responsavel: String(row.responsavel ?? ''),
+    observacoes: String(row.observacoes ?? ''),
+  }
+}
+
+function normalizeCustomerAccessRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    clienteId: Number(row.cliente_id ?? 0),
+    tipo: normalizeCustomerAccessType(row.tipo),
+    nome: String(row.nome ?? ''),
+    endereco: String(row.endereco ?? ''),
+    usuario: String(row.usuario ?? ''),
+    senha: String(row.senha ?? ''),
+    observacoes: String(row.observacoes ?? ''),
+  }
+}
+
+function normalizeCustomerProcessRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    clienteId: Number(row.cliente_id ?? 0),
+    nome: String(row.nome ?? ''),
+    descricao: String(row.descricao ?? ''),
+    criadoEm: String(row.criado_em ?? ''),
+    sistemaNome: String(row.sistema_nome ?? ''),
+    modulo: String(row.modulo ?? ''),
+    responsavel: String(row.responsavel ?? ''),
+    detalhamento: String(row.detalhamento ?? ''),
+    observacoes: String(row.observacoes ?? ''),
+    periodicidade: normalizeCustomerProcessPeriodicity(row.periodicidade),
+    criticidade: normalizeCustomerProcessCriticality(row.criticidade),
+  }
+}
+
+function normalizeCustomerActivityRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    clienteId: Number(row.cliente_id ?? 0),
+    tipo: String(row.tipo ?? ''),
+    descricao: String(row.descricao ?? ''),
+    data: String(row.data ?? ''),
+    evento: String(row.evento ?? ''),
+    sistemaNome: String(row.sistema_nome ?? ''),
+    modulo: String(row.modulo ?? ''),
+    responsavel: String(row.responsavel ?? ''),
+    processoNome: String(row.processo_nome ?? ''),
+    observacoes: String(row.observacoes ?? ''),
+  }
+}
+
+function parseCustomerClientPayload(payload) {
+  return {
+    nome: String(payload.nome ?? '').trim(),
+    cnpj: String(payload.cnpj ?? '').trim(),
+    segmento: String(payload.segmento ?? '').trim(),
+    cidade: String(payload.cidade ?? '').trim(),
+    status: normalizeCustomerClientStatus(payload.status),
+    parceiro: String(payload.parceiro ?? '').trim(),
+    data_inicio: normalizeDateInput(String(payload.dataInicio ?? '')) || null,
+    fonte: normalizeCustomerClientFonte(payload.fonte),
+  }
+}
+
+function validateCustomerClientPayload(parsed) {
+  if (!parsed.nome) {
+    throw new Error('Nome do cliente obrigatorio.')
+  }
+}
+
+function parseCustomerContactPayload(payload) {
+  return {
+    nome: String(payload.nome ?? '').trim(),
+    cliente_id: parseCustomerHubIdInput(payload.clienteId, 'cliente'),
+    cargo: String(payload.cargo ?? '').trim(),
+    departamento: String(payload.departamento ?? '').trim(),
+    email: String(payload.email ?? '').trim(),
+    telefone: String(payload.telefone ?? '').trim(),
+    tipo: normalizeCustomerContactType(payload.tipo),
+  }
+}
+
+function validateCustomerContactPayload(parsed) {
+  if (!parsed.nome) {
+    throw new Error('Nome do contato obrigatorio.')
+  }
+}
+
+function parseCustomerSystemPayload(payload) {
+  const rawContatoId = payload.contatoId
+  const contatoIdText = String(rawContatoId ?? '').trim()
+
+  return {
+    produto: String(payload.produto ?? '').trim(),
+    cliente_id: parseCustomerHubIdInput(payload.clienteId, 'cliente'),
+    modulo: String(payload.modulo ?? '').trim(),
+    versao: String(payload.versao ?? '').trim(),
+    contato_id: contatoIdText ? parseCustomerHubIdInput(rawContatoId, 'contato') : null,
+    integracoes: String(payload.integracoes ?? '').trim(),
+    responsavel: String(payload.responsavel ?? '').trim(),
+    observacoes: String(payload.observacoes ?? '').trim(),
+  }
+}
+
+function validateCustomerSystemPayload(parsed) {
+  if (!parsed.produto) {
+    throw new Error('Produto/Sistema obrigatorio.')
+  }
+}
+
+function parseCustomerAccessPayload(payload) {
+  return {
+    cliente_id: parseCustomerHubIdInput(payload.clienteId, 'cliente'),
+    tipo: normalizeCustomerAccessType(payload.tipo),
+    nome: String(payload.nome ?? '').trim(),
+    endereco: String(payload.endereco ?? '').trim(),
+    usuario: String(payload.usuario ?? '').trim(),
+    senha: String(payload.senha ?? '').trim(),
+    observacoes: String(payload.observacoes ?? '').trim(),
+  }
+}
+
+function validateCustomerAccessPayload(parsed) {
+  if (!parsed.nome) {
+    throw new Error('Nome do acesso obrigatorio.')
+  }
+}
+
+function parseCustomerProcessPayload(payload) {
+  return {
+    cliente_id: parseCustomerHubIdInput(payload.clienteId, 'cliente'),
+    nome: String(payload.nome ?? '').trim(),
+    descricao: String(payload.descricao ?? '').trim(),
+    criado_em: normalizeDateInput(String(payload.criadoEm ?? '')) || new Date().toISOString().slice(0, 10),
+    sistema_nome: String(payload.sistemaNome ?? '').trim(),
+    modulo: String(payload.modulo ?? '').trim(),
+    responsavel: String(payload.responsavel ?? '').trim(),
+    detalhamento: String(payload.detalhamento ?? '').trim(),
+    observacoes: String(payload.observacoes ?? '').trim(),
+    periodicidade: normalizeCustomerProcessPeriodicity(payload.periodicidade),
+    criticidade: normalizeCustomerProcessCriticality(payload.criticidade),
+  }
+}
+
+function validateCustomerProcessPayload(parsed) {
+  if (!parsed.nome) {
+    throw new Error('Nome do processo obrigatorio.')
+  }
+}
+
+function parseCustomerActivityPayload(payload) {
+  return {
+    cliente_id: parseCustomerHubIdInput(payload.clienteId, 'cliente'),
+    tipo: String(payload.tipo ?? '').trim() || 'Atividade',
+    descricao: String(payload.descricao ?? '').trim(),
+    data: normalizeDateInput(String(payload.data ?? '')) || new Date().toISOString().slice(0, 10),
+    evento: String(payload.evento ?? '').trim(),
+    sistema_nome: String(payload.sistemaNome ?? '').trim(),
+    modulo: String(payload.modulo ?? '').trim(),
+    responsavel: String(payload.responsavel ?? '').trim(),
+    processo_nome: String(payload.processoNome ?? '').trim(),
+    observacoes: String(payload.observacoes ?? '').trim(),
+  }
+}
+
+function validateCustomerActivityPayload(parsed) {
+  if (!parsed.descricao) {
+    throw new Error('Descricao da atividade obrigatoria.')
+  }
+}
+
+async function listCustomerClients() {
+  const { client, customerClientsTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(customerClientsTable)
+    .select('id, nome, cnpj, segmento, cidade, status, parceiro, data_inicio, fonte, created_at')
+    .order('nome', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCustomerClientRow)
+}
+
+async function createCustomerClient(payload) {
+  const parsed = parseCustomerClientPayload(payload)
+  validateCustomerClientPayload(parsed)
+
+  const { client, customerClientsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerClientsTable)
+    .insert(parsed)
+    .select('id, nome, cnpj, segmento, cidade, status, parceiro, data_inicio, fonte')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerClientRow(row)
+}
+
+async function updateCustomerClient(id, payload) {
+  const parsed = parseCustomerClientPayload(payload)
+  validateCustomerClientPayload(parsed)
+
+  const { client, customerClientsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerClientsTable)
+    .update(parsed)
+    .eq('id', id)
+    .select('id, nome, cnpj, segmento, cidade, status, parceiro, data_inicio, fonte')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerClientRow(row)
+}
+
+async function deleteCustomerClient(id) {
+  const { client, customerClientsTable } = getSupabaseClient()
+  const { error } = await client
+    .from(customerClientsTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function listCustomerContacts(clientId) {
+  const { client, customerContactsTable } = getSupabaseClient()
+  let query = client
+    .from(customerContactsTable)
+    .select('id, nome, cliente_id, cargo, departamento, email, telefone, tipo, created_at')
+    .order('nome', { ascending: true })
+
+  if (clientId) {
+    query = query.eq('cliente_id', clientId)
+  }
+
+  const { data: rows, error } = await query
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCustomerContactRow)
+}
+
+async function createCustomerContact(payload) {
+  const parsed = parseCustomerContactPayload(payload)
+  validateCustomerContactPayload(parsed)
+
+  const { client, customerContactsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerContactsTable)
+    .insert(parsed)
+    .select('id, nome, cliente_id, cargo, departamento, email, telefone, tipo')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerContactRow(row)
+}
+
+async function updateCustomerContact(id, payload) {
+  const parsed = parseCustomerContactPayload(payload)
+  validateCustomerContactPayload(parsed)
+
+  const { client, customerContactsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerContactsTable)
+    .update(parsed)
+    .eq('id', id)
+    .select('id, nome, cliente_id, cargo, departamento, email, telefone, tipo')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerContactRow(row)
+}
+
+async function deleteCustomerContact(id) {
+  const { client, customerContactsTable } = getSupabaseClient()
+  const { error } = await client
+    .from(customerContactsTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function listCustomerSystems(clientId) {
+  const { client, customerSystemsTable } = getSupabaseClient()
+  let query = client
+    .from(customerSystemsTable)
+    .select('id, produto, cliente_id, modulo, versao, contato_id, integracoes, responsavel, observacoes, created_at')
+    .order('produto', { ascending: true })
+
+  if (clientId) {
+    query = query.eq('cliente_id', clientId)
+  }
+
+  const { data: rows, error } = await query
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCustomerSystemRow)
+}
+
+async function createCustomerSystem(payload) {
+  const parsed = parseCustomerSystemPayload(payload)
+  validateCustomerSystemPayload(parsed)
+
+  const { client, customerSystemsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerSystemsTable)
+    .insert(parsed)
+    .select('id, produto, cliente_id, modulo, versao, contato_id, integracoes, responsavel, observacoes')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerSystemRow(row)
+}
+
+async function updateCustomerSystem(id, payload) {
+  const parsed = parseCustomerSystemPayload(payload)
+  validateCustomerSystemPayload(parsed)
+
+  const { client, customerSystemsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerSystemsTable)
+    .update(parsed)
+    .eq('id', id)
+    .select('id, produto, cliente_id, modulo, versao, contato_id, integracoes, responsavel, observacoes')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerSystemRow(row)
+}
+
+async function deleteCustomerSystem(id) {
+  const { client, customerSystemsTable } = getSupabaseClient()
+  const { error } = await client
+    .from(customerSystemsTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function listCustomerAccesses(clientId) {
+  const { client, customerAccessesTable } = getSupabaseClient()
+  let query = client
+    .from(customerAccessesTable)
+    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes, created_at')
+    .order('nome', { ascending: true })
+
+  if (clientId) {
+    query = query.eq('cliente_id', clientId)
+  }
+
+  const { data: rows, error } = await query
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCustomerAccessRow)
+}
+
+async function createCustomerAccess(payload) {
+  const parsed = parseCustomerAccessPayload(payload)
+  validateCustomerAccessPayload(parsed)
+
+  const { client, customerAccessesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerAccessesTable)
+    .insert(parsed)
+    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerAccessRow(row)
+}
+
+async function updateCustomerAccess(id, payload) {
+  const parsed = parseCustomerAccessPayload(payload)
+  validateCustomerAccessPayload(parsed)
+
+  const { client, customerAccessesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerAccessesTable)
+    .update(parsed)
+    .eq('id', id)
+    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerAccessRow(row)
+}
+
+async function deleteCustomerAccess(id) {
+  const { client, customerAccessesTable } = getSupabaseClient()
+  const { error } = await client
+    .from(customerAccessesTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function listCustomerProcesses(clientId) {
+  const { client, customerProcessesTable } = getSupabaseClient()
+  let query = client
+    .from(customerProcessesTable)
+    .select('id, cliente_id, nome, descricao, criado_em, sistema_nome, modulo, responsavel, detalhamento, observacoes, periodicidade, criticidade, created_at')
+    .order('criado_em', { ascending: false })
+    .order('id', { ascending: false })
+
+  if (clientId) {
+    query = query.eq('cliente_id', clientId)
+  }
+
+  const { data: rows, error } = await query
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCustomerProcessRow)
+}
+
+async function createCustomerProcess(payload) {
+  const parsed = parseCustomerProcessPayload(payload)
+  validateCustomerProcessPayload(parsed)
+
+  const { client, customerProcessesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerProcessesTable)
+    .insert(parsed)
+    .select('id, cliente_id, nome, descricao, criado_em, sistema_nome, modulo, responsavel, detalhamento, observacoes, periodicidade, criticidade')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerProcessRow(row)
+}
+
+async function updateCustomerProcess(id, payload) {
+  const parsed = parseCustomerProcessPayload(payload)
+  validateCustomerProcessPayload(parsed)
+
+  const { client, customerProcessesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerProcessesTable)
+    .update(parsed)
+    .eq('id', id)
+    .select('id, cliente_id, nome, descricao, criado_em, sistema_nome, modulo, responsavel, detalhamento, observacoes, periodicidade, criticidade')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerProcessRow(row)
+}
+
+async function deleteCustomerProcess(id) {
+  const { client, customerProcessesTable } = getSupabaseClient()
+  const { error } = await client
+    .from(customerProcessesTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function listCustomerActivities(clientId) {
+  const { client, customerActivitiesTable } = getSupabaseClient()
+  let query = client
+    .from(customerActivitiesTable)
+    .select('id, cliente_id, tipo, descricao, data, evento, sistema_nome, modulo, responsavel, processo_nome, observacoes, created_at')
+    .order('data', { ascending: false })
+    .order('id', { ascending: false })
+
+  if (clientId) {
+    query = query.eq('cliente_id', clientId)
+  }
+
+  const { data: rows, error } = await query
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCustomerActivityRow)
+}
+
+async function createCustomerActivity(payload) {
+  const parsed = parseCustomerActivityPayload(payload)
+  validateCustomerActivityPayload(parsed)
+
+  const { client, customerActivitiesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerActivitiesTable)
+    .insert(parsed)
+    .select('id, cliente_id, tipo, descricao, data, evento, sistema_nome, modulo, responsavel, processo_nome, observacoes')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerActivityRow(row)
+}
+
+async function updateCustomerActivity(id, payload) {
+  const parsed = parseCustomerActivityPayload(payload)
+  validateCustomerActivityPayload(parsed)
+
+  const { client, customerActivitiesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerActivitiesTable)
+    .update(parsed)
+    .eq('id', id)
+    .select('id, cliente_id, tipo, descricao, data, evento, sistema_nome, modulo, responsavel, processo_nome, observacoes')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerActivityRow(row)
+}
+
+async function deleteCustomerActivity(id) {
+  const { client, customerActivitiesTable } = getSupabaseClient()
+  const { error } = await client
+    .from(customerActivitiesTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function getCustomerHubBootstrap() {
+  const [clientes, contatos, acessos, sistemas, processos, atividades] = await Promise.all([
+    listCustomerClients(),
+    listCustomerContacts(),
+    listCustomerAccesses(),
+    listCustomerSystems(),
+    listCustomerProcesses(),
+    listCustomerActivities(),
+  ])
+
+  return {
+    // Backward-compatible payload: frontend uses English keys today.
+    clients: clientes,
+    contacts: contatos,
+    accesses: acessos,
+    systems: sistemas,
+    processes: processos,
+    activities: atividades,
+    clientes,
+    contatos,
+    acessos,
+    sistemas,
+    processos,
+    atividades,
+  }
+}
+
 const SYSTEM_PROMPT = `Voce e um especialista em recrutamento e selecao de RH. Analise o curriculo fornecido em relacao a descricao da vaga e retorne SOMENTE um objeto JSON valido, sem texto adicional, com exatamente esta estrutura:
 {
   "score": <inteiro de 0 a 100 representando a aderencia geral do candidato a vaga>,
@@ -1336,6 +1968,278 @@ app.delete('/api/digte-demands/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir demanda: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/bootstrap', async (_req, res) => {
+  try {
+    const data = await getCustomerHubBootstrap()
+    return res.json(data)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao carregar Central de Clientes: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/clients', async (_req, res) => {
+  try {
+    const items = await listCustomerClients()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar clientes: ${detail}` })
+  }
+})
+
+app.post('/api/customer-hub/clients', async (req, res) => {
+  try {
+    const item = await createCustomerClient(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar cliente: ${detail}` })
+  }
+})
+
+app.put('/api/customer-hub/clients/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'cliente')
+    const item = await updateCustomerClient(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar cliente: ${detail}` })
+  }
+})
+
+app.delete('/api/customer-hub/clients/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'cliente')
+    await deleteCustomerClient(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir cliente: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/contacts', async (req, res) => {
+  try {
+    const clientIdRaw = String(req.query.clientId ?? '').trim()
+    const clientId = clientIdRaw ? parseCustomerHubIdInput(clientIdRaw, 'cliente') : null
+    const items = await listCustomerContacts(clientId)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao buscar contatos: ${detail}` })
+  }
+})
+
+app.post('/api/customer-hub/contacts', async (req, res) => {
+  try {
+    const item = await createCustomerContact(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar contato: ${detail}` })
+  }
+})
+
+app.put('/api/customer-hub/contacts/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'contato')
+    const item = await updateCustomerContact(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar contato: ${detail}` })
+  }
+})
+
+app.delete('/api/customer-hub/contacts/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'contato')
+    await deleteCustomerContact(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir contato: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/accesses', async (req, res) => {
+  try {
+    const clientIdRaw = String(req.query.clientId ?? '').trim()
+    const clientId = clientIdRaw ? parseCustomerHubIdInput(clientIdRaw, 'cliente') : null
+    const items = await listCustomerAccesses(clientId)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao buscar acessos: ${detail}` })
+  }
+})
+
+app.post('/api/customer-hub/accesses', async (req, res) => {
+  try {
+    const item = await createCustomerAccess(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar acesso: ${detail}` })
+  }
+})
+
+app.put('/api/customer-hub/accesses/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'acesso')
+    const item = await updateCustomerAccess(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar acesso: ${detail}` })
+  }
+})
+
+app.delete('/api/customer-hub/accesses/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'acesso')
+    await deleteCustomerAccess(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir acesso: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/systems', async (req, res) => {
+  try {
+    const clientIdRaw = String(req.query.clientId ?? '').trim()
+    const clientId = clientIdRaw ? parseCustomerHubIdInput(clientIdRaw, 'cliente') : null
+    const items = await listCustomerSystems(clientId)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao buscar sistemas: ${detail}` })
+  }
+})
+
+app.post('/api/customer-hub/systems', async (req, res) => {
+  try {
+    const item = await createCustomerSystem(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar sistema: ${detail}` })
+  }
+})
+
+app.put('/api/customer-hub/systems/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'sistema')
+    const item = await updateCustomerSystem(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar sistema: ${detail}` })
+  }
+})
+
+app.delete('/api/customer-hub/systems/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'sistema')
+    await deleteCustomerSystem(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir sistema: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/processes', async (req, res) => {
+  try {
+    const clientIdRaw = String(req.query.clientId ?? '').trim()
+    const clientId = clientIdRaw ? parseCustomerHubIdInput(clientIdRaw, 'cliente') : null
+    const items = await listCustomerProcesses(clientId)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao buscar processos: ${detail}` })
+  }
+})
+
+app.post('/api/customer-hub/processes', async (req, res) => {
+  try {
+    const item = await createCustomerProcess(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar processo: ${detail}` })
+  }
+})
+
+app.put('/api/customer-hub/processes/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'processo')
+    const item = await updateCustomerProcess(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar processo: ${detail}` })
+  }
+})
+
+app.delete('/api/customer-hub/processes/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'processo')
+    await deleteCustomerProcess(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir processo: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/activities', async (req, res) => {
+  try {
+    const clientIdRaw = String(req.query.clientId ?? '').trim()
+    const clientId = clientIdRaw ? parseCustomerHubIdInput(clientIdRaw, 'cliente') : null
+    const items = await listCustomerActivities(clientId)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao buscar atividades: ${detail}` })
+  }
+})
+
+app.post('/api/customer-hub/activities', async (req, res) => {
+  try {
+    const item = await createCustomerActivity(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar atividade: ${detail}` })
+  }
+})
+
+app.put('/api/customer-hub/activities/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'atividade')
+    const item = await updateCustomerActivity(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar atividade: ${detail}` })
+  }
+})
+
+app.delete('/api/customer-hub/activities/:id', async (req, res) => {
+  try {
+    const id = parseCustomerHubIdInput(req.params.id, 'atividade')
+    await deleteCustomerActivity(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir atividade: ${detail}` })
   }
 })
 

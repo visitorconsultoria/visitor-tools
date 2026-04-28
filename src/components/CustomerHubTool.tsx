@@ -2,11 +2,12 @@
 import { createPortal } from 'react-dom'
 import { apiUrl } from '../lib/api'
 
-export type CustomerHubPage = 'dashboard' | 'clientes' | 'contatos' | 'sistemas' | 'processos' | 'historico'
+export type CustomerHubPage = 'dashboard' | 'clientes' | 'contatos' | 'acessos' | 'sistemas' | 'processos' | 'historico'
 
 type ClienteStatus = 'Ativo' | 'Inativo' | 'Em Implantacao'
 type ClienteFonte = 'interno' | 'totvs' | 'outros'
 type ContatoTipo = 'comercial' | 'servicos' | 'tecnico' | 'usuario' | 'gestao' | 'outros'
+type AcessoTipo = 'vpn' | 'servidores' | 'protheus' | 'outros'
 
 const CLIENTE_STATUS_LABEL: Record<ClienteStatus, string> = {
   Ativo: 'Ativo',
@@ -20,6 +21,13 @@ const CONTATO_TIPO_LABEL: Record<ContatoTipo, string> = {
   tecnico: 'Técnico',
   usuario: 'Usuário',
   gestao: 'Gestão',
+  outros: 'Outros',
+}
+
+const ACESSO_TIPO_LABEL: Record<AcessoTipo, string> = {
+  vpn: 'VPN',
+  servidores: 'Servidores',
+  protheus: 'Protheus',
   outros: 'Outros',
 }
 
@@ -50,6 +58,17 @@ type Contato = {
   email: string
   telefone: string
   tipo: ContatoTipo
+}
+
+type Acesso = {
+  id: string
+  clienteId: string
+  tipo: AcessoTipo
+  nome: string
+  endereco: string
+  usuario: string
+  senha: string
+  observacoes: string
 }
 
 type Sistema = {
@@ -158,6 +177,19 @@ function mapSistema(r: Record<string, unknown>): Sistema {
   }
 }
 
+function mapAcesso(r: Record<string, unknown>): Acesso {
+  return {
+    id: String(r.id ?? ''),
+    clienteId: String(r.clienteId ?? ''),
+    tipo: (r.tipo as AcessoTipo) ?? 'vpn',
+    nome: String(r.nome ?? ''),
+    endereco: String(r.endereco ?? ''),
+    usuario: String(r.usuario ?? ''),
+    senha: String(r.senha ?? ''),
+    observacoes: String(r.observacoes ?? ''),
+  }
+}
+
 function mapProcesso(r: Record<string, unknown>): Processo {
   return {
     id: String(r.id ?? ''),
@@ -194,6 +226,7 @@ function mapAtividade(r: Record<string, unknown>): Atividade {
 export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage }) {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [contatos, setContatos] = useState<Contato[]>([])
+  const [acessos, setAcessos] = useState<Acesso[]>([])
   const [sistemas, setSistemas] = useState<Sistema[]>([])
   const [processos, setProcessos] = useState<Processo[]>([])
   const [atividades, setAtividades] = useState<Atividade[]>([])
@@ -203,6 +236,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
 
   const [clienteModal, setClienteModal] = useState<ModalState<Cliente>>(emptyModal())
   const [contatoModal, setContatoModal] = useState<ModalState<Contato>>(emptyModal())
+  const [acessoModal, setAcessoModal] = useState<ModalState<Acesso>>(emptyModal())
   const [sistemaModal, setSistemaModal] = useState<ModalState<Sistema>>(emptyModal())
   const [processoModal, setProcessoModal] = useState<ModalState<Processo>>(emptyModal())
   const [atividadeModal, setAtividadeModal] = useState<ModalState<Atividade>>(emptyModal())
@@ -210,6 +244,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
   const [filterClienteId, setFilterClienteId] = useState('')
   const [clienteSearch, setClienteSearch] = useState('')
   const [contatoSearch, setContatoSearch] = useState('')
+  const [acessoSearch, setAcessoSearch] = useState('')
   const [sistemaSearch, setSistemaSearch] = useState('')
   const [processoSearch, setProcessoSearch] = useState('')
   const [atividadeSearch, setAtividadeSearch] = useState('')
@@ -226,12 +261,14 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       .then((data) => {
         const clients = data.clients ?? data.clientes ?? []
         const contacts = data.contacts ?? data.contatos ?? []
+        const accesses = data.accesses ?? data.acessos ?? []
         const systems = data.systems ?? data.sistemas ?? []
         const processes = data.processes ?? data.processos ?? []
         const activities = data.activities ?? data.atividades ?? []
 
         setClientes(clients.map(mapCliente))
         setContatos(contacts.map(mapContato))
+        setAcessos(accesses.map(mapAcesso))
         setSistemas(systems.map(mapSistema))
         setProcessos(processes.map(mapProcesso))
         setAtividades(activities.map(mapAtividade))
@@ -249,9 +286,10 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
     inativos: clientes.filter((c) => c.status === 'Inativo').length,
     emImplantacao: clientes.filter((c) => c.status === 'Em Implantacao').length,
     totalContatos: contatos.length,
+    totalAcessos: acessos.length,
     totalSistemas: sistemas.length,
     totalAtividades: atividades.length,
-  }), [clientes, contatos, sistemas, atividades])
+  }), [clientes, contatos, acessos, sistemas, atividades])
 
   // CRUD — Clientes
   const handleSaveCliente = async () => {
@@ -288,6 +326,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
       setClientes((prev) => prev.filter((c) => c.id !== id))
       setContatos((prev) => prev.filter((c) => c.clienteId !== id))
+      setAcessos((prev) => prev.filter((a) => a.clienteId !== id))
       setSistemas((prev) => prev.filter((s) => s.clienteId !== id))
       setProcessos((prev) => prev.filter((p) => p.clienteId !== id))
       setAtividades((prev) => prev.filter((a) => a.clienteId !== id))
@@ -337,6 +376,36 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       setContatos((prev) => prev.filter((c) => c.id !== id))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao excluir contato.')
+    }
+  }
+
+  // CRUD — Acessos
+  const handleSaveAcesso = async () => {
+    const d = acessoModal.data
+    if (!d.nome?.trim() || !d.clienteId) return
+    const isEdit = !!d.id
+    const url = isEdit ? apiUrl(`/api/customer-hub/accesses/${d.id}`) : apiUrl('/api/customer-hub/accesses')
+    const method = isEdit ? 'PUT' : 'POST'
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      const saved = mapAcesso(body.item as Record<string, unknown>)
+      setAcessos((prev) => isEdit ? prev.map((a) => a.id === saved.id ? saved : a) : [...prev, saved])
+      setAcessoModal(emptyModal())
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao salvar acesso.')
+    }
+  }
+
+  const handleDeleteAcesso = async (id: string) => {
+    if (!window.confirm('Excluir este acesso?')) return
+    try {
+      const res = await fetch(apiUrl(`/api/customer-hub/accesses/${id}`), { method: 'DELETE' })
+      if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
+      setAcessos((prev) => prev.filter((a) => a.id !== id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir acesso.')
     }
   }
 
@@ -467,6 +536,27 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
 
     return haystack.includes(term)
   })
+
+  const filteredAcessos = filterClienteId ? acessos.filter((a) => a.clienteId === filterClienteId) : acessos
+  const filteredAcessosView = filteredAcessos.filter((a) => {
+    const term = acessoSearch.trim().toLowerCase()
+    if (!term) return true
+
+    const haystack = [
+      getClienteNome(a.clienteId),
+      ACESSO_TIPO_LABEL[a.tipo],
+      a.nome,
+      a.endereco,
+      a.usuario,
+      a.senha,
+      a.observacoes,
+    ]
+      .join(' ')
+      .toLowerCase()
+
+    return haystack.includes(term)
+  })
+
   const filteredSistemas = filterClienteId ? sistemas.filter((s) => s.clienteId === filterClienteId) : sistemas
   const filteredSistemasView = filteredSistemas.filter((s) => {
     const term = sistemaSearch.trim().toLowerCase()
@@ -599,6 +689,64 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
     )
   }
 
+  const renderAcessoModal = () => {
+    const d = acessoModal.data
+    const isEdit = Boolean(d.id)
+
+    return createPortal(
+      <div className="estimativas-modal-overlay" role="presentation" onClick={() => setAcessoModal(emptyModal())}>
+        <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+          <div className="estimativas-modal__header">
+            <h3>{isEdit ? 'Editar Acesso' : 'Novo Acesso'}</h3>
+            <button type="button" className="button-secondary" onClick={() => setAcessoModal(emptyModal())}>Fechar</button>
+          </div>
+          <form className="estimativas-form" onSubmit={(e) => { e.preventDefault(); void handleSaveAcesso() }}>
+            <label>
+              Cliente *
+              <select value={d.clienteId ?? ''} onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, clienteId: e.target.value } }))}>
+                <option value="">Selecione...</option>
+                {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </label>
+            <label>
+              Tipo *
+              <select value={d.tipo ?? 'vpn'} onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, tipo: e.target.value as AcessoTipo } }))}>
+                <option value="vpn">VPN</option>
+                <option value="servidores">Servidores</option>
+                <option value="protheus">Protheus</option>
+                <option value="outros">Outros</option>
+              </select>
+            </label>
+            <label>
+              Nome do Acesso *
+              <input value={d.nome ?? ''} placeholder="Ex: VPN Matriz, AppServer Produção" onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, nome: e.target.value } }))} />
+            </label>
+            <label>
+              Endereço / Host
+              <input value={d.endereco ?? ''} placeholder="IP, URL ou servidor" onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, endereco: e.target.value } }))} />
+            </label>
+            <label>
+              Usuário
+              <input value={d.usuario ?? ''} onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, usuario: e.target.value } }))} />
+            </label>
+            <label>
+              Senha
+              <input value={d.senha ?? ''} onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, senha: e.target.value } }))} />
+            </label>
+            <label className="estimativas-form__full">
+              Observações
+              <textarea rows={3} value={d.observacoes ?? ''} onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, observacoes: e.target.value } }))} />
+            </label>
+            <div className="estimativas-actions estimativas-form__full">
+              <button type="submit" className="button-primary">{isEdit ? 'Salvar' : 'Cadastrar'}</button>
+            </div>
+          </form>
+        </section>
+      </div>,
+      document.body,
+    )
+  }
+
   // ── DASHBOARD ──────────────────────────────────────────────────────────────
   if (isLoading) {
     return <div className="customer-hub"><p className="muted">Carregando...</p></div>
@@ -659,6 +807,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
           {[
             { label: 'Total de Clientes', value: stats.totalClientes, sub: `${stats.ativos} ativos`, icon: 'clients' },
             { label: 'Contatos', value: stats.totalContatos, sub: 'Cadastrados', icon: 'contacts' },
+            { label: 'Acessos', value: stats.totalAcessos, sub: 'Ambientes mapeados', icon: 'accesses' },
             { label: 'Sistemas', value: stats.totalSistemas, sub: 'Implementados', icon: 'systems' },
             { label: 'Atividades', value: stats.totalAtividades, sub: 'Registradas', icon: 'activities' },
           ].map(({ label, value, sub, icon }) => (
@@ -671,6 +820,9 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                   )}
                   {icon === 'contacts' && (
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="3" /><path d="M4 18c0-2.4 2-4 5-4s5 1.6 5 4" /><circle cx="17" cy="8" r="2" /><path d="M15 15c1.8 0 3 .9 3 2.5" /></svg>
+                  )}
+                  {icon === 'accesses' && (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V8a5 5 0 0 1 10 0v3" /><circle cx="12" cy="16" r="1" /></svg>
                   )}
                   {icon === 'systems' && (
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="12" rx="2" /><path d="M9 20h6M12 17v3" /></svg>
@@ -988,6 +1140,96 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                 ))}
                 {filteredContatosView.length === 0 && (
                   <tr><td colSpan={6} className="ch-empty">Nenhum contato encontrado.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  // ── ACESSOS ───────────────────────────────────────────────────────────────
+  if (subPage === 'acessos') {
+    return (
+      <div className="customer-hub">
+        {acessoModal.open && renderAcessoModal()}
+
+        <section className="card">
+          <div className="ch-section-header">
+            <div>
+              <h2>Acessos</h2>
+              <p className="muted">Cadastre e localize rapidamente os acessos do ambiente de cada cliente</p>
+            </div>
+            <div className="ch-header-actions">
+              <button type="button" className="button-primary" onClick={() => setAcessoModal({ open: true, data: { tipo: 'vpn' } })}>
+                + Novo Acesso
+              </button>
+            </div>
+          </div>
+
+          <div className="ch-table-toolbar">
+            <label className="ch-table-search">
+              <span className="ch-table-search__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+              </span>
+              <input
+                type="search"
+                value={acessoSearch}
+                onChange={(e) => setAcessoSearch(e.target.value)}
+                placeholder="Buscar por cliente, tipo, nome, host, usuário ou observação..."
+                aria-label="Buscar acesso"
+              />
+            </label>
+            <select value={filterClienteId} onChange={(e) => setFilterClienteId(e.target.value)} className="ch-filter-select">
+              <option value="">Todos os Clientes</option>
+              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+
+          <div className="csv-table ch-table-theme">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Tipo</th>
+                  <th>Acesso</th>
+                  <th>Endereço / Host</th>
+                  <th>Credenciais</th>
+                  <th>Observações</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAcessosView.map((a) => (
+                  <tr key={a.id}>
+                    <td>{getClienteNome(a.clienteId)}</td>
+                    <td>
+                      <span className={`ch-badge ch-badge--tipo-${a.tipo}`}>{ACESSO_TIPO_LABEL[a.tipo]}</span>
+                    </td>
+                    <td>{a.nome}</td>
+                    <td>{a.endereco || '-'}</td>
+                    <td>
+                      <div className="ch-contact-stacked">
+                        <span>{a.usuario || '-'}</span>
+                        <span className="muted">{a.senha || '-'}</span>
+                      </div>
+                    </td>
+                    <td>{a.observacoes || '-'}</td>
+                    <td>
+                      <div className="ch-row-actions ch-row-actions--icons">
+                        <button type="button" className="ch-icon-action" aria-label="Editar acesso" title="Editar" onClick={() => setAcessoModal({ open: true, data: { ...a } })}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir acesso" title="Excluir" onClick={() => handleDeleteAcesso(a.id)}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredAcessosView.length === 0 && (
+                  <tr><td colSpan={7} className="ch-empty">Nenhum acesso encontrado.</td></tr>
                 )}
               </tbody>
             </table>

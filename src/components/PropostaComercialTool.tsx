@@ -1024,7 +1024,7 @@ export default function PropostaComercialTool() {
                 const included = s.flagKey ? (form[s.flagKey] as boolean) : true
                 const isActive = activeSection === s.id
                 return (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'stretch', borderRadius: '6px', overflow: 'hidden', border: '1px solid', borderColor: isActive ? 'var(--color-primary)' : (s.flagKey && !included ? '#bbb' : 'var(--border-color)'), marginBottom: '0.35rem' }}>
+                  <div key={s.id} style={{ display: 'inline-flex', alignItems: 'stretch', borderRadius: '6px', overflow: 'hidden', border: '1px solid', borderColor: isActive ? 'var(--color-primary)' : (s.flagKey && !included ? '#bbb' : 'var(--border-color)'), marginBottom: '0.35rem' }}>
                     <button
                       type="button"
                       onClick={() => setActiveSection(s.id)}
@@ -1037,6 +1037,8 @@ export default function PropostaComercialTool() {
                         fontWeight: isActive ? 700 : 400,
                         cursor: 'pointer',
                         textDecoration: s.flagKey && !included ? 'line-through' : 'none',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
                       }}
                     >
                       {s.label}

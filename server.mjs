@@ -3226,6 +3226,12 @@ function normalizePropostaRow(row) {
     bancoHorasConteudo: String(row.banco_horas_conteudo ?? ''),
     deliveryItens: parseJsonb(row.delivery_itens),
     outrasInformacoes: String(row.outras_informacoes ?? ''),
+    incluirObjetivo: row.incluir_objetivo !== false,
+    incluirEscopo: row.incluir_escopo !== false,
+    incluirPrecificacao: row.incluir_precificacao !== false,
+    incluirBancoHoras: row.incluir_banco_horas !== false,
+    incluirDelivery: row.incluir_delivery !== false,
+    incluirOutrasInformacoes: row.incluir_outras_informacoes !== false,
     status: row.status === 'sent' ? 'sent' : 'draft',
     estimativaId: row.estimativa_id ? Number(row.estimativa_id) : null,
   }
@@ -3253,6 +3259,12 @@ function parsePropostaPayload(payload) {
     banco_horas_conteudo: String(payload.bancoHorasConteudo ?? ''),
     delivery_itens: parseJsonbField(payload.deliveryItens),
     outras_informacoes: String(payload.outrasInformacoes ?? ''),
+    incluir_objetivo: payload.incluirObjetivo !== false,
+    incluir_escopo: payload.incluirEscopo !== false,
+    incluir_precificacao: payload.incluirPrecificacao !== false,
+    incluir_banco_horas: payload.incluirBancoHoras !== false,
+    incluir_delivery: payload.incluirDelivery !== false,
+    incluir_outras_informacoes: payload.incluirOutrasInformacoes !== false,
     status: payload.status === 'sent' ? 'sent' : 'draft',
     estimativa_id: payload.estimativaId ? Number(payload.estimativaId) : null,
     updated_at: new Date().toISOString(),
@@ -3271,7 +3283,7 @@ function parsePropIdInput(raw) {
   return id
 }
 
-const PROPOSTA_SELECT = 'id, cliente, projeto, contato, tipo, data_proposta, desenvolvimento, objetivo, escopo_titulo, escopo_conteudo, precificacao_titulo, precificacao_descricao, precificacao_itens, banco_horas_conteudo, delivery_itens, outras_informacoes, status, estimativa_id, created_at, updated_at'
+const PROPOSTA_SELECT = 'id, cliente, projeto, contato, tipo, data_proposta, desenvolvimento, objetivo, escopo_titulo, escopo_conteudo, precificacao_titulo, precificacao_descricao, precificacao_itens, banco_horas_conteudo, delivery_itens, outras_informacoes, incluir_objetivo, incluir_escopo, incluir_precificacao, incluir_banco_horas, incluir_delivery, incluir_outras_informacoes, status, estimativa_id, created_at, updated_at'
 
 async function listPropostas() {
   const { client, propostasTable } = getSupabaseClient()

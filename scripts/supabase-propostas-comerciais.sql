@@ -18,6 +18,12 @@ create table if not exists public.propostas_comerciais (
   banco_horas_conteudo    text not null default '',
   delivery_itens          jsonb not null default '[]'::jsonb,
   outras_informacoes      text not null default '',
+  incluir_objetivo               boolean not null default true,
+  incluir_escopo                 boolean not null default true,
+  incluir_precificacao           boolean not null default true,
+  incluir_banco_horas            boolean not null default true,
+  incluir_delivery               boolean not null default true,
+  incluir_outras_informacoes     boolean not null default true,
   status                  text not null default 'draft' check (status in ('draft', 'sent')),
   estimativa_id           bigint,
   created_at              timestamptz not null default now(),
@@ -30,3 +36,12 @@ alter table public.propostas_comerciais disable row level security;
 -- Index para ordenação
 create index if not exists idx_propostas_comerciais_created_at
   on public.propostas_comerciais (created_at desc);
+
+-- ─── Migração: adicionar colunas de inclusão (para tabelas já existentes) ────
+alter table public.propostas_comerciais
+  add column if not exists incluir_objetivo             boolean not null default true,
+  add column if not exists incluir_escopo               boolean not null default true,
+  add column if not exists incluir_precificacao         boolean not null default true,
+  add column if not exists incluir_banco_horas          boolean not null default true,
+  add column if not exists incluir_delivery             boolean not null default true,
+  add column if not exists incluir_outras_informacoes   boolean not null default true;

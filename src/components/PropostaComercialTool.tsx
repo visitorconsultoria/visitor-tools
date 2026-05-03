@@ -38,6 +38,12 @@ type PropostaRow = {
   bancoHorasConteudo: string
   deliveryItens: DeliveryItem[]
   outrasInformacoes: string
+  incluirObjetivo: boolean
+  incluirEscopo: boolean
+  incluirPrecificacao: boolean
+  incluirBancoHoras: boolean
+  incluirDelivery: boolean
+  incluirOutrasInformacoes: boolean
   status: PropostaStatus
   estimativaId: number | null
 }
@@ -58,6 +64,12 @@ type FormState = {
   bancoHorasConteudo: string
   deliveryItens: DeliveryItem[]
   outrasInformacoes: string
+  incluirObjetivo: boolean
+  incluirEscopo: boolean
+  incluirPrecificacao: boolean
+  incluirBancoHoras: boolean
+  incluirDelivery: boolean
+  incluirOutrasInformacoes: boolean
   status: PropostaStatus
   estimativaId: number | null
 }
@@ -163,6 +175,12 @@ const EMPTY_FORM: FormState = {
   bancoHorasConteudo: DEFAULT_BANCO_HORAS,
   deliveryItens: DEFAULT_DELIVERY_ITENS.map((i) => ({ ...i })),
   outrasInformacoes: DEFAULT_OUTRAS_INFORMACOES,
+  incluirObjetivo: true,
+  incluirEscopo: true,
+  incluirPrecificacao: true,
+  incluirBancoHoras: true,
+  incluirDelivery: true,
+  incluirOutrasInformacoes: true,
   status: 'draft',
   estimativaId: null,
 }
@@ -222,6 +240,12 @@ function normalizePropostaResponse(input: unknown): PropostaRow {
     bancoHorasConteudo: String(r.bancoHorasConteudo ?? ''),
     deliveryItens: parseArr(r.deliveryItens) as DeliveryItem[],
     outrasInformacoes: String(r.outrasInformacoes ?? ''),
+    incluirObjetivo: r.incluirObjetivo !== false,
+    incluirEscopo: r.incluirEscopo !== false,
+    incluirPrecificacao: r.incluirPrecificacao !== false,
+    incluirBancoHoras: r.incluirBancoHoras !== false,
+    incluirDelivery: r.incluirDelivery !== false,
+    incluirOutrasInformacoes: r.incluirOutrasInformacoes !== false,
     status: r.status === 'sent' ? 'sent' : 'draft',
     estimativaId: r.estimativaId ? Number(r.estimativaId) : null,
   }
@@ -364,19 +388,20 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     y += 4
     doc.setDrawColor(...C_GREEN_MED)
     doc.setLineWidth(0.8)
-    doc.line(margin, y + 2, margin + cw * 0.4, y + 2)
+    doc.line(margin, y + 2, margin + cw * 0.55, y + 2)
     y += 14
   }
 
   // ── Sub-section title ─────────────────────────────────────────────────────────
   const subTitle = (title: string) => {
-    ensureSpace(24)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
+    const splitLines = doc.splitTextToSize(title, cw)
+    const needed = splitLines.length * 11 * 1.5 + 12
+    ensureSpace(needed)
     doc.setTextColor(...C_GREEN_MED)
-    const lines = doc.splitTextToSize(title, cw)
-    doc.text(lines, margin, y)
-    y += lines.length * 11 * 1.35 + 8
+    doc.text(splitLines, margin, y)
+    y += needed - 4
   }
 
   // ── Calc HTML height (pre-pass for boxes) ─────────────────────────────────────
@@ -412,7 +437,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
   }
 
   // ── Render HTML in a box ──────────────────────────────────────────────────────
-  const renderBoxedLines = (lines: PdfLine[], pad = 10, fs = 10, lhf = 1.38) => {
+  const renderBoxedLines = (lines: PdfLine[], pad = 12, fs = 10, lhf = 1.38) => {
     if (!lines.length) return
     const totalH = calcHtmlHeight(lines, cw - pad * 2, fs, lhf, pad)
     ensureSpace(totalH + 4)
@@ -427,7 +452,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
 
   // ── Info table (page 1 only) ──────────────────────────────────────────────────
   const drawInfoTable = () => {
-    const rowH = 32
+    const rowH = 30
     const colW = cw / 2
     const rows = [
       [{ label: 'Cliente:', value: proposta.cliente }, { label: 'Projeto:', value: proposta.projeto }],
@@ -454,7 +479,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
         doc.text(val[0] || '', cx + 6 + lw + 2, cy + rowH / 2 + 3)
       })
     })
-    y += rows.length * rowH + 18
+    y += rows.length * rowH + 14
   }
 
   // ── Precificacao table ────────────────────────────────────────────────────────
@@ -551,55 +576,51 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
 
   // Info table
   drawInfoTable()
-  y += 4
 
   // OBJETIVO
-  sectionTitle('OBJETIVO')
-  const objLines = htmlToLines(proposta.objetivo)
-  renderLines(objLines, cw, 10, 1.38)
-  y += 12
+  if (proposta.incluirObjetivo !== false) {
+    sectionTitle('OBJETIVO')
+    renderLines(htmlToLines(proposta.objetivo), cw, 10, 1.38)
+    y += 14
+  }
 
   // ESCOPO DA PROPOSTA
-  sectionTitle('ESCOPO DA PROPOSTA')
-  if (proposta.escopoTitulo) {
-    subTitle(proposta.escopoTitulo)
+  if (proposta.incluirEscopo !== false) {
+    sectionTitle('ESCOPO DA PROPOSTA')
+    if (proposta.escopoTitulo) subTitle(proposta.escopoTitulo)
+    renderBoxedLines(htmlToLines(proposta.escopoConteudo))
+    y += 12
   }
-  const escopoLines = htmlToLines(proposta.escopoConteudo)
-  renderBoxedLines(escopoLines)
-  y += 8
 
   // PRECIFICAÇÃO
-  sectionTitle('PRECIFICAÇÃO')
-  if (proposta.precificacaoTitulo) {
-    subTitle(proposta.precificacaoTitulo)
+  if (proposta.incluirPrecificacao !== false) {
+    sectionTitle('PRECIFICAÇÃO')
+    if (proposta.precificacaoTitulo) subTitle(proposta.precificacaoTitulo)
+    renderLines(htmlToLines(proposta.precificacaoDescricao), cw, 10, 1.38)
+    y += 10
+    drawPrecTable(proposta.precificacaoItens)
   }
-  const precDescLines = htmlToLines(proposta.precificacaoDescricao)
-  renderLines(precDescLines, cw, 10, 1.38)
-  y += 8
-  drawPrecTable(proposta.precificacaoItens)
 
-  // Banco de Horas e Delivery (subsection inside Precificação)
-  y += 6
-  ensureSpace(24)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.setTextColor(...C_GREEN_MED)
-  doc.text('Banco de Horas e Delivery', margin, y)
-  y += 14
-
-  const bancoLines = htmlToLines(proposta.bancoHorasConteudo)
-  renderBoxedLines(bancoLines)
-  y += 12
+  // BANCO DE HORAS E DELIVERY
+  if (proposta.incluirBancoHoras !== false) {
+    y += 8
+    sectionTitle('BANCO DE HORAS E DELIVERY')
+    renderBoxedLines(htmlToLines(proposta.bancoHorasConteudo))
+    y += 12
+  }
 
   // TABELA DE SERVIÇOS DELIVERY
-  sectionTitle('TABELA DE SERVIÇOS DELIVERY')
-  drawDeliveryTable(proposta.deliveryItens)
+  if (proposta.incluirDelivery !== false) {
+    sectionTitle('TABELA DE SERVIÇOS DELIVERY')
+    drawDeliveryTable(proposta.deliveryItens)
+  }
 
   // OUTRAS INFORMAÇÕES
-  y += 6
-  sectionTitle('OUTRAS INFORMAÇÕES')
-  const outrasLines = htmlToLines(proposta.outrasInformacoes)
-  renderBoxedLines(outrasLines)
+  if (proposta.incluirOutrasInformacoes !== false) {
+    y += 8
+    sectionTitle('OUTRAS INFORMAÇÕES')
+    renderBoxedLines(htmlToLines(proposta.outrasInformacoes))
+  }
 
   drawFooter()
 
@@ -713,7 +734,11 @@ export default function PropostaComercialTool() {
       precificacaoTitulo: p.precificacaoTitulo, precificacaoDescricao: p.precificacaoDescricao,
       precificacaoItens: p.precificacaoItens.length ? p.precificacaoItens.map((i) => ({ ...i })) : [{ escopo: '', descricao: '', valorMensal: '' }],
       bancoHorasConteudo: p.bancoHorasConteudo, deliveryItens: p.deliveryItens.map((i) => ({ ...i })),
-      outrasInformacoes: p.outrasInformacoes, status: p.status, estimativaId: p.estimativaId,
+      outrasInformacoes: p.outrasInformacoes,
+      incluirObjetivo: p.incluirObjetivo, incluirEscopo: p.incluirEscopo,
+      incluirPrecificacao: p.incluirPrecificacao, incluirBancoHoras: p.incluirBancoHoras,
+      incluirDelivery: p.incluirDelivery, incluirOutrasInformacoes: p.incluirOutrasInformacoes,
+      status: p.status, estimativaId: p.estimativaId,
     })
     setIsViewMode(false)
     setFormVersion((v) => v + 1)
@@ -837,14 +862,15 @@ export default function PropostaComercialTool() {
     }
   }
 
-  const sections = [
-    { id: 'dados', label: 'Dados Principais' },
-    { id: 'objetivo', label: 'Objetivo' },
-    { id: 'escopo', label: 'Escopo' },
-    { id: 'precificacao', label: 'Precificação' },
-    { id: 'banco', label: 'Banco de Horas' },
-    { id: 'delivery', label: 'Tabela Delivery' },
-    { id: 'outras', label: 'Outras Informações' },
+  type SectionFlagKey = 'incluirObjetivo' | 'incluirEscopo' | 'incluirPrecificacao' | 'incluirBancoHoras' | 'incluirDelivery' | 'incluirOutrasInformacoes'
+  const sections: Array<{ id: string; label: string; flagKey: SectionFlagKey | null }> = [
+    { id: 'dados', label: 'Dados Principais', flagKey: null },
+    { id: 'objetivo', label: 'Objetivo', flagKey: 'incluirObjetivo' },
+    { id: 'escopo', label: 'Escopo', flagKey: 'incluirEscopo' },
+    { id: 'precificacao', label: 'Precificação', flagKey: 'incluirPrecificacao' },
+    { id: 'banco', label: 'Banco de Horas', flagKey: 'incluirBancoHoras' },
+    { id: 'delivery', label: 'Tabela Delivery', flagKey: 'incluirDelivery' },
+    { id: 'outras', label: 'Outras Informações', flagKey: 'incluirOutrasInformacoes' },
   ]
 
   return (
@@ -994,26 +1020,51 @@ export default function PropostaComercialTool() {
 
             {/* Section tabs */}
             <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', padding: '0.75rem 1.5rem 0', borderBottom: '1px solid var(--border-color)' }}>
-              {sections.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setActiveSection(s.id)}
-                  style={{
-                    padding: '0.3rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid',
-                    borderColor: activeSection === s.id ? 'var(--color-primary)' : 'var(--border-color)',
-                    background: activeSection === s.id ? 'var(--color-primary)' : 'transparent',
-                    color: activeSection === s.id ? '#fff' : 'var(--ink-primary)',
-                    fontSize: '0.82rem',
-                    fontWeight: activeSection === s.id ? 700 : 400,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {s.label}
-                </button>
-              ))}
+              {sections.map((s) => {
+                const included = s.flagKey ? (form[s.flagKey] as boolean) : true
+                const isActive = activeSection === s.id
+                return (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'stretch', borderRadius: '6px', overflow: 'hidden', border: '1px solid', borderColor: isActive ? 'var(--color-primary)' : (s.flagKey && !included ? '#bbb' : 'var(--border-color)'), marginBottom: '0.35rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection(s.id)}
+                      style={{
+                        padding: '0.3rem 0.65rem',
+                        border: 'none',
+                        background: isActive ? 'var(--color-primary)' : 'transparent',
+                        color: isActive ? '#fff' : (s.flagKey && !included ? '#aaa' : 'var(--ink-primary)'),
+                        fontSize: '0.82rem',
+                        fontWeight: isActive ? 700 : 400,
+                        cursor: 'pointer',
+                        textDecoration: s.flagKey && !included ? 'line-through' : 'none',
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                    {s.flagKey && !isViewMode && (
+                      <button
+                        type="button"
+                        title={included ? 'Excluir seção do PDF' : 'Incluir seção no PDF'}
+                        onClick={() => setF(s.flagKey as SectionFlagKey, !included)}
+                        style={{
+                          padding: '0.2rem 0.45rem',
+                          border: 'none',
+                          borderLeft: '1px solid',
+                          borderLeftColor: isActive ? 'rgba(255,255,255,0.35)' : 'var(--border-color)',
+                          background: isActive ? 'var(--color-primary)' : 'transparent',
+                          color: isActive ? '#fff' : (included ? 'var(--color-primary)' : '#aaa'),
+                          cursor: 'pointer',
+                          fontSize: '0.72rem',
+                          lineHeight: 1,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {included ? '✓' : '✕'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
             <form className="estimativas-form" onSubmit={handleSave} style={{ padding: '1.25rem 1.5rem' }}>

@@ -48,6 +48,7 @@ function getSupabaseConfig() {
     customerProcessesTable: process.env.SUPABASE_CUSTOMER_PROCESSES_TABLE || 'customer_hub_processes',
     customerActivitiesTable: process.env.SUPABASE_CUSTOMER_ACTIVITIES_TABLE || 'customer_hub_activities',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
+    propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
   }
 }
 
@@ -92,6 +93,7 @@ function getSupabaseClient() {
     customerProcessesTable: config.customerProcessesTable,
     customerActivitiesTable: config.customerActivitiesTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
+    propostasTable: config.propostasTable,
   }
 }
 
@@ -3195,6 +3197,203 @@ app.post('/api/ticket-hub/tickets/reply/operator', async (req, res) => {
     return res.status(status).json({ error: `Falha ao responder chamado: ${detail}` })
   }
 })
+
+// ─── Propostas Comerciais ────────────────────────────────────────────────────
+
+function normalizePropostaRow(row) {
+  const parseJsonb = (val) => {
+    if (Array.isArray(val)) return val
+    if (typeof val === 'string') {
+      try { return JSON.parse(val) } catch { return [] }
+    }
+    return []
+  }
+
+  return {
+    id: Number(row.id ?? 0),
+    cliente: String(row.cliente ?? ''),
+    projeto: String(row.projeto ?? ''),
+    contato: String(row.contato ?? ''),
+    tipo: String(row.tipo ?? ''),
+    dataProposta: String(row.data_proposta ?? ''),
+    desenvolvimento: Boolean(row.desenvolvimento),
+    objetivo: String(row.objetivo ?? ''),
+    escopoTitulo: String(row.escopo_titulo ?? ''),
+    escopoConteudo: String(row.escopo_conteudo ?? ''),
+    precificacaoTitulo: String(row.precificacao_titulo ?? ''),
+    precificacaoDescricao: String(row.precificacao_descricao ?? ''),
+    precificacaoItens: parseJsonb(row.precificacao_itens),
+    bancoHorasConteudo: String(row.banco_horas_conteudo ?? ''),
+    deliveryItens: parseJsonb(row.delivery_itens),
+    outrasInformacoes: String(row.outras_informacoes ?? ''),
+    status: row.status === 'sent' ? 'sent' : 'draft',
+    estimativaId: row.estimativa_id ? Number(row.estimativa_id) : null,
+  }
+}
+
+function parsePropostaPayload(payload) {
+  const parseJsonbField = (val) => {
+    if (Array.isArray(val)) return val
+    return []
+  }
+
+  return {
+    cliente: String(payload.cliente ?? '').trim(),
+    projeto: String(payload.projeto ?? '').trim(),
+    contato: String(payload.contato ?? '').trim(),
+    tipo: String(payload.tipo ?? '').trim(),
+    data_proposta: String(payload.dataProposta ?? '').trim(),
+    desenvolvimento: Boolean(payload.desenvolvimento),
+    objetivo: String(payload.objetivo ?? ''),
+    escopo_titulo: String(payload.escopoTitulo ?? '').trim(),
+    escopo_conteudo: String(payload.escopoConteudo ?? ''),
+    precificacao_titulo: String(payload.precificacaoTitulo ?? '').trim(),
+    precificacao_descricao: String(payload.precificacaoDescricao ?? ''),
+    precificacao_itens: parseJsonbField(payload.precificacaoItens),
+    banco_horas_conteudo: String(payload.bancoHorasConteudo ?? ''),
+    delivery_itens: parseJsonbField(payload.deliveryItens),
+    outras_informacoes: String(payload.outrasInformacoes ?? ''),
+    status: payload.status === 'sent' ? 'sent' : 'draft',
+    estimativa_id: payload.estimativaId ? Number(payload.estimativaId) : null,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function validatePropostaPayload(parsed) {
+  if (!parsed.cliente) throw new Error('Cliente obrigatorio.')
+  if (!parsed.projeto) throw new Error('Projeto obrigatorio.')
+  if (!parsed.data_proposta) throw new Error('Data da proposta obrigatoria.')
+}
+
+function parsePropIdInput(raw) {
+  const id = Number(String(raw ?? '').trim())
+  if (!Number.isFinite(id) || id <= 0) throw new Error('ID de proposta invalido.')
+  return id
+}
+
+const PROPOSTA_SELECT = 'id, cliente, projeto, contato, tipo, data_proposta, desenvolvimento, objetivo, escopo_titulo, escopo_conteudo, precificacao_titulo, precificacao_descricao, precificacao_itens, banco_horas_conteudo, delivery_itens, outras_informacoes, status, estimativa_id, created_at, updated_at'
+
+async function listPropostas() {
+  const { client, propostasTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(propostasTable)
+    .select(PROPOSTA_SELECT)
+    .order('id', { ascending: false })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizePropostaRow)
+}
+
+async function createProposta(payload) {
+  const parsed = parsePropostaPayload(payload)
+  validatePropostaPayload(parsed)
+
+  const { client, propostasTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(propostasTable)
+    .insert({ ...parsed, created_at: new Date().toISOString() })
+    .select(PROPOSTA_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizePropostaRow(row)
+}
+
+async function updateProposta(id, payload) {
+  const parsed = parsePropostaPayload(payload)
+  validatePropostaPayload(parsed)
+
+  const { client, propostasTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(propostasTable)
+    .update(parsed)
+    .eq('id', id)
+    .select(PROPOSTA_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizePropostaRow(row)
+}
+
+async function deleteProposta(id) {
+  const { client, propostasTable } = getSupabaseClient()
+  const { error } = await client
+    .from(propostasTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function updatePropostaStatus(id, status) {
+  const nextStatus = status === 'sent' ? 'sent' : 'draft'
+  const { client, propostasTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(propostasTable)
+    .update({ status: nextStatus, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(PROPOSTA_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizePropostaRow(row)
+}
+
+app.get('/api/propostas', async (_req, res) => {
+  try {
+    const items = await listPropostas()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar propostas: ${detail}` })
+  }
+})
+
+app.post('/api/propostas', async (req, res) => {
+  try {
+    const item = await createProposta(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar proposta: ${detail}` })
+  }
+})
+
+app.put('/api/propostas/:id', async (req, res) => {
+  try {
+    const id = parsePropIdInput(req.params.id)
+    const item = await updateProposta(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar proposta: ${detail}` })
+  }
+})
+
+app.delete('/api/propostas/:id', async (req, res) => {
+  try {
+    const id = parsePropIdInput(req.params.id)
+    await deleteProposta(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir proposta: ${detail}` })
+  }
+})
+
+app.patch('/api/propostas/:id/status', async (req, res) => {
+  try {
+    const id = parsePropIdInput(req.params.id)
+    const status = String(req.body?.status || '').trim()
+    const item = await updatePropostaStatus(id, status)
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar status da proposta: ${detail}` })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(port, () => {
   console.log(`API de ranking rodando em http://localhost:${port}`)

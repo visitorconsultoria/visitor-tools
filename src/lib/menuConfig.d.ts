@@ -8,6 +8,7 @@ export type AllowedMenu =
   | 'digte-demands'
   | 'customer-hub'
   | 'ticket-hub'
+  | 'propostas'
   | 'user-admin'
   | 'change-password'
 

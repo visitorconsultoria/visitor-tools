@@ -12,6 +12,7 @@ import DigteDemandsTool from './components/DigteDemandsTool'
 import ChangePasswordTool from './components/ChangePasswordTool'
 import CustomerHubTool, { type CustomerHubPage } from './components/CustomerHubTool'
 import TicketHubTool from './components/TicketHubTool'
+import PropostaComercialTool from './components/PropostaComercialTool'
 import { ALL_MENU_KEYS, getEffectiveMenus, type AllowedMenu } from './lib/menuConfig'
 
 type CsvData = {
@@ -73,6 +74,8 @@ type SidebarIconName =
   | 'digte-demands'
   | 'customer-hub'
   | 'ticket-hub'
+  | 'propostas'
+  | 'propostas'
   | 'user-admin'
   | 'change-password'
 
@@ -100,6 +103,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M17 20h5v-2a3 3 0 0 0-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 0 1 9.288 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
     case 'ticket-hub':
       return <path d="M7 9h10m-10 5h10m2-12H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 0V3a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2h14z" />
+    case 'propostas':
+      return <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1v5h5M9 13h6M9 17h4" />
     case 'change-password':
       return <path d="M7 11V8a5 5 0 1 1 10 0v3m-8 0h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
     default:
@@ -859,6 +864,24 @@ function App() {
               <span>Central de Chamados</span>
             </button>
           )}
+          {canAccessPage('propostas', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'propostas' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('propostas')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'propostas' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="propostas" />
+                </svg>
+              </span>
+              <span>Propostas Comerciais</span>
+            </button>
+          )}
           {canAccessPage('ticket-hub', currentUser) && currentPage === 'ticket-hub' && openSidebarSubmenu === 'ticket-hub' && (
             <div className="sidebar__subnav" aria-label="Central de Chamados">
               <button
@@ -971,6 +994,8 @@ function App() {
                   ? 'Central de Clientes'
                 : currentPage === 'ticket-hub'
                   ? 'Central de Chamados'
+                : currentPage === 'propostas'
+                  ? 'Propostas Comerciais'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
@@ -996,6 +1021,8 @@ function App() {
                   ? 'Gestão de clientes, contatos, sistemas e atividades.'
                 : currentPage === 'ticket-hub'
                   ? 'Gestão de chamados e tickets através do TomTicket.'
+                : currentPage === 'propostas'
+                  ? 'Criação e gestão de propostas comerciais da Visitor Consultoria.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -1474,6 +1501,8 @@ function App() {
           <CustomerHubTool subPage={customerHubPage} />
         ) : currentPage === 'ticket-hub' ? (
           <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
+        ) : currentPage === 'propostas' ? (
+          <PropostaComercialTool />
         ) : currentPage === 'user-admin' ? (
           <UserAccessTool currentUsername={currentUser?.username || ''} />
         ) : currentPage === 'change-password' ? (

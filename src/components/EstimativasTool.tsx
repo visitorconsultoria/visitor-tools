@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { jsPDF } from 'jspdf'
 import internalPartnerLogo from '../assets/logo_3.png'
 import { apiUrl } from '../lib/api'
+import RichTextEditor from './RichTextEditor'
 
 type EstimateStatus = 'pending' | 'sent'
 
@@ -186,6 +187,7 @@ export default function EstimativasTool() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [formVersion, setFormVersion] = useState(0)
   const modalRef = useRef<HTMLElement | null>(null)
 
   const fetchEstimates = async () => {
@@ -259,6 +261,7 @@ export default function EstimativasTool() {
     setForm(EMPTY_FORM)
     setEditingId(null)
     setIsViewMode(false)
+    setFormVersion((v) => v + 1)
     setIsModalOpen(true)
   }
 
@@ -278,6 +281,7 @@ export default function EstimativasTool() {
         : [{ detail: '', hours: '' }],
     })
     setIsViewMode(false)
+    setFormVersion((v) => v + 1)
     setIsModalOpen(true)
   }
 
@@ -297,6 +301,7 @@ export default function EstimativasTool() {
         : [{ detail: '', hours: '' }],
     })
     setIsViewMode(false)
+    setFormVersion((v) => v + 1)
     setIsModalOpen(true)
   }
 
@@ -316,6 +321,7 @@ export default function EstimativasTool() {
         : [{ detail: '', hours: '' }],
     })
     setIsViewMode(true)
+    setFormVersion((v) => v + 1)
     setIsModalOpen(true)
   }
 
@@ -869,10 +875,17 @@ export default function EstimativasTool() {
                   <option value="sent">Enviado</option>
                 </select>
               </label>
-              <label className="estimativas-form__full">
+              <div className="estimativas-form__full" style={{ display: 'grid', gap: '0.38rem', fontSize: '0.88rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
                 Observações
-                <textarea rows={2} value={form.notes} onChange={(event) => setFormValue('notes', event.target.value)} readOnly={isViewMode} />
-              </label>
+                <RichTextEditor
+                  key={`notes-${formVersion}`}
+                  value={form.notes}
+                  onChange={(html) => setFormValue('notes', html)}
+                  placeholder="Informações adicionais (opcional)"
+                  rows={3}
+                  disabled={isViewMode || isSaving}
+                />
+              </div>
 
               <div className="estimativas-form__full">
                 <div className="estimativas-header-row">

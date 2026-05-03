@@ -462,7 +462,6 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     if (!items.length) return
     const colEsc = cw * 0.35
     const colDesc = cw * 0.45
-    const colVal = cw * 0.20
     const headerH = 20
 
     ensureSpace(headerH + 20)
@@ -509,7 +508,6 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     if (!items.length) return
     const colSvc = cw * 0.62
     const colTipo = cw * 0.15
-    const colVal = cw * 0.23
     const headerH = 22
 
     ensureSpace(headerH + 20)

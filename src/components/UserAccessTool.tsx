@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
+import { ASSIGNABLE_MENU_KEYS, ASSIGNABLE_MENU_OPTIONS, getEffectiveMenus, type AssignableMenu } from '../lib/menuConfig'
 
-type MenuPermission = 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'customer-hub'
+type MenuPermission = AssignableMenu
 
 type UserRow = {
   id: number
@@ -23,16 +24,7 @@ type UserAccessToolProps = {
   currentUsername: string
 }
 
-const MENU_OPTIONS: Array<{ key: MenuPermission, label: string }> = [
-  { key: 'process', label: 'Comparar Projeto' },
-  { key: 'xml-excel', label: 'XML para Excel' },
-  { key: 'excel-csv-sqlite', label: 'Excel/CSV para SQL' },
-  { key: 'resume-ranking', label: 'Ranking de Curriculos' },
-  { key: 'estimativas', label: 'Estimativas' },
-  { key: 'daily-activities', label: 'Apontamentos' },
-  { key: 'digte-demands', label: 'Demandas DIGTE' },
-  { key: 'customer-hub', label: 'Central de Clientes' },
-]
+const MENU_OPTIONS: ReadonlyArray<{ key: MenuPermission, label: string }> = ASSIGNABLE_MENU_OPTIONS
 
 const EMPTY_FORM: UserFormState = {
   username: '',
@@ -56,7 +48,7 @@ function toFriendlyApiError(error: unknown, fallback: string): string {
 
 function normalizeUser(input: unknown): UserRow {
   const row = input as Partial<UserRow>
-  const permissions = Array.isArray(row.allowedMenus) ? row.allowedMenus : []
+  const permissions = getEffectiveMenus(row.username ?? '', row.allowedMenus, ASSIGNABLE_MENU_KEYS)
 
   return {
     id: Number(row.id ?? 0),

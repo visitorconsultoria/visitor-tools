@@ -1,6 +1,7 @@
 import express from 'express'
 import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
+import { ASSIGNABLE_MENU_KEYS, getEffectiveMenus, isVisitorUsername, normalizeMenuPermissions } from './src/lib/menuConfig.mjs'
 
 dotenv.config()
 
@@ -46,6 +47,7 @@ function getSupabaseConfig() {
     customerSystemsTable: process.env.SUPABASE_CUSTOMER_SYSTEMS_TABLE || 'customer_hub_systems',
     customerProcessesTable: process.env.SUPABASE_CUSTOMER_PROCESSES_TABLE || 'customer_hub_processes',
     customerActivitiesTable: process.env.SUPABASE_CUSTOMER_ACTIVITIES_TABLE || 'customer_hub_activities',
+    ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
   }
 }
 
@@ -89,18 +91,14 @@ function getSupabaseClient() {
     customerSystemsTable: config.customerSystemsTable,
     customerProcessesTable: config.customerProcessesTable,
     customerActivitiesTable: config.customerActivitiesTable,
+    ticketHubAccessesTable: config.ticketHubAccessesTable,
   }
 }
 
-const MENU_KEYS = ['process', 'xml-excel', 'excel-csv-sqlite', 'resume-ranking', 'estimativas', 'daily-activities', 'digte-demands', 'customer-hub']
-
-function normalizeMenuPermissions(value) {
-  const items = Array.isArray(value) ? value : []
-  return Array.from(new Set(items.map((item) => String(item || '').trim()).filter((item) => MENU_KEYS.includes(item))))
-}
+const MENU_KEYS = [...ASSIGNABLE_MENU_KEYS]
 
 function isVisitorAdminUser(username) {
-  return String(username || '').trim().toLowerCase() === 'visitor'
+  return isVisitorUsername(username)
 }
 
 function getAdminUserFromRequest(req) {
@@ -146,12 +144,13 @@ function assertVisitorAdmin(req) {
 }
 
 function normalizeUserRow(row) {
+  const username = String(row.username ?? '')
   return {
     id: Number(row.id ?? 0),
-    username: String(row.username ?? ''),
+    username,
     displayName: String(row.display_name ?? ''),
     isActive: Boolean(row.is_active),
-    allowedMenus: normalizeMenuPermissions(row.allowed_menus),
+    allowedMenus: getEffectiveMenus(username, row.allowed_menus, MENU_KEYS),
   }
 }
 
@@ -161,7 +160,7 @@ function parseUserPayload(payload) {
     password: String(payload.password ?? '').trim(),
     displayName: String(payload.displayName ?? '').trim(),
     isActive: payload.isActive !== false,
-    allowedMenus: normalizeMenuPermissions(payload.allowedMenus),
+    allowedMenus: normalizeMenuPermissions(payload.allowedMenus, MENU_KEYS),
   }
 }
 
@@ -1530,7 +1529,7 @@ const SYSTEM_PROMPT = `Voce e um especialista em recrutamento e selecao de RH. A
 }
 Seja objetivo e preciso. Limite pontos_fortes e lacunas a no maximo 4 itens cada. Limite habilidades a no maximo 12 itens cada.`
 
-app.use(express.json({ limit: '5mb' }))
+app.use(express.json({ limit: '40mb' }))
 
 app.use((req, res, next) => {
   const requestOrigin = String(req.headers.origin || '')
@@ -2325,6 +2324,875 @@ app.post('/api/resume-ranking/analyze', async (req, res) => {
     })
   } catch {
     return res.status(500).json({ error: 'Falha interna ao analisar curriculo.' })
+  }
+})
+
+// ---- Ticket Hub ----
+
+const TOMTICKET_API_TOKEN = process.env.TOMTICKET_API_TOKEN || ''
+const TOMTICKET_API_BASE_URL = (process.env.TOMTICKET_API_BASE_URL || 'https://api.tomticket.com/v2.0').replace(/\/+$/, '')
+const TOMTICKET_DEFAULT_OPERATOR_ID = '07af7d3bb8d9636238663974e409e569'
+
+function extractTomTicketOrganizations(payload) {
+  const arrays = []
+
+  const collect = (node, depth = 0) => {
+    if (depth > 4 || node == null) return
+
+    if (Array.isArray(node)) {
+      arrays.push(node)
+      for (const item of node) {
+        collect(item, depth + 1)
+      }
+      return
+    }
+
+    if (typeof node !== 'object') return
+
+    const commonKeys = ['organizations', 'organization', 'data', 'results', 'result', 'items']
+    for (const key of commonKeys) {
+      if (Object.prototype.hasOwnProperty.call(node, key)) {
+        collect(node[key], depth + 1)
+      }
+    }
+  }
+
+  collect(payload)
+
+  const getId = (item) => {
+    const candidates = [item.id, item.organization_id, item.id_organization, item.organizationId, item.org_id]
+    for (const candidate of candidates) {
+      const value = String(candidate ?? '').trim()
+      if (value) return value
+    }
+    return ''
+  }
+
+  const getName = (item) => {
+    const candidates = [item.name, item.organization_name, item.org_name, item.fantasia, item.company_name]
+    for (const candidate of candidates) {
+      const value = String(candidate ?? '').trim()
+      if (value) return value
+    }
+    return ''
+  }
+
+  const mapById = new Map()
+  for (const list of arrays) {
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue
+      const id = getId(item)
+      const name = getName(item)
+      if (!id || !name) continue
+      if (!mapById.has(id)) {
+        mapById.set(id, { id, name })
+      }
+    }
+  }
+
+  return Array.from(mapById.values())
+}
+
+app.get('/api/ticket-hub/organizations', async (_req, res) => {
+  if (!TOMTICKET_API_TOKEN) {
+    return res.status(500).json({ error: 'Token TomTicket não configurado no servidor.' })
+  }
+
+  try {
+    const response = await fetch(`${TOMTICKET_API_BASE_URL}/organization/list`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const detail = await response.text()
+      return res.status(response.status).json({ error: `Erro na API TomTicket: ${detail}` })
+    }
+
+    const data = await response.json()
+    const organizations = extractTomTicketOrganizations(data)
+    return res.json({ organizations })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao consultar TomTicket: ${detail}` })
+  }
+})
+
+function normalizeOrganizationIds(organizations) {
+  const normalized = Array.isArray(organizations)
+    ? organizations.map((item) => String(item ?? '').trim()).filter(Boolean)
+    : []
+  return Array.from(new Set(normalized))
+}
+
+function extractTomTicketTickets(payload) {
+  const arrays = []
+
+  const collect = (node, depth = 0) => {
+    if (depth > 4 || node == null) return
+
+    if (Array.isArray(node)) {
+      arrays.push(node)
+      for (const item of node) {
+        collect(item, depth + 1)
+      }
+      return
+    }
+
+    if (typeof node !== 'object') return
+
+    const commonKeys = ['tickets', 'ticket', 'data', 'results', 'result', 'items']
+    for (const key of commonKeys) {
+      if (Object.prototype.hasOwnProperty.call(node, key)) {
+        collect(node[key], depth + 1)
+      }
+    }
+  }
+
+  collect(payload)
+
+  const seen = new Set()
+  const list = []
+  for (const array of arrays) {
+    for (const item of array) {
+      if (!item || typeof item !== 'object') continue
+      const key = JSON.stringify(item)
+      if (seen.has(key)) continue
+      seen.add(key)
+      list.push(item)
+    }
+  }
+
+  return list
+}
+
+async function getTicketHubUserAccessByUsername(username) {
+  const normalizedUsername = String(username || '').trim().toLowerCase()
+  if (!normalizedUsername) {
+    throw new Error('Usuario da sessao nao informado.')
+  }
+
+  if (isVisitorAdminUser(normalizedUsername)) {
+    return {
+      isVisitor: true,
+      organizations: [],
+    }
+  }
+
+  const { client, usersTable, ticketHubAccessesTable } = getSupabaseClient()
+  const { data: userRow, error: userError } = await client
+    .from(usersTable)
+    .select('id, username, allowed_menus')
+    .eq('username', normalizedUsername)
+    .maybeSingle()
+
+  if (userError) throw new Error(userError.message)
+  if (!userRow) throw new Error('Usuario nao encontrado para acesso da Central de Chamados.')
+
+  const allowedMenus = normalizeMenuPermissions(userRow.allowed_menus, MENU_KEYS)
+  if (!allowedMenus.includes('ticket-hub')) {
+    throw new Error('Acesso negado: usuario sem permissao para a Central de Chamados.')
+  }
+
+  const { data: accessRow, error: accessError } = await client
+    .from(ticketHubAccessesTable)
+    .select('organizations')
+    .eq('user_id', Number(userRow.id))
+    .maybeSingle()
+
+  if (accessError) throw new Error(accessError.message)
+
+  return {
+    isVisitor: false,
+    organizations: normalizeOrganizationIds(accessRow?.organizations),
+  }
+}
+
+async function upsertTicketHubOrganizations(userId, organizations) {
+  const { client, ticketHubAccessesTable } = getSupabaseClient()
+  const normalizedOrganizations = normalizeOrganizationIds(organizations)
+
+  const { error } = await client
+    .from(ticketHubAccessesTable)
+    .upsert(
+      {
+        user_id: userId,
+        organizations: normalizedOrganizations,
+      },
+      { onConflict: 'user_id' },
+    )
+
+  if (error) throw new Error(error.message)
+
+  return normalizedOrganizations
+}
+
+async function getTicketHubOrganizationMap(userIds) {
+  const normalizedIds = (Array.isArray(userIds) ? userIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0)
+
+  if (!normalizedIds.length) {
+    return new Map()
+  }
+
+  const { client, ticketHubAccessesTable } = getSupabaseClient()
+  const { data, error } = await client
+    .from(ticketHubAccessesTable)
+    .select('user_id, organizations')
+    .in('user_id', normalizedIds)
+
+  if (error) throw new Error(error.message)
+
+  const map = new Map()
+  for (const row of (data || [])) {
+    const id = Number(row.user_id)
+    if (!Number.isInteger(id) || id <= 0) continue
+    map.set(id, normalizeOrganizationIds(row.organizations))
+  }
+
+  return map
+}
+
+async function listTicketHubAppUsers() {
+  const { client, usersTable } = getSupabaseClient()
+  const { data, error } = await client
+    .from(usersTable)
+    .select('id, username, display_name, is_active, allowed_menus')
+    .order('username', { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return (data || [])
+    .filter((row) => !isVisitorAdminUser(row.username))
+    .map((row) => {
+      const allowedMenus = normalizeMenuPermissions(row.allowed_menus, MENU_KEYS)
+      return {
+        id: Number(row.id),
+        username: String(row.username ?? ''),
+        displayName: String(row.display_name ?? ''),
+        isActive: Boolean(row.is_active),
+        hasTicketHubAccess: allowedMenus.includes('ticket-hub'),
+      }
+    })
+}
+
+// Helper: load all app users that have 'ticket-hub' permission and merge their org assignments
+async function getTicketHubUsers() {
+  const { client, usersTable } = getSupabaseClient()
+  const { data, error } = await client
+    .from(usersTable)
+    .select('id, username, display_name, is_active, allowed_menus')
+    .contains('allowed_menus', ['ticket-hub'])
+    .order('username', { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  const users = (data || [])
+  const organizationMap = await getTicketHubOrganizationMap(users.map((row) => Number(row.id)))
+
+  return users.map((row) => ({
+    id: Number(row.id),
+    username: String(row.username ?? ''),
+    displayName: String(row.display_name ?? ''),
+    isActive: Boolean(row.is_active),
+    ticketOrganizations: organizationMap.get(Number(row.id)) ?? [],
+  }))
+}
+
+async function grantTicketHubAccess(userId, organizations) {
+  const { client, usersTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(usersTable)
+    .select('id, username, display_name, is_active, allowed_menus')
+    .eq('id', userId)
+    .single()
+
+  if (error) throw new Error(error.message)
+
+  if (isVisitorAdminUser(row.username)) {
+    throw new Error('O usuario visitor nao pode ser cadastrado nesta administracao.')
+  }
+
+  const currentMenus = normalizeMenuPermissions(row.allowed_menus, MENU_KEYS)
+  const nextMenus = currentMenus.includes('ticket-hub')
+    ? currentMenus
+    : [...currentMenus, 'ticket-hub']
+
+  const { data: updatedRow, error: updateError } = await client
+    .from(usersTable)
+    .update({ allowed_menus: nextMenus })
+    .eq('id', userId)
+    .select('id, username, display_name, is_active, allowed_menus')
+    .single()
+
+  if (updateError) throw new Error(updateError.message)
+
+  const savedOrganizations = await upsertTicketHubOrganizations(userId, organizations)
+
+  return {
+    id: Number(updatedRow.id),
+    username: String(updatedRow.username ?? ''),
+    displayName: String(updatedRow.display_name ?? ''),
+    isActive: Boolean(updatedRow.is_active),
+    ticketOrganizations: savedOrganizations,
+  }
+}
+
+app.get('/api/ticket-hub/app-users', async (req, res) => {
+  try {
+    assertVisitorAdmin(req)
+    const users = await listTicketHubAppUsers()
+    return res.json(users)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao buscar usuarios da aplicacao: ${detail}` })
+  }
+})
+
+app.get('/api/ticket-hub/users', async (req, res) => {
+  try {
+    assertVisitorAdmin(req)
+    const users = await getTicketHubUsers()
+    return res.json(users)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao buscar usuarios: ${detail}` })
+  }
+})
+
+app.post('/api/ticket-hub/users', async (req, res) => {
+  try {
+    assertVisitorAdmin(req)
+
+    const userId = Number(String(req.body?.userId ?? '').trim())
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: 'Usuario selecionado invalido.' })
+    }
+
+    const organizations = normalizeOrganizationIds(req.body?.organizations)
+
+    const item = await grantTicketHubAccess(userId, organizations)
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /acesso negado/i.test(detail) ? 403 : 400
+    return res.status(status).json({ error: `Falha ao cadastrar acesso: ${detail}` })
+  }
+})
+
+app.put('/api/ticket-hub/users/:id/organizations', async (req, res) => {
+  try {
+    assertVisitorAdmin(req)
+    const id = Number(String(req.params.id ?? '').trim())
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID de usuario invalido.' })
+    }
+
+    const orgs = normalizeOrganizationIds(req.body?.organizations)
+
+    // Confirm user exists and has ticket-hub permission
+    const { client, usersTable } = getSupabaseClient()
+    const { data, error } = await client
+      .from(usersTable)
+      .select('id')
+      .eq('id', id)
+      .contains('allowed_menus', ['ticket-hub'])
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!data) {
+      return res.status(404).json({ error: 'Usuario nao encontrado ou sem permissao ticket-hub.' })
+    }
+
+    const savedOrganizations = await upsertTicketHubOrganizations(id, orgs)
+    return res.json({ ok: true, organizations: savedOrganizations })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /acesso negado/i.test(detail) ? 403 : 400
+    return res.status(status).json({ error: `Falha ao atualizar organizacoes: ${detail}` })
+  }
+})
+
+app.get('/api/ticket-hub/tickets', async (req, res) => {
+  if (!TOMTICKET_API_TOKEN) {
+    return res.status(500).json({ error: 'Token TomTicket não configurado no servidor.' })
+  }
+
+  try {
+    const sessionUser = getSessionUserFromRequest(req)
+    const userAccess = await getTicketHubUserAccessByUsername(sessionUser.username)
+    const parsePositiveNumber = (value) => {
+      const parsed = Number(value)
+      if (!Number.isFinite(parsed) || parsed <= 0) return null
+      return Math.floor(parsed)
+    }
+    const requestedPage = parsePositiveNumber(req.query.page)
+    const situationRaw = String(req.query.situation ?? '').trim()
+    const situation = /^[\d,]+$/.test(situationRaw) ? situationRaw : ''
+
+    // Non-visitor users can only query tickets for organizations granted in administration.
+    if (!userAccess.isVisitor && !userAccess.organizations.length) {
+      if (requestedPage) {
+        return res.json({
+          tickets: [],
+          page: requestedPage,
+          pages: null,
+          next_page: null,
+          previous_page: requestedPage > 1 ? requestedPage - 1 : null,
+        })
+      }
+      return res.json({ tickets: [] })
+    }
+
+    const headers = {
+      'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    }
+    const MAX_TOMTICKET_PAGES = 200
+    const DEFAULT_TOMTICKET_PAGE_SIZE = 50
+
+    const getTicketKey = (item) => String(item?.id ?? item?.ticket_id ?? '') || JSON.stringify(item)
+
+    const getTicketPaginationInfo = (payload) => {
+      const readNestedPaginationValue = (node, keys, depth = 0) => {
+        if (!node || depth > 5) return null
+
+        if (Array.isArray(node)) {
+          for (const item of node) {
+            const value = readNestedPaginationValue(item, keys, depth + 1)
+            if (value != null) return value
+          }
+          return null
+        }
+
+        if (typeof node !== 'object') return null
+        for (const key of keys) {
+          if (Object.prototype.hasOwnProperty.call(node, key)) {
+            return node[key]
+          }
+        }
+
+        for (const value of Object.values(node)) {
+          const nested = readNestedPaginationValue(value, keys, depth + 1)
+          if (nested != null) return nested
+        }
+
+        return null
+      }
+
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return {
+          currentPage: null,
+          totalPages: null,
+          pageSize: null,
+          nextPage: null,
+          previousPage: null,
+        }
+      }
+
+      return {
+        currentPage: parsePositiveNumber(readNestedPaginationValue(payload, ['page', 'current_page', 'currentPage'])),
+        totalPages: parsePositiveNumber(readNestedPaginationValue(payload, ['pages', 'total_pages', 'totalPages', 'last_page', 'lastPage'])),
+        pageSize: parsePositiveNumber(readNestedPaginationValue(payload, ['per_page', 'page_size', 'pageSize', 'limit'])),
+        nextPage: parsePositiveNumber(readNestedPaginationValue(payload, ['next_page', 'nextPage'])),
+        previousPage: parsePositiveNumber(readNestedPaginationValue(payload, ['previous_page', 'previousPage', 'prev_page', 'prevPage'])),
+      }
+    }
+
+    const fetchTomTicketList = async (organizationId = '', page = 1, sit = '') => {
+      const url = new URL(`${TOMTICKET_API_BASE_URL}/ticket/list`)
+      url.searchParams.set('page', String(page))
+      if (organizationId) {
+        url.searchParams.set('organization_id', organizationId)
+      }
+      // Append situation without encoding commas (URLSearchParams.set encodes them as %2C)
+      const finalUrl = sit ? `${url.toString()}&situation=${sit}` : url.toString()
+
+      const response = await fetch(finalUrl, {
+        method: 'GET',
+        headers,
+      })
+
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail || `Erro ${response.status} na API TomTicket.`)
+      }
+
+      return response.json()
+    }
+
+    const fetchTomTicketListPage = async (organizationId = '', page = 1, sit = '') => {
+      const data = await fetchTomTicketList(organizationId, page, sit)
+      return {
+        items: extractTomTicketTickets(data),
+        pageInfo: getTicketPaginationInfo(data),
+      }
+    }
+
+    if (requestedPage) {
+      if (userAccess.isVisitor) {
+        const { items, pageInfo } = await fetchTomTicketListPage('', requestedPage, situation)
+        const expectedPageSize = pageInfo.pageSize || DEFAULT_TOMTICKET_PAGE_SIZE
+        const pages = pageInfo.totalPages
+        const nextPage = pageInfo.nextPage
+          ?? (pages && requestedPage < pages ? requestedPage + 1 : (items.length >= expectedPageSize ? requestedPage + 1 : null))
+        const previousPage = pageInfo.previousPage ?? (requestedPage > 1 ? requestedPage - 1 : null)
+
+        return res.json({
+          tickets: items,
+          page: requestedPage,
+          pages,
+          next_page: nextPage,
+          previous_page: previousPage,
+        })
+      }
+
+      const mapByKey = new Map()
+      let aggregatedPages = null
+      let hasAnyNextPage = false
+      for (const organizationId of userAccess.organizations) {
+        try {
+          const { items, pageInfo } = await fetchTomTicketListPage(organizationId, requestedPage, situation)
+          for (const item of items) {
+            const key = getTicketKey(item)
+            if (!mapByKey.has(key)) {
+              mapByKey.set(key, item)
+            }
+          }
+
+          const expectedPageSize = pageInfo.pageSize || DEFAULT_TOMTICKET_PAGE_SIZE
+          const orgHasNextPage = pageInfo.nextPage
+            ? true
+            : (pageInfo.totalPages ? requestedPage < pageInfo.totalPages : items.length >= expectedPageSize)
+          if (orgHasNextPage) hasAnyNextPage = true
+
+          if (pageInfo.totalPages) {
+            aggregatedPages = aggregatedPages ? Math.max(aggregatedPages, pageInfo.totalPages) : pageInfo.totalPages
+          }
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error ?? '')
+          if (/organization not found/i.test(detail)) {
+            continue
+          }
+          throw error
+        }
+      }
+
+      return res.json({
+        tickets: Array.from(mapByKey.values()),
+        page: requestedPage,
+        pages: aggregatedPages,
+        next_page: hasAnyNextPage ? requestedPage + 1 : null,
+        previous_page: requestedPage > 1 ? requestedPage - 1 : null,
+      })
+    }
+
+    const fetchTomTicketListAllPages = async (organizationId = '', sit = '') => {
+      const mapByKey = new Map()
+      let repeatedPagesWithoutNewItems = 0
+
+      for (let page = 1; page <= MAX_TOMTICKET_PAGES; page += 1) {
+        const data = await fetchTomTicketList(organizationId, page, sit)
+        const items = extractTomTicketTickets(data)
+        if (!items.length) {
+          break
+        }
+
+        let addedInPage = 0
+        for (const item of items) {
+          const key = getTicketKey(item)
+          if (!mapByKey.has(key)) {
+            mapByKey.set(key, item)
+            addedInPage += 1
+          }
+        }
+
+        const pageInfo = getTicketPaginationInfo(data)
+        if (pageInfo.totalPages && page >= pageInfo.totalPages) {
+          break
+        }
+
+        const expectedPageSize = pageInfo.pageSize || DEFAULT_TOMTICKET_PAGE_SIZE
+        if (items.length < expectedPageSize) {
+          break
+        }
+
+        if (addedInPage === 0) {
+          repeatedPagesWithoutNewItems += 1
+        } else {
+          repeatedPagesWithoutNewItems = 0
+        }
+
+        // Safety guard if API keeps returning duplicated pages.
+        if (repeatedPagesWithoutNewItems >= 2) {
+          break
+        }
+      }
+
+      return Array.from(mapByKey.values())
+    }
+
+    let tickets = []
+    if (userAccess.isVisitor) {
+      tickets = await fetchTomTicketListAllPages('', situation)
+    } else {
+      const mapByKey = new Map()
+      for (const organizationId of userAccess.organizations) {
+        try {
+          const items = await fetchTomTicketListAllPages(organizationId, situation)
+          for (const item of items) {
+            const key = getTicketKey(item)
+            if (!mapByKey.has(key)) {
+              mapByKey.set(key, item)
+            }
+          }
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error ?? '')
+          if (/organization not found/i.test(detail)) {
+            continue
+          }
+          throw error
+        }
+      }
+      tickets = Array.from(mapByKey.values())
+    }
+
+    return res.json({ tickets })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao consultar chamados: ${detail}` })
+  }
+})
+
+async function handleTicketHubTicketDetail(req, res) {
+  if (!TOMTICKET_API_TOKEN) {
+    return res.status(500).json({ error: 'Token TomTicket não configurado no servidor.' })
+  }
+
+  try {
+    const queryTicketIdRaw = Array.isArray(req.query.ticket_id) ? req.query.ticket_id[0] : req.query.ticket_id
+    const ensureOperatorLinkRaw = Array.isArray(req.query.ensure_operator_linked)
+      ? req.query.ensure_operator_linked[0]
+      : req.query.ensure_operator_linked
+    const shouldEnsureOperatorLink = String(ensureOperatorLinkRaw || '').trim() === '1'
+    const paramTicketIdRaw = req.params?.ticketId
+    const ticketId = String(queryTicketIdRaw || paramTicketIdRaw || '').trim()
+    if (!ticketId) {
+      return res.status(400).json({ error: 'ID do chamado não informado.' })
+    }
+
+    const sessionUser = getSessionUserFromRequest(req)
+    const userAccess = await getTicketHubUserAccessByUsername(sessionUser.username)
+
+    const url = new URL(`${TOMTICKET_API_BASE_URL}/ticket/detail`)
+    url.searchParams.set('ticket_id', ticketId)
+
+    const fetchTicketDetailFromApi = async () => {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail || `Erro ${response.status} na API TomTicket.`)
+      }
+
+      const payload = await response.json()
+      const detailData = payload?.data && typeof payload.data === 'object' ? payload.data : payload
+
+      if (!detailData || typeof detailData !== 'object') {
+        throw new Error('Resposta inválida da API de detalhe do chamado.')
+      }
+
+      return detailData
+    }
+
+    let detailData = await fetchTicketDetailFromApi()
+
+    if (shouldEnsureOperatorLink) {
+      const operator = detailData?.operator && typeof detailData.operator === 'object'
+        ? detailData.operator
+        : null
+      const operatorId = String(operator?.id ?? '').trim()
+      const operatorName = String(operator?.name ?? '').trim().toUpperCase()
+      const shouldLinkOperator = operatorId !== TOMTICKET_DEFAULT_OPERATOR_ID || operatorName !== 'VISITOR'
+
+      if (shouldLinkOperator) {
+        const formPayload = new URLSearchParams({
+          ticket_id: ticketId,
+          operator_id: TOMTICKET_DEFAULT_OPERATOR_ID,
+        })
+
+        let linkResponse = await fetch(`${TOMTICKET_API_BASE_URL}/ticket/operator/link`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: formPayload.toString(),
+        })
+
+        if (!linkResponse.ok) {
+          // Some TomTicket environments only parse multipart bodies for this endpoint.
+          const multipartPayload = new FormData()
+          multipartPayload.append('ticket_id', ticketId)
+          multipartPayload.append('operator_id', TOMTICKET_DEFAULT_OPERATOR_ID)
+
+          linkResponse = await fetch(`${TOMTICKET_API_BASE_URL}/ticket/operator/link`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+            },
+            body: multipartPayload,
+          })
+        }
+
+        if (!linkResponse.ok) {
+          const detail = await linkResponse.text()
+          throw new Error(detail || `Erro ${linkResponse.status} ao vincular operador na API TomTicket.`)
+        }
+
+        // Reload detail after linking so frontend receives operator already associated.
+        detailData = await fetchTicketDetailFromApi()
+      }
+    }
+
+    if (!userAccess.isVisitor) {
+      const orgId = String(
+        detailData?.customer?.organization?.id
+        ?? detailData?.organization?.id
+        ?? detailData?.organization_id
+        ?? '',
+      ).trim()
+
+      if (orgId && !userAccess.organizations.includes(orgId)) {
+        return res.status(403).json({ error: 'Acesso negado para este chamado.' })
+      }
+    }
+
+    return res.json({ detail: detailData })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao consultar detalhe do chamado: ${detail}` })
+  }
+}
+
+app.get('/api/ticket-hub/tickets/detail', handleTicketHubTicketDetail)
+
+app.get('/api/ticket-hub/tickets/:ticketId/detail', async (req, res) => {
+  return handleTicketHubTicketDetail(req, res)
+})
+
+app.post('/api/ticket-hub/tickets/reply/operator', async (req, res) => {
+  if (!TOMTICKET_API_TOKEN) {
+    return res.status(500).json({ error: 'Token TomTicket não configurado no servidor.' })
+  }
+
+  try {
+    const sessionUser = getSessionUserFromRequest(req)
+    const userAccess = await getTicketHubUserAccessByUsername(sessionUser.username)
+
+    const ticketId = String(req.body?.ticket_id ?? '').trim()
+    const message = String(req.body?.message ?? '').trim()
+    const attachmentsRaw = Array.isArray(req.body?.attachment) ? req.body.attachment : []
+    const startDate = String(req.body?.start_date ?? '').trim()
+    const endDate = String(req.body?.end_date ?? '').trim()
+
+    if (!ticketId) {
+      return res.status(400).json({ error: 'Campo ticket_id é obrigatório.' })
+    }
+
+    if (!message) {
+      return res.status(400).json({ error: 'Campo message é obrigatório.' })
+    }
+
+    const detailUrl = new URL(`${TOMTICKET_API_BASE_URL}/ticket/detail`)
+    detailUrl.searchParams.set('ticket_id', ticketId)
+    const detailResponse = await fetch(detailUrl.toString(), {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!detailResponse.ok) {
+      const detail = await detailResponse.text()
+      throw new Error(detail || `Erro ${detailResponse.status} ao validar ticket na API TomTicket.`)
+    }
+
+    const detailPayload = await detailResponse.json()
+    const detailData = detailPayload?.data && typeof detailPayload.data === 'object' ? detailPayload.data : detailPayload
+
+    if (!userAccess.isVisitor) {
+      const orgId = String(
+        detailData?.customer?.organization?.id
+        ?? detailData?.organization?.id
+        ?? detailData?.organization_id
+        ?? '',
+      ).trim()
+
+      if (orgId && !userAccess.organizations.includes(orgId)) {
+        return res.status(403).json({ error: 'Acesso negado para responder este chamado.' })
+      }
+    }
+
+    const form = new FormData()
+    form.append('ticket_id', ticketId)
+    form.append('message', message)
+
+    if (startDate && endDate) {
+      form.append('start_date', startDate)
+      form.append('end_date', endDate)
+    }
+
+    for (let index = 0; index < attachmentsRaw.length; index += 1) {
+      const attachment = attachmentsRaw[index]
+      if (!attachment || typeof attachment !== 'object') continue
+
+      const fileName = String(attachment.name ?? '').trim() || `attachment-${index + 1}.bin`
+      const contentType = String(attachment.type ?? '').trim() || 'application/octet-stream'
+      const base64Raw = String(attachment.contentBase64 ?? '').trim()
+      const base64 = base64Raw.includes(',') ? base64Raw.split(',').pop() : base64Raw
+
+      if (!base64) continue
+
+      const bytes = Buffer.from(base64, 'base64')
+      const blob = new Blob([bytes], { type: contentType })
+      form.append(`attachment[${index}]`, blob, fileName)
+    }
+
+    const response = await fetch(`${TOMTICKET_API_BASE_URL}/ticket/reply/operator`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+      },
+      body: form,
+    })
+
+    if (!response.ok) {
+      const detail = await response.text()
+      throw new Error(detail || `Erro ${response.status} na API TomTicket ao responder chamado.`)
+    }
+
+    const data = await response.json()
+    return res.json({ ok: true, data })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao responder chamado: ${detail}` })
   }
 })
 

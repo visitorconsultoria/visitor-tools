@@ -11,6 +11,8 @@ import DailyActivityTool from './components/DailyActivityTool'
 import DigteDemandsTool from './components/DigteDemandsTool'
 import ChangePasswordTool from './components/ChangePasswordTool'
 import CustomerHubTool, { type CustomerHubPage } from './components/CustomerHubTool'
+import TicketHubTool from './components/TicketHubTool'
+import { ALL_MENU_KEYS, getEffectiveMenus, type AllowedMenu } from './lib/menuConfig'
 
 type CsvData = {
   headers: string[]
@@ -32,9 +34,9 @@ type XmlExcelRoutineOption = {
   available: boolean
 }
 
-type MenuPage = 'home' | 'process' | 'xml-excel' | 'excel-csv-sqlite' | 'resume-ranking' | 'estimativas' | 'daily-activities' | 'digte-demands' | 'customer-hub' | 'user-admin' | 'change-password'
+type MenuPage = 'home' | AllowedMenu
 
-type AllowedMenu = Exclude<MenuPage, 'home'>
+type SidebarSubmenuSection = 'xml-excel' | 'customer-hub' | 'ticket-hub'
 
 type UserSession = {
   username: string
@@ -44,19 +46,6 @@ type UserSession = {
 
 const MAX_PREVIEW_ROWS = 8
 const AUTH_STORAGE_KEY = 'vt_authenticated'
-const MENU_LABELS: Record<AllowedMenu, string> = {
-  process: 'Comparar Projeto',
-  'xml-excel': 'XML para Excel',
-  'excel-csv-sqlite': 'Excel/CSV para SQL',
-  'resume-ranking': 'Ranking de Curriculos',
-  estimativas: 'Estimativas',
-  'daily-activities': 'Apontamentos',
-  'digte-demands': 'Demandas DIGTE',
-  'customer-hub': 'Central de Clientes',
-  'user-admin': 'Usuarios e Acessos',
-  'change-password': 'Alterar Senha',
-}
-
 const CUSTOMER_HUB_PAGES: Array<{ id: CustomerHubPage; label: string }> = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'clientes', label: 'Clientes' },
@@ -83,6 +72,7 @@ type SidebarIconName =
   | 'daily-activities'
   | 'digte-demands'
   | 'customer-hub'
+  | 'ticket-hub'
   | 'user-admin'
   | 'change-password'
 
@@ -108,6 +98,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm8 2c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-1.79-4-4-4zM8 14c-2.67 0-6 1.34-6 4v2h4" />
     case 'customer-hub':
       return <path d="M17 20h5v-2a3 3 0 0 0-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 0 1 9.288 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
+    case 'ticket-hub':
+      return <path d="M7 9h10m-10 5h10m2-12H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 0V3a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2h14z" />
     case 'change-password':
       return <path d="M7 11V8a5 5 0 1 1 10 0v3m-8 0h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
     default:
@@ -141,11 +133,8 @@ function isExcludedFile(item: MatchItem): boolean {
   return EXCLUDED_FILES.has(nameWithoutExt)
 }
 
-function normalizeAllowedMenus(input: unknown): AllowedMenu[] {
-  const raw = Array.isArray(input) ? input : []
-  const asText = raw.map((item) => String(item || '').trim())
-  const result = Array.from(new Set(asText.filter((item): item is AllowedMenu => item in MENU_LABELS)))
-  return result
+function getUserAllowedMenus(username: string, input: unknown): AllowedMenu[] {
+  return getEffectiveMenus(username, input, ALL_MENU_KEYS) as AllowedMenu[]
 }
 
 function parseStoredSession(raw: string | null): UserSession | null {
@@ -156,15 +145,7 @@ function parseStoredSession(raw: string | null): UserSession | null {
     const username = String(parsed.username ?? '').trim().toLowerCase()
     if (!username) return null
 
-    if (username === 'visitor') {
-      return {
-        username,
-        displayName: String(parsed.displayName ?? ''),
-        allowedMenus: Object.keys(MENU_LABELS) as AllowedMenu[],
-      }
-    }
-
-    const allowedMenus = normalizeAllowedMenus(parsed.allowedMenus)
+    const allowedMenus = getUserAllowedMenus(username, parsed.allowedMenus)
 
     return {
       username,
@@ -337,6 +318,8 @@ function App() {
   const [currentPage, setCurrentPage] = useState<MenuPage>('home')
   const [xmlExcelRoutine, setXmlExcelRoutine] = useState<XmlExcelRoutine>('s-5002')
   const [customerHubPage, setCustomerHubPage] = useState<CustomerHubPage>('dashboard')
+  const [ticketHubPage, setTicketHubPage] = useState<'todos' | 'abertos' | 'admin'>('todos')
+  const [openSidebarSubmenu, setOpenSidebarSubmenu] = useState<SidebarSubmenuSection | null>(null)
   const sourceMenuRef = useRef<HTMLDivElement | null>(null)
 
   const csvNames = useMemo(() => extractCsvNames(csvData), [csvData])
@@ -395,7 +378,7 @@ function App() {
         })
         if (!response.ok) return
         const data = await response.json() as { allowedMenus?: unknown[] }
-        const freshMenus = normalizeAllowedMenus(data.allowedMenus)
+        const freshMenus = getUserAllowedMenus(currentUser.username, data.allowedMenus)
         setCurrentUser((prev) => {
           if (!prev) return prev
           const same =
@@ -555,10 +538,7 @@ function App() {
         throw new Error('Resposta de autenticacao invalida.')
       }
 
-      const allowedMenus = normalizeAllowedMenus(user?.allowedMenus)
-      if (username === 'visitor' && !allowedMenus.includes('user-admin')) {
-        allowedMenus.push('user-admin')
-      }
+      const allowedMenus = getUserAllowedMenus(username, user?.allowedMenus)
 
       const session: UserSession = {
         username,
@@ -681,8 +661,13 @@ function App() {
               type="button"
               className={`sidebar__link ${currentPage === 'xml-excel' ? 'sidebar__link--active' : ''}`}
               onClick={() => {
+                const isSamePage = currentPage === 'xml-excel'
+                const shouldCollapse = isSamePage && openSidebarSubmenu === 'xml-excel'
                 setCurrentPage('xml-excel')
-                setXmlExcelRoutine('s-5002')
+                if (!isSamePage) {
+                  setXmlExcelRoutine('s-5002')
+                }
+                setOpenSidebarSubmenu(shouldCollapse ? null : 'xml-excel')
                 setShowSourceMenu(false)
               }}
               aria-current={currentPage === 'xml-excel' ? 'page' : undefined}
@@ -694,6 +679,27 @@ function App() {
               </span>
               <span>XML para Excel</span>
             </button>
+          )}
+          {canAccessPage('xml-excel', currentUser) && currentPage === 'xml-excel' && openSidebarSubmenu === 'xml-excel' && (
+            <div className="sidebar__subnav" aria-label="Rotinas XML para Excel">
+              {XML_EXCEL_ROUTINES.map((routine) => (
+                <button
+                  key={routine.id}
+                  type="button"
+                  className={`sidebar__sublink ${xmlExcelRoutine === routine.id ? 'sidebar__sublink--active' : ''}`}
+                  onClick={() => {
+                    setCurrentPage('xml-excel')
+                    setXmlExcelRoutine(routine.id)
+                    setOpenSidebarSubmenu('xml-excel')
+                    setShowSourceMenu(false)
+                  }}
+                  aria-current={xmlExcelRoutine === routine.id ? 'page' : undefined}
+                >
+                  {routine.label}
+                  {!routine.available ? ' (em breve)' : ''}
+                </button>
+              ))}
+            </div>
           )}
           {canAccessPage('excel-csv-sqlite', currentUser) && (
             <button
@@ -712,26 +718,6 @@ function App() {
               </span>
               <span>Excel/CSV para SQL</span>
             </button>
-          )}
-          {canAccessPage('xml-excel', currentUser) && currentPage === 'xml-excel' && (
-            <div className="sidebar__subnav" aria-label="Rotinas XML para Excel">
-              {XML_EXCEL_ROUTINES.map((routine) => (
-                <button
-                  key={routine.id}
-                  type="button"
-                  className={`sidebar__sublink ${xmlExcelRoutine === routine.id ? 'sidebar__sublink--active' : ''}`}
-                  onClick={() => {
-                    setCurrentPage('xml-excel')
-                    setXmlExcelRoutine(routine.id)
-                    setShowSourceMenu(false)
-                  }}
-                  aria-current={xmlExcelRoutine === routine.id ? 'page' : undefined}
-                >
-                  {routine.label}
-                  {!routine.available ? ' (em breve)' : ''}
-                </button>
-              ))}
-            </div>
           )}
           {canAccessPage('resume-ranking', currentUser) && (
             <button
@@ -811,7 +797,12 @@ function App() {
               className={`sidebar__link ${currentPage === 'customer-hub' ? 'sidebar__link--active' : ''}`}
               onClick={() => {
                 setCurrentPage('customer-hub')
-                setCustomerHubPage('dashboard')
+                const isSamePage = currentPage === 'customer-hub'
+                const shouldCollapse = isSamePage && openSidebarSubmenu === 'customer-hub'
+                if (!isSamePage) {
+                  setCustomerHubPage('dashboard')
+                }
+                setOpenSidebarSubmenu(shouldCollapse ? null : 'customer-hub')
                 setShowSourceMenu(false)
               }}
               aria-current={currentPage === 'customer-hub' ? 'page' : undefined}
@@ -824,7 +815,7 @@ function App() {
               <span>Central de Clientes</span>
             </button>
           )}
-          {canAccessPage('customer-hub', currentUser) && currentPage === 'customer-hub' && (
+          {canAccessPage('customer-hub', currentUser) && currentPage === 'customer-hub' && openSidebarSubmenu === 'customer-hub' && (
             <div className="sidebar__subnav" aria-label="Central de Clientes">
               {CUSTOMER_HUB_PAGES.map((page) => (
                 <button
@@ -834,6 +825,7 @@ function App() {
                   onClick={() => {
                     setCurrentPage('customer-hub')
                     setCustomerHubPage(page.id)
+                    setOpenSidebarSubmenu('customer-hub')
                     setShowSourceMenu(false)
                   }}
                   aria-current={customerHubPage === page.id ? 'page' : undefined}
@@ -841,6 +833,75 @@ function App() {
                   {page.label}
                 </button>
               ))}
+            </div>
+          )}
+          {canAccessPage('ticket-hub', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'ticket-hub' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                const isSamePage = currentPage === 'ticket-hub'
+                const shouldCollapse = isSamePage && openSidebarSubmenu === 'ticket-hub'
+                setCurrentPage('ticket-hub')
+                if (!isSamePage) {
+                  setTicketHubPage('todos')
+                }
+                setOpenSidebarSubmenu(shouldCollapse ? null : 'ticket-hub')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'ticket-hub' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="ticket-hub" />
+                </svg>
+              </span>
+              <span>Central de Chamados</span>
+            </button>
+          )}
+          {canAccessPage('ticket-hub', currentUser) && currentPage === 'ticket-hub' && openSidebarSubmenu === 'ticket-hub' && (
+            <div className="sidebar__subnav" aria-label="Central de Chamados">
+              <button
+                type="button"
+                className={`sidebar__sublink ${ticketHubPage === 'todos' ? 'sidebar__sublink--active' : ''}`}
+                onClick={() => {
+                  setCurrentPage('ticket-hub')
+                  setTicketHubPage('todos')
+                  setOpenSidebarSubmenu('ticket-hub')
+                  setShowSourceMenu(false)
+                }}
+                aria-current={ticketHubPage === 'todos' ? 'page' : undefined}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                className={`sidebar__sublink ${ticketHubPage === 'abertos' ? 'sidebar__sublink--active' : ''}`}
+                onClick={() => {
+                  setCurrentPage('ticket-hub')
+                  setTicketHubPage('abertos')
+                  setOpenSidebarSubmenu('ticket-hub')
+                  setShowSourceMenu(false)
+                }}
+                aria-current={ticketHubPage === 'abertos' ? 'page' : undefined}
+              >
+                Abertos
+              </button>
+              {currentUser?.username === 'visitor' && (
+              <button
+                type="button"
+                className={`sidebar__sublink ${ticketHubPage === 'admin' ? 'sidebar__sublink--active' : ''}`}
+                onClick={() => {
+                  setCurrentPage('ticket-hub')
+                  setTicketHubPage('admin')
+                  setOpenSidebarSubmenu('ticket-hub')
+                  setShowSourceMenu(false)
+                }}
+                aria-current={ticketHubPage === 'admin' ? 'page' : undefined}
+              >
+                Administração
+              </button>
+              )}
             </div>
           )}
           {canAccessPage('user-admin', currentUser) && (
@@ -908,6 +969,8 @@ function App() {
                   ? 'Alterar Senha'
                 : currentPage === 'customer-hub'
                   ? 'Central de Clientes'
+                : currentPage === 'ticket-hub'
+                  ? 'Central de Chamados'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
@@ -931,6 +994,8 @@ function App() {
                   ? 'Altere sua senha de acesso ao sistema.'
                 : currentPage === 'customer-hub'
                   ? 'Gestão de clientes, contatos, sistemas e atividades.'
+                : currentPage === 'ticket-hub'
+                  ? 'Gestão de chamados e tickets através do TomTicket.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -1022,6 +1087,18 @@ function App() {
                     onClick={() => { setCurrentPage('customer-hub'); setCustomerHubPage('dashboard') }}
                   >
                     Abrir Central de Clientes
+                  </button>
+                )}
+                {canAccessPage('ticket-hub', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => {
+                      setCurrentPage('ticket-hub')
+                      setTicketHubPage('todos')
+                    }}
+                  >
+                    Abrir Central de Chamados
                   </button>
                 )}
               </div>
@@ -1139,6 +1216,22 @@ function App() {
                     type="button"
                     className="button-secondary"
                     onClick={() => { setCurrentPage('customer-hub'); setCustomerHubPage('dashboard') }}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('ticket-hub', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Central de Chamados</h3>
+                  <p>Gerencie chamados e tickets integrados com a API do TomTicket.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => {
+                      setCurrentPage('ticket-hub')
+                      setTicketHubPage('todos')
+                    }}
                   >
                     Acessar
                   </button>
@@ -1379,6 +1472,8 @@ function App() {
           <DigteDemandsTool />
         ) : currentPage === 'customer-hub' ? (
           <CustomerHubTool subPage={customerHubPage} />
+        ) : currentPage === 'ticket-hub' ? (
+          <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
         ) : currentPage === 'user-admin' ? (
           <UserAccessTool currentUsername={currentUser?.username || ''} />
         ) : currentPage === 'change-password' ? (

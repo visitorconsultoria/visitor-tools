@@ -145,7 +145,7 @@ A aplicacao agora autentica usuarios no Supabase e permite cadastro de novos usu
 
 Regras:
 - A rotina `Usuarios e Acessos` e exclusiva do usuario `visitor`.
-- Cada usuario pode receber acesso aos menus: `Comparar Projeto`, `XML para Excel`, `Excel/CSV para SQL`, `Ranking de Curriculos`, `Estimativas`, `Apontamentos`, `Demandas DIGTE` e `Central de Clientes`.
+- Cada usuario pode receber acesso aos menus: `Comparar Projeto`, `XML para Excel`, `Excel/CSV para SQL`, `Ranking de Curriculos`, `Estimativas`, `Apontamentos`, `Demandas DIGTE`, `Central de Clientes` e `Central de Chamados`.
 
 1. Crie a tabela de usuarios no Supabase (exemplo em [scripts/supabase-users.sql](scripts/supabase-users.sql)).
 2. Configure o `.env`:
@@ -155,6 +155,46 @@ SUPABASE_USERS_TABLE=app_users
 ```
 
 3. Utilize o login inicial `visitor / Visitor@2026` e cadastre os demais usuarios pela nova rotina.
+
+## Central de Chamados (TomTicket)
+
+Integração com a API do TomTicket para gerenciamento de chamados e tickets.
+
+### Funcionalidades
+
+- **Administração**: Gestão de usuários e seus acessos às organizações do TomTicket
+- **Integração com TomTicket**: Sincroniza automaticamente as organizações via API
+
+### Configuração
+
+1. Configure as variáveis no `.env`:
+
+```bash
+TOMTICKET_API_TOKEN=seu_token_aqui
+TOMTICKET_API_BASE_URL=https://api.tomticket.com/v2.0
+SUPABASE_TICKET_HUB_ACCESSES_TABLE=ticket_hub_accesses
+VITE_TOMTICKET_TOKEN=seu_token_aqui
+VITE_TOMTICKET_API_BASE=https://api.tomticket.com/v2.0
+```
+
+O token não expira e permite consultar as organizações disponíveis.
+
+2. Crie a tabela de persistência das organizações por usuário (mesmo padrão dos demais módulos):
+- Script: [scripts/supabase-ticket-hub-accesses.sql](scripts/supabase-ticket-hub-accesses.sql)
+
+3. Endpoints principais:
+- `GET /api/ticket-hub/users` - Listar usuários com acesso a tickets
+- `POST /api/ticket-hub/users` - Criar novo usuário com permissões
+- `PUT /api/ticket-hub/users/:id` - Atualizar usuário e suas organizações
+- `DELETE /api/ticket-hub/users/:id` - Deletar usuário
+
+4. Libere o menu `Central de Chamados` no cadastro de usuários para quem deve acessar a rotina.
+
+### API TomTicket
+
+Para mais informações sobre a API do TomTicket, consulte:
+- Documentação: https://tomticket.tomticket.com/kb/chamados-api
+- Endpoint de organizações: `https://api.tomticket.com/v2.0/organization/list`
 
 ## Excel/CSV para SQL (.sql)
 

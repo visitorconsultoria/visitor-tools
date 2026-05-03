@@ -221,6 +221,19 @@ export default function DigteDemandsTool() {
     setForm(EMPTY_FORM)
   }
 
+  useEffect(() => {
+    if (!isModalOpen) return
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeModal()
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [isModalOpen, isSaving])
+
   const handleFormChange = (field: keyof DigteDemandForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -423,7 +436,7 @@ export default function DigteDemandsTool() {
       </section>
 
       {isModalOpen && typeof document !== 'undefined' && createPortal(
-        <div className="estimativas-modal-overlay" role="presentation" onClick={closeModal}>
+        <div className="estimativas-modal-overlay" role="presentation">
           <section
             className="estimativas-modal"
             role="dialog"

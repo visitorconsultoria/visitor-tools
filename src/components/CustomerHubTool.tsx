@@ -241,6 +241,15 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
   const [processoModal, setProcessoModal] = useState<ModalState<Processo>>(emptyModal())
   const [atividadeModal, setAtividadeModal] = useState<ModalState<Atividade>>(emptyModal())
 
+  const closeAnyModal = () => {
+    setClienteModal(emptyModal())
+    setContatoModal(emptyModal())
+    setAcessoModal(emptyModal())
+    setSistemaModal(emptyModal())
+    setProcessoModal(emptyModal())
+    setAtividadeModal(emptyModal())
+  }
+
   const [filterClienteId, setFilterClienteId] = useState('')
   const [clienteSearch, setClienteSearch] = useState('')
   const [contatoSearch, setContatoSearch] = useState('')
@@ -276,6 +285,28 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Erro ao carregar dados.'))
       .finally(() => setIsLoading(false))
   }, [])
+
+  useEffect(() => {
+    const hasOpenModal = (
+      clienteModal.open
+      || contatoModal.open
+      || acessoModal.open
+      || sistemaModal.open
+      || processoModal.open
+      || atividadeModal.open
+    )
+
+    if (!hasOpenModal) return
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeAnyModal()
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [clienteModal.open, contatoModal.open, acessoModal.open, sistemaModal.open, processoModal.open, atividadeModal.open])
 
   const getClienteNome = (id: string) => clientes.find((c) => c.id === id)?.nome ?? '-'
   const getContatoNome = (id: string) => contatos.find((c) => c.id === id)?.nome ?? '-'
@@ -629,7 +660,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
 
     return (
       createPortal(
-        <div className="estimativas-modal-overlay" role="presentation" onClick={() => setClienteModal(emptyModal())}>
+        <div className="estimativas-modal-overlay" role="presentation">
           <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="estimativas-modal__header">
               <h3>{isEdit ? 'Editar Cliente' : 'Novo Cliente'}</h3>
@@ -694,7 +725,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
     const isEdit = Boolean(d.id)
 
     return createPortal(
-      <div className="estimativas-modal-overlay" role="presentation" onClick={() => setAcessoModal(emptyModal())}>
+      <div className="estimativas-modal-overlay" role="presentation">
         <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
           <div className="estimativas-modal__header">
             <h3>{isEdit ? 'Editar Acesso' : 'Novo Acesso'}</h3>
@@ -992,7 +1023,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       <div className="customer-hub">
         {contatoModal.open && (
           createPortal(
-            <div className="estimativas-modal-overlay" role="presentation" onClick={() => setContatoModal(emptyModal())}>
+            <div className="estimativas-modal-overlay" role="presentation">
               <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
                 <div className="estimativas-modal__header">
                   <h3>{d.id ? 'Editar Contato' : 'Novo Contato'}</h3>
@@ -1246,7 +1277,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       <div className="customer-hub">
         {sistemaModal.open && (
           createPortal(
-            <div className="estimativas-modal-overlay" role="presentation" onClick={() => setSistemaModal(emptyModal())}>
+            <div className="estimativas-modal-overlay" role="presentation">
               <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
                 <div className="estimativas-modal__header">
                   <h3>{d.id ? 'Editar Sistema' : 'Novo Sistema'}</h3>
@@ -1385,7 +1416,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       <div className="customer-hub">
         {processoModal.open && (
           createPortal(
-            <div className="estimativas-modal-overlay" role="presentation" onClick={() => setProcessoModal(emptyModal())}>
+            <div className="estimativas-modal-overlay" role="presentation">
               <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
                 <div className="estimativas-modal__header">
                   <h3>{d.id ? 'Editar Processo' : 'Novo Processo'}</h3>
@@ -1542,7 +1573,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
     <div className="customer-hub">
       {atividadeModal.open && (
         createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setAtividadeModal(emptyModal())}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <h3>{dAtiv.id ? 'Editar Atividade' : 'Nova Atividade'}</h3>

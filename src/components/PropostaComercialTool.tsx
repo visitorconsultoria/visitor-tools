@@ -598,11 +598,13 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     sectionTitle('ESCOPO DA PROPOSTA')
     if (proposta.escopoTitulo) subTitle(proposta.escopoTitulo)
     renderBoxedLines(htmlToLines(proposta.escopoConteudo))
-    y += 12
+    y += 20
   }
 
   // PRECIFICAÇÃO
   if (proposta.incluirPrecificacao !== false) {
+    // Ensure enough room for title + subtitle + at least one content line
+    ensureSpace(proposta.precificacaoTitulo ? 95 : 55)
     sectionTitle('PRECIFICAÇÃO')
     if (proposta.precificacaoTitulo) subTitle(proposta.precificacaoTitulo)
     renderLines(htmlToLines(proposta.precificacaoDescricao), cw, 10, 1.38)
@@ -612,21 +614,24 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
 
   // BANCO DE HORAS E DELIVERY
   if (proposta.incluirBancoHoras !== false) {
-    y += 8
+    y += 14
+    ensureSpace(80)
     sectionTitle('BANCO DE HORAS E DELIVERY')
     renderBoxedLines(htmlToLines(proposta.bancoHorasConteudo))
-    y += 12
+    y += 14
   }
 
   // TABELA DE SERVIÇOS DELIVERY
   if (proposta.incluirDelivery !== false) {
+    ensureSpace(60)
     sectionTitle('TABELA DE SERVIÇOS DELIVERY')
     drawDeliveryTable(proposta.deliveryItens)
   }
 
   // OUTRAS INFORMAÇÕES
   if (proposta.incluirOutrasInformacoes !== false) {
-    y += 8
+    y += 10
+    ensureSpace(60)
     sectionTitle('OUTRAS INFORMAÇÕES')
     renderBoxedLines(htmlToLines(proposta.outrasInformacoes))
   }

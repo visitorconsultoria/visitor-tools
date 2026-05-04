@@ -405,20 +405,24 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
 
   // ── Footer ──────────────────────────────────────────────────────────────────
   const drawFooter = () => {
-    const fy = pageHeight - margin - 18
+    const fy = pageHeight - margin - 26
     doc.setDrawColor(...C_BOX_BORDER)
     doc.setLineWidth(0.4)
     doc.line(margin, fy - 4, pageWidth - margin, fy - 4)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
     doc.setTextColor(...C_BODY)
-    doc.text('VISITOR CONSUTORIA LTDA.', pageWidth / 2, fy, { align: 'center' })
+    doc.text('VISITOR CONSULTORIA LTDA.', pageWidth / 2, fy + 2, { align: 'center' })
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
+    doc.setFontSize(7)
     doc.setTextColor(...C_MUTED)
     doc.text(
-      'Endereço: Rua Catharina Agostini, 299 – Flamboyant – Araras – SP – CEP 13609-500  |  Tel.: 11 98247-2830  |  eMail: visitor@visitorconsultoria.com  |  Site: https://www.visitorconsultoria.com',
-      pageWidth / 2, fy + 10, { align: 'center' },
+      'Endereço: Rua Catharina Agostini, 299 – Flamboyant – Araras – SP – CEP 13609-500',
+      pageWidth / 2, fy + 11, { align: 'center' },
+    )
+    doc.text(
+      'Tel.: (11) 98247-2830  |  eMail: visitor@visitorconsultoria.com  |  Site: www.visitorconsultoria.com',
+      pageWidth / 2, fy + 19, { align: 'center' },
     )
   }
 

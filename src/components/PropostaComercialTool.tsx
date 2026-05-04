@@ -919,7 +919,6 @@ export default function PropostaComercialTool() {
     if (isViewMode || isSyncingSectionFlags) return
 
     const previous = form[key] as boolean
-    const nextForm: FormState = { ...form, [key]: included }
 
     // Optimistic update for immediate UI/PDF behavior in current session.
     setF(key, included)
@@ -933,10 +932,10 @@ export default function PropostaComercialTool() {
     try {
       setError(null)
       setIsSyncingSectionFlags(true)
-      const res = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(editingId))}`), {
-        method: 'PUT',
+      const res = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(editingId))}/flags`), {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...nextForm, dataProposta: nextForm.dataProposta }),
+        body: JSON.stringify({ [key]: included }),
       })
       if (!res.ok) {
         let detail = 'Falha ao atualizar tópico da proposta.'

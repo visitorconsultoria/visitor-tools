@@ -3363,6 +3363,46 @@ async function updatePropostaStatus(id, status) {
   return normalizePropostaRow(row)
 }
 
+function parsePropostaIncludeFlagsPayload(payload) {
+  const src = payload && typeof payload === 'object' ? payload : {}
+  const map = [
+    ['incluirObjetivo', 'incluir_objetivo'],
+    ['incluirEscopo', 'incluir_escopo'],
+    ['incluirPrecificacao', 'incluir_precificacao'],
+    ['incluirBancoHoras', 'incluir_banco_horas'],
+    ['incluirDelivery', 'incluir_delivery'],
+    ['incluirOutrasInformacoes', 'incluir_outras_informacoes'],
+  ]
+
+  const updates = {}
+  for (const [apiKey, dbKey] of map) {
+    if (Object.prototype.hasOwnProperty.call(src, apiKey)) {
+      updates[dbKey] = parseIncludeFlag(src[apiKey])
+    }
+  }
+
+  if (!Object.keys(updates).length) {
+    throw new Error('Nenhum tópico de inclusão informado para atualização.')
+  }
+
+  updates.updated_at = new Date().toISOString()
+  return updates
+}
+
+async function updatePropostaIncludeFlags(id, payload) {
+  const updates = parsePropostaIncludeFlagsPayload(payload)
+  const { client, propostasTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(propostasTable)
+    .update(updates)
+    .eq('id', id)
+    .select(PROPOSTA_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizePropostaRow(row)
+}
+
 app.get('/api/propostas', async (_req, res) => {
   try {
     const items = await listPropostas()
@@ -3414,6 +3454,17 @@ app.patch('/api/propostas/:id/status', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(400).json({ error: `Falha ao atualizar status da proposta: ${detail}` })
+  }
+})
+
+app.patch('/api/propostas/:id/flags', async (req, res) => {
+  try {
+    const id = parsePropIdInput(req.params.id)
+    const item = await updatePropostaIncludeFlags(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar tópicos da proposta: ${detail}` })
   }
 })
 

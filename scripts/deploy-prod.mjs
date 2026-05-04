@@ -25,7 +25,7 @@ const command = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const child = spawn(command, ['run', 'deploy'], {
   env,
   stdio: 'inherit',
-  shell: false,
+  shell: process.platform === 'win32',
 })
 
 child.on('exit', (code) => {

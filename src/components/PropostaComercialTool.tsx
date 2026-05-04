@@ -902,6 +902,13 @@ export default function PropostaComercialTool() {
   }
 
   type SectionFlagKey = 'incluirObjetivo' | 'incluirEscopo' | 'incluirPrecificacao' | 'incluirBancoHoras' | 'incluirDelivery' | 'incluirOutrasInformacoes'
+  const toggleSectionInclusion = (key: SectionFlagKey, included: boolean) => {
+    setF(key, included)
+    if (!editingId) return
+    // Keep table state in sync so reopen/PDF uses latest inclusion toggles.
+    setItems((prev) => prev.map((item) => (item.id === editingId ? ({ ...item, [key]: included } as PropostaRow) : item)))
+  }
+
   const sections: Array<{ id: string; label: string; flagKey: SectionFlagKey | null }> = [
     { id: 'dados', label: 'Dados Principais', flagKey: null },
     { id: 'objetivo', label: 'Objetivo', flagKey: 'incluirObjetivo' },
@@ -1093,7 +1100,7 @@ export default function PropostaComercialTool() {
                       <button
                         type="button"
                         title={included ? 'Excluir seção do PDF' : 'Incluir seção no PDF'}
-                        onClick={() => setF(s.flagKey as SectionFlagKey, !included)}
+                        onClick={() => toggleSectionInclusion(s.flagKey as SectionFlagKey, !included)}
                         style={{
                           display: 'block',
                           padding: '0.28rem 0.45rem',

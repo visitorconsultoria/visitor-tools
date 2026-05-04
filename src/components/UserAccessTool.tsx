@@ -219,13 +219,9 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
         throw new Error('Resposta invalida ao salvar usuario.')
       }
 
-      const saved = normalizeUser(data.item)
-      setUsers((prev) => {
-        if (!editingId) return [...prev, saved]
-        return prev.map((item) => (item.id === editingId ? saved : item))
-      })
       setSuccess(editingId ? 'Usuario atualizado com sucesso.' : 'Usuario cadastrado com sucesso.')
       resetForm()
+      void fetchUsers()
     } catch (saveError) {
       setError(toFriendlyApiError(saveError, 'Nao foi possivel salvar usuario.'))
     } finally {

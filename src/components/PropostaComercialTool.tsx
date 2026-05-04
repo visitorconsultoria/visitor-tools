@@ -394,11 +394,15 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
 
   // ── Sub-section title ─────────────────────────────────────────────────────────
   const subTitle = (title: string) => {
+    // Pre-calculate with correct font
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     const splitLines = doc.splitTextToSize(title, cw)
     const needed = splitLines.length * 11 * 1.5 + 12
     ensureSpace(needed)
+    // Re-apply font after ensureSpace (which may have called newPage/drawHeader)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
     doc.setTextColor(...C_GREEN_MED)
     doc.text(splitLines, margin, y)
     y += needed - 4
@@ -424,12 +428,17 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     for (const l of lines) {
       if (l.empty) { y += fs * 0.4; continue }
       const tw = l.bullet ? width - 12 : width
-      doc.setFont('helvetica', l.bold ? 'bold' : 'normal')
+      const isBold = l.bold
+      // Pre-calc split with correct font
+      doc.setFont('helvetica', isBold ? 'bold' : 'normal')
       doc.setFontSize(fs)
-      doc.setTextColor(...C_BODY)
       const wrapped = doc.splitTextToSize(l.text, tw)
       const needed = wrapped.length * fs * lhf + 2
       ensureSpace(needed)
+      // Re-apply after ensureSpace (which may have called newPage → drawHeader changing font)
+      doc.setFont('helvetica', isBold ? 'bold' : 'normal')
+      doc.setFontSize(fs)
+      doc.setTextColor(...C_BODY)
       if (l.bullet) doc.text('•', lx + 3, y)
       doc.text(wrapped, l.bullet ? lx + 12 : lx, y)
       y += needed

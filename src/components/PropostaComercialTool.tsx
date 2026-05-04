@@ -380,7 +380,8 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
 
   // ── Section title ────────────────────────────────────────────────────────────
   const sectionTitle = (title: string) => {
-    ensureSpace(32)
+    ensureSpace(36)
+    // Re-apply font/color after ensureSpace (may have called newPage → drawHeader)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(13)
     doc.setTextColor(...C_GREEN_DARK)
@@ -448,15 +449,38 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
   // ── Render HTML in a box ──────────────────────────────────────────────────────
   const renderBoxedLines = (lines: PdfLine[], pad = 12, fs = 10, lhf = 1.38) => {
     if (!lines.length) return
+    const usablePageH = pageHeight - margin - 35 - margin // full page content height
     const totalH = calcHtmlHeight(lines, cw - pad * 2, fs, lhf, pad)
-    ensureSpace(totalH + 4)
-    doc.setFillColor(...C_BOX_BG)
-    doc.setDrawColor(...C_BOX_BORDER)
-    doc.setLineWidth(0.4)
-    doc.roundedRect(margin, y, cw, totalH, 5, 5, 'FD')
-    y += pad
-    renderLines(lines, cw - pad * 2, fs, lhf, pad)
-    y += pad / 2
+
+    if (totalH <= usablePageH) {
+      // Box fits on one page — try to keep it together
+      ensureSpace(totalH + 4)
+      doc.setFillColor(...C_BOX_BG)
+      doc.setDrawColor(...C_BOX_BORDER)
+      doc.setLineWidth(0.4)
+      doc.roundedRect(margin, y, cw, totalH, 5, 5, 'FD')
+      y += pad
+      renderLines(lines, cw - pad * 2, fs, lhf, pad)
+      y += pad / 2
+    } else {
+      // Box taller than one page — render line-by-line with left border stripe
+      for (const l of lines) {
+        if (l.empty) { y += fs * 0.4; continue }
+        const isBold = l.bold
+        doc.setFont('helvetica', isBold ? 'bold' : 'normal')
+        doc.setFontSize(fs)
+        const tw = l.bullet ? cw - pad * 2 - 12 : cw - pad * 2
+        const wrapped = doc.splitTextToSize(l.text, tw)
+        const needed = wrapped.length * fs * lhf + 2
+        ensureSpace(needed + 4)
+        doc.setFont('helvetica', isBold ? 'bold' : 'normal')
+        doc.setFontSize(fs)
+        doc.setTextColor(...C_BODY)
+        if (l.bullet) doc.text('•', margin + pad + 3, y)
+        doc.text(wrapped, l.bullet ? margin + pad + 12 : margin + pad, y)
+        y += needed
+      }
+    }
   }
 
   // ── Info table (page 1 only) ──────────────────────────────────────────────────
@@ -588,50 +612,51 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
 
   // OBJETIVO
   if (proposta.incluirObjetivo !== false) {
+    ensureSpace(80)
     sectionTitle('OBJETIVO')
     renderLines(htmlToLines(proposta.objetivo), cw, 10, 1.38)
-    y += 14
+    y += 16
   }
 
   // ESCOPO DA PROPOSTA
   if (proposta.incluirEscopo !== false) {
+    ensureSpace(proposta.escopoTitulo ? 90 : 60)
     sectionTitle('ESCOPO DA PROPOSTA')
     if (proposta.escopoTitulo) subTitle(proposta.escopoTitulo)
     renderBoxedLines(htmlToLines(proposta.escopoConteudo))
-    y += 20
+    y += 22
   }
 
   // PRECIFICAÇÃO
   if (proposta.incluirPrecificacao !== false) {
-    // Ensure enough room for title + subtitle + at least one content line
-    ensureSpace(proposta.precificacaoTitulo ? 95 : 55)
+    ensureSpace(proposta.precificacaoTitulo ? 100 : 65)
     sectionTitle('PRECIFICAÇÃO')
     if (proposta.precificacaoTitulo) subTitle(proposta.precificacaoTitulo)
     renderLines(htmlToLines(proposta.precificacaoDescricao), cw, 10, 1.38)
-    y += 10
+    y += 12
     drawPrecTable(proposta.precificacaoItens)
   }
 
   // BANCO DE HORAS E DELIVERY
   if (proposta.incluirBancoHoras !== false) {
-    y += 14
-    ensureSpace(80)
+    y += 16
+    ensureSpace(90)
     sectionTitle('BANCO DE HORAS E DELIVERY')
     renderBoxedLines(htmlToLines(proposta.bancoHorasConteudo))
-    y += 14
+    y += 16
   }
 
   // TABELA DE SERVIÇOS DELIVERY
   if (proposta.incluirDelivery !== false) {
-    ensureSpace(60)
+    ensureSpace(70)
     sectionTitle('TABELA DE SERVIÇOS DELIVERY')
     drawDeliveryTable(proposta.deliveryItens)
   }
 
   // OUTRAS INFORMAÇÕES
   if (proposta.incluirOutrasInformacoes !== false) {
-    y += 10
-    ensureSpace(60)
+    y += 12
+    ensureSpace(70)
     sectionTitle('OUTRAS INFORMAÇÕES')
     renderBoxedLines(htmlToLines(proposta.outrasInformacoes))
   }

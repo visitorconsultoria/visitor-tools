@@ -686,6 +686,7 @@ export default function PropostaComercialTool() {
   const [isViewMode, setIsViewMode] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
+  const [isSyncingSectionFlags, setIsSyncingSectionFlags] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [formVersion, setFormVersion] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -902,11 +903,46 @@ export default function PropostaComercialTool() {
   }
 
   type SectionFlagKey = 'incluirObjetivo' | 'incluirEscopo' | 'incluirPrecificacao' | 'incluirBancoHoras' | 'incluirDelivery' | 'incluirOutrasInformacoes'
-  const toggleSectionInclusion = (key: SectionFlagKey, included: boolean) => {
+  const toggleSectionInclusion = async (key: SectionFlagKey, included: boolean) => {
+    if (isViewMode || isSyncingSectionFlags) return
+
+    const previous = form[key] as boolean
+    const nextForm: FormState = { ...form, [key]: included }
+
+    // Optimistic update for immediate UI/PDF behavior in current session.
     setF(key, included)
+    if (editingId) {
+      setItems((prev) => prev.map((item) => (item.id === editingId ? ({ ...item, [key]: included } as PropostaRow) : item)))
+    }
+
+    // New proposal has no id yet; persist when user clicks Salvar.
     if (!editingId) return
-    // Keep table state in sync so reopen/PDF uses latest inclusion toggles.
-    setItems((prev) => prev.map((item) => (item.id === editingId ? ({ ...item, [key]: included } as PropostaRow) : item)))
+
+    try {
+      setError(null)
+      setIsSyncingSectionFlags(true)
+      const res = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(editingId))}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...nextForm, dataProposta: nextForm.dataProposta }),
+      })
+      if (!res.ok) {
+        let detail = 'Falha ao atualizar tópico da proposta.'
+        try { const err = await res.json(); detail = (err as { error?: string })?.error ?? detail } catch { /* ignore */ }
+        throw new Error(detail)
+      }
+      const data = await res.json() as { item?: unknown }
+      if (!data.item) throw new Error('Resposta invalida do servidor.')
+      const saved = normalizePropostaResponse(data.item)
+      setItems((prev) => prev.map((item) => (item.id === editingId ? saved : item)))
+    } catch (err) {
+      // Roll back if server update fails.
+      setF(key, previous)
+      setItems((prev) => prev.map((item) => (item.id === editingId ? ({ ...item, [key]: previous } as PropostaRow) : item)))
+      setError(toFriendlyError(err, 'Nao foi possivel atualizar o tópico da proposta.'))
+    } finally {
+      setIsSyncingSectionFlags(false)
+    }
   }
 
   const sections: Array<{ id: string; label: string; flagKey: SectionFlagKey | null }> = [
@@ -1100,7 +1136,8 @@ export default function PropostaComercialTool() {
                       <button
                         type="button"
                         title={included ? 'Excluir seção do PDF' : 'Incluir seção no PDF'}
-                        onClick={() => toggleSectionInclusion(s.flagKey as SectionFlagKey, !included)}
+                        onClick={() => void toggleSectionInclusion(s.flagKey as SectionFlagKey, !included)}
+                        disabled={isSaving || isSyncingSectionFlags}
                         style={{
                           display: 'block',
                           padding: '0.28rem 0.45rem',

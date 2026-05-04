@@ -281,36 +281,75 @@ async function loadImageAsDataUrl(src: string): Promise<string | null> {
 
 // ─── PDF – HTML parser ────────────────────────────────────────────────────────
 
-type PdfLine = { text: string; bold: boolean; bullet: boolean; empty: boolean }
+type PdfTextBlock = { type: 'text'; text: string; bold: boolean; bullet: boolean; empty: boolean }
+type PdfImageBlock = { type: 'image'; src: string }
+type PdfBlock = PdfTextBlock | PdfImageBlock
 
-function htmlToLines(html: string): PdfLine[] {
-  if (!html || html.replace(/<[^>]+>/g, '').trim() === '') return []
-  const lines: PdfLine[] = []
+function htmlToBlocks(html: string): PdfBlock[] {
+  if (!html || html.trim() === '') return []
+  const blocks: PdfBlock[] = []
+
+  const pushText = (raw: string, bold: boolean, bullet: boolean) => {
+    const text = raw.replace(/\s+/g, ' ').trim()
+    if (!text) return
+    blocks.push({ type: 'text', text, bold, bullet, empty: false })
+  }
+
+  const pushInline = (el: Element, bold: boolean, bullet: boolean) => {
+    let buffer = ''
+    const flush = () => {
+      pushText(buffer, bold, bullet)
+      buffer = ''
+    }
+
+    const walk = (node: Node): void => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        buffer += ` ${node.textContent || ''}`
+        return
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return
+      const nodeEl = node as Element
+      const tag = nodeEl.tagName.toLowerCase()
+      if (tag === 'img') {
+        flush()
+        const src = nodeEl.getAttribute('src')?.trim() || ''
+        if (src) blocks.push({ type: 'image', src })
+        return
+      }
+      if (tag === 'br') {
+        flush()
+        blocks.push({ type: 'text', text: '', bold: false, bullet: false, empty: true })
+        return
+      }
+      for (const child of Array.from(nodeEl.childNodes)) walk(child)
+    }
+
+    for (const child of Array.from(el.childNodes)) walk(child)
+    flush()
+  }
+
   try {
     const parser = new DOMParser()
     const parsed = parser.parseFromString(html, 'text/html')
 
-    const hasBold = (el: Element) => el.querySelector('strong, b') !== null
-
     const processEl = (el: Element): void => {
       const tag = el.tagName.toLowerCase()
       if (tag === 'p' || tag === 'div') {
-        const text = el.textContent?.trim() || ''
-        if (!text) { lines.push({ text: '', bold: false, bullet: false, empty: true }); return }
-        lines.push({ text, bold: hasBold(el), bullet: false, empty: false })
+        const hasBold = el.querySelector('strong, b') !== null
+        const before = blocks.length
+        pushInline(el, hasBold, false)
+        if (before === blocks.length) blocks.push({ type: 'text', text: '', bold: false, bullet: false, empty: true })
       } else if (tag === 'ul' || tag === 'ol') {
         for (const li of Array.from(el.children)) {
-          if (li.tagName.toLowerCase() === 'li') {
-            const text = li.textContent?.trim() || ''
-            if (text) lines.push({ text, bold: false, bullet: true, empty: false })
-          }
+          if (li.tagName.toLowerCase() === 'li') pushInline(li, false, true)
         }
       } else if (/^h[1-4]$/.test(tag)) {
-        const text = el.textContent?.trim() || ''
-        if (text) lines.push({ text, bold: true, bullet: false, empty: false })
+        pushInline(el, true, false)
       } else if (tag === 'blockquote' || tag === 'pre') {
-        const text = el.textContent?.trim() || ''
-        if (text) lines.push({ text, bold: false, bullet: false, empty: false })
+        pushInline(el, false, false)
+      } else if (tag === 'img') {
+        const src = el.getAttribute('src')?.trim() || ''
+        if (src) blocks.push({ type: 'image', src })
       } else {
         for (const child of Array.from(el.children)) processEl(child)
       }
@@ -319,9 +358,13 @@ function htmlToLines(html: string): PdfLine[] {
     for (const child of Array.from(parsed.body.children)) processEl(child)
   } catch {
     const stripped = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-    if (stripped) lines.push({ text: stripped, bold: false, bullet: false, empty: false })
+    if (stripped) blocks.push({ type: 'text', text: stripped, bold: false, bullet: false, empty: false })
   }
-  return lines.filter((l, i, arr) => !(l.empty && arr[i - 1]?.empty))
+
+  return blocks.filter((b, i, arr) => {
+    const prev = arr[i - 1]
+    return !(b.type === 'text' && b.empty && prev?.type === 'text' && prev.empty)
+  })
 }
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
@@ -421,78 +464,119 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     y += needed - 4
   }
 
-  // ── Calc HTML height (pre-pass for boxes) ─────────────────────────────────────
-  const calcHtmlHeight = (lines: PdfLine[], width: number, fs: number, lhf: number, pad: number): number => {
+  // ── Calc HTML height (pre-pass for text-only boxes) ──────────────────────────
+  const calcTextBlocksHeight = (blocks: PdfTextBlock[], width: number, fs: number, lhf: number, pad: number): number => {
     let h = pad * 2
-    for (const l of lines) {
-      if (l.empty) { h += fs * 0.4; continue }
-      doc.setFont('helvetica', l.bold ? 'bold' : 'normal')
+    for (const b of blocks) {
+      if (b.empty) { h += fs * 0.4; continue }
+      doc.setFont('helvetica', b.bold ? 'bold' : 'normal')
       doc.setFontSize(fs)
-      const tw = l.bullet ? width - 12 : width
-      const wrapped = doc.splitTextToSize(l.text, tw)
+      const tw = b.bullet ? width - 12 : width
+      const wrapped = doc.splitTextToSize(b.text, tw)
       h += wrapped.length * fs * lhf + 2
     }
     return h
   }
 
-  // ── Render HTML lines ─────────────────────────────────────────────────────────
-  const renderLines = (lines: PdfLine[], width: number, fs: number, lhf: number, offsetX = 0) => {
+  const imageCache = new Map<string, string | null>()
+
+  const getImageDataUrl = async (src: string): Promise<string | null> => {
+    if (src.startsWith('data:image/')) return src
+    if (imageCache.has(src)) return imageCache.get(src) || null
+    const data = await loadImageAsDataUrl(src)
+    imageCache.set(src, data)
+    return data
+  }
+
+  const getImageFormat = (dataUrl: string): 'PNG' | 'JPEG' => {
+    const lower = dataUrl.slice(0, 32).toLowerCase()
+    if (lower.startsWith('data:image/png')) return 'PNG'
+    return 'JPEG'
+  }
+
+  const renderTextBlock = (b: PdfTextBlock, width: number, fs: number, lhf: number, offsetX = 0) => {
     const lx = margin + offsetX
-    for (const l of lines) {
-      if (l.empty) { y += fs * 0.4; continue }
-      const tw = l.bullet ? width - 12 : width
-      const isBold = l.bold
-      // Pre-calc split with correct font
-      doc.setFont('helvetica', isBold ? 'bold' : 'normal')
-      doc.setFontSize(fs)
-      const wrapped = doc.splitTextToSize(l.text, tw)
-      const needed = wrapped.length * fs * lhf + 2
-      ensureSpace(needed)
-      // Re-apply after ensureSpace (which may have called newPage → drawHeader changing font)
-      doc.setFont('helvetica', isBold ? 'bold' : 'normal')
-      doc.setFontSize(fs)
-      doc.setTextColor(...C_BODY)
-      if (l.bullet) doc.text('•', lx + 3, y)
-      doc.text(wrapped, l.bullet ? lx + 12 : lx, y)
-      y += needed
+    if (b.empty) { y += fs * 0.4; return }
+    const tw = b.bullet ? width - 12 : width
+    const isBold = b.bold
+    doc.setFont('helvetica', isBold ? 'bold' : 'normal')
+    doc.setFontSize(fs)
+    const wrapped = doc.splitTextToSize(b.text, tw)
+    const needed = wrapped.length * fs * lhf + 2
+    ensureSpace(needed)
+    doc.setFont('helvetica', isBold ? 'bold' : 'normal')
+    doc.setFontSize(fs)
+    doc.setTextColor(...C_BODY)
+    if (b.bullet) doc.text('•', lx + 3, y)
+    doc.text(wrapped, b.bullet ? lx + 12 : lx, y)
+    y += needed
+  }
+
+  const renderImageBlock = async (src: string, width: number, offsetX = 0) => {
+    const dataUrl = await getImageDataUrl(src)
+    if (!dataUrl) return
+    let props
+    try {
+      props = doc.getImageProperties(dataUrl)
+    } catch {
+      return
+    }
+    if (!props?.width || !props?.height) return
+
+    const maxW = Math.max(80, width)
+    const maxH = 220
+    let imgW = maxW
+    let imgH = (props.height / props.width) * imgW
+    if (imgH > maxH) {
+      imgH = maxH
+      imgW = (props.width / props.height) * imgH
+    }
+
+    const needed = imgH + 8
+    ensureSpace(needed)
+    doc.addImage(dataUrl, getImageFormat(dataUrl), margin + offsetX, y, imgW, imgH)
+    y += needed
+  }
+
+  // ── Render HTML blocks ────────────────────────────────────────────────────────
+  const renderBlocks = async (blocks: PdfBlock[], width: number, fs: number, lhf: number, offsetX = 0) => {
+    for (const b of blocks) {
+      if (b.type === 'image') {
+        await renderImageBlock(b.src, width, offsetX)
+      } else {
+        renderTextBlock(b, width, fs, lhf, offsetX)
+      }
     }
   }
 
   // ── Render HTML in a box ──────────────────────────────────────────────────────
-  const renderBoxedLines = (lines: PdfLine[], pad = 12, fs = 10, lhf = 1.38) => {
-    if (!lines.length) return
-    const usablePageH = pageHeight - margin - 35 - margin // full page content height
-    const totalH = calcHtmlHeight(lines, cw - pad * 2, fs, lhf, pad)
+  const renderBoxedBlocks = async (blocks: PdfBlock[], pad = 12, fs = 10, lhf = 1.38) => {
+    if (!blocks.length) return
+    const hasImage = blocks.some((b) => b.type === 'image')
 
-    if (totalH <= usablePageH) {
-      // Box fits on one page — try to keep it together
-      ensureSpace(totalH + 4)
-      doc.setFillColor(...C_BOX_BG)
-      doc.setDrawColor(...C_BOX_BORDER)
-      doc.setLineWidth(0.4)
-      doc.roundedRect(margin, y, cw, totalH, 5, 5, 'FD')
-      y += pad
-      renderLines(lines, cw - pad * 2, fs, lhf, pad)
-      y += pad / 2
-    } else {
-      // Box taller than one page — render line-by-line with left border stripe
-      for (const l of lines) {
-        if (l.empty) { y += fs * 0.4; continue }
-        const isBold = l.bold
-        doc.setFont('helvetica', isBold ? 'bold' : 'normal')
-        doc.setFontSize(fs)
-        const tw = l.bullet ? cw - pad * 2 - 12 : cw - pad * 2
-        const wrapped = doc.splitTextToSize(l.text, tw)
-        const needed = wrapped.length * fs * lhf + 2
-        ensureSpace(needed + 4)
-        doc.setFont('helvetica', isBold ? 'bold' : 'normal')
-        doc.setFontSize(fs)
-        doc.setTextColor(...C_BODY)
-        if (l.bullet) doc.text('•', margin + pad + 3, y)
-        doc.text(wrapped, l.bullet ? margin + pad + 12 : margin + pad, y)
-        y += needed
+    if (!hasImage) {
+      const textBlocks = blocks as PdfTextBlock[]
+      const usablePageH = pageHeight - margin - 35 - margin
+      const totalH = calcTextBlocksHeight(textBlocks, cw - pad * 2, fs, lhf, pad)
+
+      if (totalH <= usablePageH) {
+        ensureSpace(totalH + 4)
+        doc.setFillColor(...C_BOX_BG)
+        doc.setDrawColor(...C_BOX_BORDER)
+        doc.setLineWidth(0.4)
+        doc.roundedRect(margin, y, cw, totalH, 5, 5, 'FD')
+        y += pad
+        await renderBlocks(textBlocks, cw - pad * 2, fs, lhf, pad)
+        y += pad / 2
+      } else {
+        await renderBlocks(textBlocks, cw - pad * 2, fs, lhf, pad)
       }
+      return
     }
+
+    // Mixed content with images: render with per-block flow to preserve ordering.
+    await renderBlocks(blocks, cw - pad * 2, fs, lhf, pad)
+    y += pad / 2
   }
 
   // ── Info table (page 1 only) ──────────────────────────────────────────────────
@@ -626,7 +710,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
   if (proposta.incluirObjetivo !== false) {
     ensureSpace(80)
     sectionTitle('OBJETIVO')
-    renderLines(htmlToLines(proposta.objetivo), cw, 10, 1.38)
+    await renderBlocks(htmlToBlocks(proposta.objetivo), cw, 10, 1.38)
     y += 16
   }
 
@@ -635,7 +719,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     ensureSpace(proposta.escopoTitulo ? 90 : 60)
     sectionTitle('ESCOPO DA PROPOSTA')
     if (proposta.escopoTitulo) subTitle(proposta.escopoTitulo)
-    renderBoxedLines(htmlToLines(proposta.escopoConteudo))
+    await renderBoxedBlocks(htmlToBlocks(proposta.escopoConteudo))
     y += 22
   }
 
@@ -644,7 +728,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     ensureSpace(proposta.precificacaoTitulo ? 100 : 65)
     sectionTitle('PRECIFICAÇÃO')
     if (proposta.precificacaoTitulo) subTitle(proposta.precificacaoTitulo)
-    renderLines(htmlToLines(proposta.precificacaoDescricao), cw, 10, 1.38)
+    await renderBlocks(htmlToBlocks(proposta.precificacaoDescricao), cw, 10, 1.38)
     y += 12
     drawPrecTable(proposta.precificacaoItens)
   }
@@ -654,7 +738,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     y += 16
     ensureSpace(90)
     sectionTitle('BANCO DE HORAS E DELIVERY')
-    renderBoxedLines(htmlToLines(proposta.bancoHorasConteudo))
+    await renderBoxedBlocks(htmlToBlocks(proposta.bancoHorasConteudo))
     y += 16
   }
 
@@ -670,7 +754,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     y += 12
     ensureSpace(70)
     sectionTitle('OUTRAS INFORMAÇÕES')
-    renderBoxedLines(htmlToLines(proposta.outrasInformacoes))
+    await renderBoxedBlocks(htmlToBlocks(proposta.outrasInformacoes))
   }
 
   drawFooter()

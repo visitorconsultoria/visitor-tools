@@ -220,6 +220,18 @@ function toFriendlyError(error: unknown, fallback: string): string {
   return fallback
 }
 
+function parseIncludeFlag(value: unknown): boolean {
+  if (value === false || value === 0) return false
+  if (value === true || value === 1) return true
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase()
+    if (v === 'false' || v === '0' || v === 'off' || v === 'nao' || v === 'não') return false
+    if (v === 'true' || v === '1' || v === 'on' || v === 'sim') return true
+  }
+  if (value == null) return true
+  return Boolean(value)
+}
+
 function normalizePropostaResponse(input: unknown): PropostaRow {
   const r = input as Record<string, unknown>
   const parseArr = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
@@ -240,12 +252,12 @@ function normalizePropostaResponse(input: unknown): PropostaRow {
     bancoHorasConteudo: String(r.bancoHorasConteudo ?? ''),
     deliveryItens: parseArr(r.deliveryItens) as DeliveryItem[],
     outrasInformacoes: String(r.outrasInformacoes ?? ''),
-    incluirObjetivo: r.incluirObjetivo !== false,
-    incluirEscopo: r.incluirEscopo !== false,
-    incluirPrecificacao: r.incluirPrecificacao !== false,
-    incluirBancoHoras: r.incluirBancoHoras !== false,
-    incluirDelivery: r.incluirDelivery !== false,
-    incluirOutrasInformacoes: r.incluirOutrasInformacoes !== false,
+    incluirObjetivo: parseIncludeFlag(r.incluirObjetivo),
+    incluirEscopo: parseIncludeFlag(r.incluirEscopo),
+    incluirPrecificacao: parseIncludeFlag(r.incluirPrecificacao),
+    incluirBancoHoras: parseIncludeFlag(r.incluirBancoHoras),
+    incluirDelivery: parseIncludeFlag(r.incluirDelivery),
+    incluirOutrasInformacoes: parseIncludeFlag(r.incluirOutrasInformacoes),
     status: r.status === 'sent' ? 'sent' : 'draft',
     estimativaId: r.estimativaId ? Number(r.estimativaId) : null,
   }

@@ -3200,6 +3200,18 @@ app.post('/api/ticket-hub/tickets/reply/operator', async (req, res) => {
 
 // ─── Propostas Comerciais ────────────────────────────────────────────────────
 
+function parseIncludeFlag(value) {
+  if (value === false || value === 0) return false
+  if (value === true || value === 1) return true
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase()
+    if (v === 'false' || v === '0' || v === 'off' || v === 'nao' || v === 'não') return false
+    if (v === 'true' || v === '1' || v === 'on' || v === 'sim') return true
+  }
+  if (value == null) return true
+  return Boolean(value)
+}
+
 function normalizePropostaRow(row) {
   const parseJsonb = (val) => {
     if (Array.isArray(val)) return val
@@ -3226,12 +3238,12 @@ function normalizePropostaRow(row) {
     bancoHorasConteudo: String(row.banco_horas_conteudo ?? ''),
     deliveryItens: parseJsonb(row.delivery_itens),
     outrasInformacoes: String(row.outras_informacoes ?? ''),
-    incluirObjetivo: row.incluir_objetivo !== false,
-    incluirEscopo: row.incluir_escopo !== false,
-    incluirPrecificacao: row.incluir_precificacao !== false,
-    incluirBancoHoras: row.incluir_banco_horas !== false,
-    incluirDelivery: row.incluir_delivery !== false,
-    incluirOutrasInformacoes: row.incluir_outras_informacoes !== false,
+    incluirObjetivo: parseIncludeFlag(row.incluir_objetivo),
+    incluirEscopo: parseIncludeFlag(row.incluir_escopo),
+    incluirPrecificacao: parseIncludeFlag(row.incluir_precificacao),
+    incluirBancoHoras: parseIncludeFlag(row.incluir_banco_horas),
+    incluirDelivery: parseIncludeFlag(row.incluir_delivery),
+    incluirOutrasInformacoes: parseIncludeFlag(row.incluir_outras_informacoes),
     status: row.status === 'sent' ? 'sent' : 'draft',
     estimativaId: row.estimativa_id ? Number(row.estimativa_id) : null,
   }
@@ -3259,12 +3271,12 @@ function parsePropostaPayload(payload) {
     banco_horas_conteudo: String(payload.bancoHorasConteudo ?? ''),
     delivery_itens: parseJsonbField(payload.deliveryItens),
     outras_informacoes: String(payload.outrasInformacoes ?? ''),
-    incluir_objetivo: payload.incluirObjetivo !== false,
-    incluir_escopo: payload.incluirEscopo !== false,
-    incluir_precificacao: payload.incluirPrecificacao !== false,
-    incluir_banco_horas: payload.incluirBancoHoras !== false,
-    incluir_delivery: payload.incluirDelivery !== false,
-    incluir_outras_informacoes: payload.incluirOutrasInformacoes !== false,
+    incluir_objetivo: parseIncludeFlag(payload.incluirObjetivo),
+    incluir_escopo: parseIncludeFlag(payload.incluirEscopo),
+    incluir_precificacao: parseIncludeFlag(payload.incluirPrecificacao),
+    incluir_banco_horas: parseIncludeFlag(payload.incluirBancoHoras),
+    incluir_delivery: parseIncludeFlag(payload.incluirDelivery),
+    incluir_outras_informacoes: parseIncludeFlag(payload.incluirOutrasInformacoes),
     status: payload.status === 'sent' ? 'sent' : 'draft',
     estimativa_id: payload.estimativaId ? Number(payload.estimativaId) : null,
     updated_at: new Date().toISOString(),

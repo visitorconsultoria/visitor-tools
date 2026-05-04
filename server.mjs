@@ -303,6 +303,8 @@ async function updateUser(id, payload) {
     updatePayload.password = parsed.password
   }
 
+  console.log('[updateUser] id:', id, 'allowed_menus a salvar:', updatePayload.allowed_menus)
+
   const { data: row, error } = await client
     .from(usersTable)
     .update(updatePayload)
@@ -310,8 +312,14 @@ async function updateUser(id, payload) {
     .select('id, username, display_name, is_active, allowed_menus')
     .single()
 
+  console.log('[updateUser] Supabase retornou - error:', error, 'allowed_menus salvo:', row?.allowed_menus)
+
   if (error) {
     throw new Error(error.message)
+  }
+
+  if (!row) {
+    throw new Error('Supabase nao retornou o registro atualizado. Verifique permissoes RLS.')
   }
 
   return normalizeUserRow(row)

@@ -533,7 +533,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
     doc.setTextColor(...C_WHITE)
     doc.text('Escopo', margin + 6, y + 13)
     doc.text('Descr.', margin + colEsc + 6, y + 13)
-    doc.text('Vlr. Mensal ($)', margin + colEsc + colDesc + 6, y + 13)
+    doc.text('Valor', margin + colEsc + colDesc + 6, y + 13)
     y += headerH
 
     items.forEach((item, idx) => {
@@ -1235,7 +1235,7 @@ export default function PropostaComercialTool() {
                           <tr>
                             <th>Escopo</th>
                             <th>Descrição</th>
-                            <th>Vlr. Mensal (R$)</th>
+                            <th>Valor</th>
                             {!isViewMode && <th>Ações</th>}
                           </tr>
                         </thead>

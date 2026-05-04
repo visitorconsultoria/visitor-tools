@@ -933,24 +933,33 @@ export default function PropostaComercialTool() {
     try {
       setError(null)
       setIsSyncingSectionFlags(true)
-      let res = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(editingId))}/flags`), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [key]: included }),
-      })
+      let res: Response | null = null
 
-      // Fallback for environments where backend has not deployed /flags yet.
-      if (res.status === 404) {
-        res = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(editingId))}`), {
+      try {
+        res = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(editingId))}/flags`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: included }),
+        })
+      } catch {
+        // Ignore and try legacy PUT fallback below.
+      }
+
+      // Fallback for environments where PATCH /flags is unavailable or failing.
+      if (!res || !res.ok) {
+        const legacyRes = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(editingId))}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...nextForm, dataProposta: nextForm.dataProposta }),
         })
+        if (legacyRes.ok) {
+          res = legacyRes
+        }
       }
 
-      if (!res.ok) {
+      if (!res || !res.ok) {
         let detail = 'Falha ao atualizar tópico da proposta.'
-        try { const err = await res.json(); detail = (err as { error?: string })?.error ?? detail } catch { /* ignore */ }
+        try { const err = await res?.json(); detail = (err as { error?: string })?.error ?? detail } catch { /* ignore */ }
         throw new Error(detail)
       }
       const data = await res.json() as { item?: unknown }

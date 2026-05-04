@@ -1019,26 +1019,33 @@ export default function PropostaComercialTool() {
             )}
 
             {/* Section tabs */}
-            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', padding: '0.75rem 1.5rem 0', borderBottom: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', padding: '0.75rem 1.5rem 0.5rem', borderBottom: '1px solid #dbe8e4' }}>
               {sections.map((s) => {
                 const included = s.flagKey ? (form[s.flagKey] as boolean) : true
                 const isActive = activeSection === s.id
+                const activeBg = '#1f6f5d'
+                const activeTxt = '#ffffff'
+                const inactiveBg = isActive ? activeBg : '#edf5f2'
+                const inactiveTxt = s.flagKey && !included ? '#999' : '#173b35'
                 return (
-                  <div key={s.id} style={{ display: 'inline-flex', alignItems: 'stretch', borderRadius: '6px', overflow: 'hidden', border: '1px solid', borderColor: isActive ? 'var(--color-primary)' : (s.flagKey && !included ? '#bbb' : 'var(--border-color)'), marginBottom: '0.35rem' }}>
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: '7px', border: `1.5px solid ${isActive ? activeBg : (s.flagKey && !included ? '#ccc' : '#c5dcd6')}`, overflow: 'hidden', marginBottom: '0.2rem', background: isActive ? activeBg : inactiveBg }}>
                     <button
                       type="button"
                       onClick={() => setActiveSection(s.id)}
                       style={{
-                        padding: '0.3rem 0.65rem',
+                        display: 'block',
+                        padding: '0.28rem 0.7rem',
                         border: 'none',
-                        background: isActive ? 'var(--color-primary)' : 'transparent',
-                        color: isActive ? '#fff' : (s.flagKey && !included ? '#aaa' : 'var(--ink-primary)'),
+                        background: 'transparent',
+                        color: isActive ? activeTxt : (s.flagKey && !included ? '#999' : inactiveTxt),
                         fontSize: '0.82rem',
-                        fontWeight: isActive ? 700 : 400,
+                        fontWeight: isActive ? 700 : 500,
                         cursor: 'pointer',
                         textDecoration: s.flagKey && !included ? 'line-through' : 'none',
                         whiteSpace: 'nowrap',
-                        flexShrink: 0,
+                        lineHeight: '1.4',
+                        boxShadow: 'none',
+                        transform: 'none',
                       }}
                     >
                       {s.label}
@@ -1049,16 +1056,18 @@ export default function PropostaComercialTool() {
                         title={included ? 'Excluir seção do PDF' : 'Incluir seção no PDF'}
                         onClick={() => setF(s.flagKey as SectionFlagKey, !included)}
                         style={{
-                          padding: '0.2rem 0.45rem',
+                          display: 'block',
+                          padding: '0.28rem 0.45rem',
                           border: 'none',
-                          borderLeft: '1px solid',
-                          borderLeftColor: isActive ? 'rgba(255,255,255,0.35)' : 'var(--border-color)',
-                          background: isActive ? 'var(--color-primary)' : 'transparent',
-                          color: isActive ? '#fff' : (included ? 'var(--color-primary)' : '#aaa'),
+                          borderLeft: `1px solid ${isActive ? 'rgba(255,255,255,0.3)' : '#c5dcd6'}`,
+                          background: 'transparent',
+                          color: isActive ? activeTxt : (included ? '#1f6f5d' : '#aaa'),
                           cursor: 'pointer',
-                          fontSize: '0.72rem',
-                          lineHeight: 1,
+                          fontSize: '0.75rem',
+                          lineHeight: '1.4',
                           fontWeight: 700,
+                          boxShadow: 'none',
+                          transform: 'none',
                         }}
                       >
                         {included ? '✓' : '✕'}

@@ -10,6 +10,7 @@ type DigteDemandRow = {
   number: string
   date: string
   type: string
+  client: string
   requester: string
   description: string
   responsible: string
@@ -21,6 +22,7 @@ type DigteDemandForm = {
   number: string
   date: string
   type: string
+  client: string
   requester: string
   description: string
   responsible: string
@@ -32,6 +34,7 @@ const EMPTY_FORM: DigteDemandForm = {
   number: '',
   date: '',
   type: '',
+  client: '',
   requester: '',
   description: '',
   responsible: '',
@@ -86,6 +89,7 @@ function normalizeDemandResponse(input: unknown): DigteDemandRow {
     number: String(row.number ?? ''),
     date: String(row.date ?? ''),
     type: String(row.type ?? ''),
+    client: String((row as { client?: string }).client ?? ''),
     requester: String(row.requester ?? ''),
     description: String(row.description ?? ''),
     responsible: String(row.responsible ?? ''),
@@ -175,7 +179,7 @@ export default function DigteDemandsTool() {
       .filter((item) => {
         if (statusFilter !== 'all' && item.status !== statusFilter) return false
         if (!term) return true
-        return [item.id, item.number, item.date, item.type, item.requester, item.description, item.responsible, item.notes]
+        return [item.id, item.number, item.date, item.type, item.client, item.requester, item.description, item.responsible, item.notes]
           .join(' ')
           .toLowerCase()
           .includes(term)
@@ -202,6 +206,7 @@ export default function DigteDemandsTool() {
       number: item.number,
       date: normalizeDateInput(item.date),
       type: item.type,
+      client: item.client,
       requester: item.requester,
       description: item.description,
       responsible: item.responsible,
@@ -388,6 +393,7 @@ export default function DigteDemandsTool() {
                 <th>Numero</th>
                 <th>Data</th>
                 <th>Tipo</th>
+                <th>Cliente</th>
                 <th>Solicitante</th>
                 <th>Descrição</th>
                 <th>Responsável</th>
@@ -401,6 +407,7 @@ export default function DigteDemandsTool() {
                   <td>{item.number || `#${item.id}`}</td>
                   <td>{toDisplayDate(item.date)}</td>
                   <td>{item.type || '-'}</td>
+                  <td>{item.client || '-'}</td>
                   <td>{item.requester}</td>
                   <td>
                     <div
@@ -478,6 +485,15 @@ export default function DigteDemandsTool() {
                   value={form.type}
                   onChange={(e) => handleFormChange('type', e.target.value)}
                   placeholder="Ex: Desenvolvimento, Suporte"
+                />
+              </label>
+              <label>
+                Cliente
+                <input
+                  type="text"
+                  value={form.client}
+                  onChange={(e) => handleFormChange('client', e.target.value)}
+                  placeholder="Nome do cliente"
                 />
               </label>
               <label>

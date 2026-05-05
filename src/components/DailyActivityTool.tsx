@@ -23,7 +23,7 @@ type DailyActivityForm = {
 type DailyDemandOption = {
   id: number
   number: string
-  description: string
+  client: string
 }
 
 type DailyActivityToolProps = {
@@ -228,15 +228,15 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       const demands = Array.isArray(data.items) ? data.items : []
       const options = demands
         .map((input) => {
-          const d = input as { id?: unknown; number?: unknown; description?: unknown; status?: unknown }
+          const d = input as { id?: unknown; number?: unknown; client?: unknown; status?: unknown }
           return {
             id: Number(d.id ?? 0),
             number: String(d.number ?? ''),
-            description: String(d.description ?? ''),
+            client: String(d.client ?? ''),
             status: String(d.status ?? ''),
           }
         })
-        .filter((d) => d.status !== 'cancelled' && d.status !== 'done')
+        .filter((d) => d.status === 'open' || d.status === 'in_progress')
         .sort((a, b) => a.number.localeCompare(b.number, 'pt-BR'))
       setDemandOptions(options)
     } catch {
@@ -634,7 +634,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                     <option value="">Sem demanda vinculada</option>
                     {demandOptions.map((d) => (
                       <option key={d.id} value={d.number}>
-                        {d.number}{d.description ? ` - ${d.description}` : ''}
+                        {d.number}{d.client ? ` - ${d.client}` : ''}
                       </option>
                     ))}
                   </select>

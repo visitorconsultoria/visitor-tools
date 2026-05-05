@@ -1498,7 +1498,11 @@ function App() {
         ) : currentPage === 'digte-demands' ? (
           <DigteDemandsTool />
         ) : currentPage === 'customer-hub' ? (
-          <CustomerHubTool subPage={customerHubPage} />
+          <CustomerHubTool
+            subPage={customerHubPage}
+            currentUsername={currentUser?.username || ''}
+            currentDisplayName={currentUser?.displayName || ''}
+          />
         ) : currentPage === 'ticket-hub' ? (
           <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
         ) : currentPage === 'propostas' ? (

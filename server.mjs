@@ -1006,6 +1006,8 @@ function normalizeCustomerAccessRow(row) {
     usuario: String(row.usuario ?? ''),
     senha: String(row.senha ?? ''),
     observacoes: String(row.observacoes ?? ''),
+    particular: Boolean(row.particular),
+    createdByUsername: String(row.created_by_username ?? ''),
   }
 }
 
@@ -1110,6 +1112,7 @@ function parseCustomerAccessPayload(payload) {
     usuario: String(payload.usuario ?? '').trim(),
     senha: String(payload.senha ?? '').trim(),
     observacoes: String(payload.observacoes ?? '').trim(),
+    particular: payload.particular === true,
   }
 }
 
@@ -1328,11 +1331,11 @@ async function deleteCustomerSystem(id) {
   if (error) throw new Error(error.message)
 }
 
-async function listCustomerAccesses(clientId) {
+async function listCustomerAccesses(clientId, scope) {
   const { client, customerAccessesTable } = getSupabaseClient()
   let query = client
     .from(customerAccessesTable)
-    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes, created_at')
+    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes, particular, created_by_username, created_at')
     .order('nome', { ascending: true })
 
   if (clientId) {
@@ -1341,42 +1344,88 @@ async function listCustomerAccesses(clientId) {
 
   const { data: rows, error } = await query
   if (error) throw new Error(error.message)
-  return (rows || []).map(normalizeCustomerAccessRow)
+
+  const normalizedRows = (rows || []).map(normalizeCustomerAccessRow)
+  if (!scope?.username) {
+    return normalizedRows.filter((item) => !item.particular)
+  }
+
+  return normalizedRows.filter((item) => !item.particular || item.createdByUsername === scope.username)
 }
 
-async function createCustomerAccess(payload) {
+async function createCustomerAccess(payload, scope) {
   const parsed = parseCustomerAccessPayload(payload)
   validateCustomerAccessPayload(parsed)
+  if (!scope?.username) {
+    throw new Error('Usuario de sessao nao informado.')
+  }
+
+  parsed.created_by_username = scope.username
 
   const { client, customerAccessesTable } = getSupabaseClient()
   const { data: row, error } = await client
     .from(customerAccessesTable)
     .insert(parsed)
-    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes')
+    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes, particular, created_by_username')
     .single()
 
   if (error) throw new Error(error.message)
   return normalizeCustomerAccessRow(row)
 }
 
-async function updateCustomerAccess(id, payload) {
+async function updateCustomerAccess(id, payload, scope) {
   const parsed = parseCustomerAccessPayload(payload)
   validateCustomerAccessPayload(parsed)
+  if (!scope?.username) {
+    throw new Error('Usuario de sessao nao informado.')
+  }
 
   const { client, customerAccessesTable } = getSupabaseClient()
+  const { data: currentRow, error: currentError } = await client
+    .from(customerAccessesTable)
+    .select('id, particular, created_by_username')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (currentError) throw new Error(currentError.message)
+  if (!currentRow) throw new Error('Acesso nao encontrado.')
+
+  if (currentRow.particular === true && String(currentRow.created_by_username ?? '') !== scope.username) {
+    throw new Error('Acesso negado: apenas o criador pode alterar este acesso particular.')
+  }
+
+  const updatePayload = { ...parsed }
+  if (parsed.particular === true && !String(currentRow.created_by_username ?? '').trim()) {
+    updatePayload.created_by_username = scope.username
+  }
+
   const { data: row, error } = await client
     .from(customerAccessesTable)
-    .update(parsed)
+    .update(updatePayload)
     .eq('id', id)
-    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes')
+    .select('id, cliente_id, tipo, nome, endereco, usuario, senha, observacoes, particular, created_by_username')
     .single()
 
   if (error) throw new Error(error.message)
   return normalizeCustomerAccessRow(row)
 }
 
-async function deleteCustomerAccess(id) {
+async function deleteCustomerAccess(id, scope) {
   const { client, customerAccessesTable } = getSupabaseClient()
+
+  const { data: currentRow, error: currentError } = await client
+    .from(customerAccessesTable)
+    .select('id, particular, created_by_username')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (currentError) throw new Error(currentError.message)
+  if (!currentRow) throw new Error('Acesso nao encontrado.')
+
+  if (currentRow.particular === true && String(currentRow.created_by_username ?? '') !== String(scope?.username ?? '')) {
+    throw new Error('Acesso negado: apenas o criador pode excluir este acesso particular.')
+  }
+
   const { error } = await client
     .from(customerAccessesTable)
     .delete()
@@ -1501,11 +1550,11 @@ async function deleteCustomerActivity(id) {
   if (error) throw new Error(error.message)
 }
 
-async function getCustomerHubBootstrap() {
+async function getCustomerHubBootstrap(scope) {
   const [clientes, contatos, acessos, sistemas, processos, atividades] = await Promise.all([
     listCustomerClients(),
     listCustomerContacts(),
-    listCustomerAccesses(),
+    listCustomerAccesses(null, scope),
     listCustomerSystems(),
     listCustomerProcesses(),
     listCustomerActivities(),
@@ -1842,6 +1891,7 @@ function normalizeDigteDemandRow(row) {
     number: String(row.number ?? ''),
     date: String(row.date ?? ''),
     type: String(row.type ?? ''),
+    client: String(row.client ?? ''),
     requester: String(row.requester ?? ''),
     description: String(row.description ?? ''),
     responsible: String(row.responsible ?? ''),
@@ -1855,6 +1905,7 @@ function parseDigteDemandPayload(payload) {
     number: String(payload.number ?? '').trim(),
     date: normalizeDateInput(String(payload.date ?? '')),
     type: String(payload.type ?? '').trim(),
+    client: String(payload.client ?? '').trim(),
     requester: String(payload.requester ?? '').trim(),
     description: String(payload.description ?? '').trim(),
     responsible: String(payload.responsible ?? '').trim(),
@@ -1878,7 +1929,7 @@ async function listDigteDemands() {
   const { client, digtDemandsTable } = getSupabaseClient()
   const { data: rows, error } = await client
     .from(digtDemandsTable)
-    .select('id, number, date, type, requester, description, responsible, status, notes, created_at')
+    .select('id, number, date, type, client, requester, description, responsible, status, notes, created_at')
     .order('date', { ascending: false })
     .order('id', { ascending: false })
 
@@ -1897,7 +1948,7 @@ async function createDigteDemand(payload) {
   const { data: row, error } = await client
     .from(digtDemandsTable)
     .insert(parsed)
-    .select('id, number, date, type, requester, description, responsible, status, notes')
+    .select('id, number, date, type, client, requester, description, responsible, status, notes')
     .single()
 
   if (error) {
@@ -1916,7 +1967,7 @@ async function updateDigteDemand(id, payload) {
     .from(digtDemandsTable)
     .update(parsed)
     .eq('id', id)
-    .select('id, number, date, type, requester, description, responsible, status, notes')
+    .select('id, number, date, type, client, requester, description, responsible, status, notes')
     .single()
 
   if (error) {
@@ -1980,13 +2031,15 @@ app.delete('/api/digte-demands/:id', async (req, res) => {
   }
 })
 
-app.get('/api/customer-hub/bootstrap', async (_req, res) => {
+app.get('/api/customer-hub/bootstrap', async (req, res) => {
   try {
-    const data = await getCustomerHubBootstrap()
+    const scope = getSessionUserFromRequest(req)
+    const data = await getCustomerHubBootstrap(scope)
     return res.json(data)
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(500).json({ error: `Falha ao carregar Central de Clientes: ${detail}` })
+    const status = /sessao nao informado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao carregar Central de Clientes: ${detail}` })
   }
 })
 
@@ -2078,45 +2131,53 @@ app.delete('/api/customer-hub/contacts/:id', async (req, res) => {
 
 app.get('/api/customer-hub/accesses', async (req, res) => {
   try {
+    const scope = getSessionUserFromRequest(req)
     const clientIdRaw = String(req.query.clientId ?? '').trim()
     const clientId = clientIdRaw ? parseCustomerHubIdInput(clientIdRaw, 'cliente') : null
-    const items = await listCustomerAccesses(clientId)
+    const items = await listCustomerAccesses(clientId, scope)
     return res.json({ items })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(400).json({ error: `Falha ao buscar acessos: ${detail}` })
+    const status = /sessao nao informado/i.test(detail) ? 403 : 400
+    return res.status(status).json({ error: `Falha ao buscar acessos: ${detail}` })
   }
 })
 
 app.post('/api/customer-hub/accesses', async (req, res) => {
   try {
-    const item = await createCustomerAccess(req.body || {})
+    const scope = getSessionUserFromRequest(req)
+    const item = await createCustomerAccess(req.body || {}, scope)
     return res.status(201).json({ ok: true, item })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(400).json({ error: `Falha ao salvar acesso: ${detail}` })
+    const status = /sessao nao informado/i.test(detail) ? 403 : 400
+    return res.status(status).json({ error: `Falha ao salvar acesso: ${detail}` })
   }
 })
 
 app.put('/api/customer-hub/accesses/:id', async (req, res) => {
   try {
+    const scope = getSessionUserFromRequest(req)
     const id = parseCustomerHubIdInput(req.params.id, 'acesso')
-    const item = await updateCustomerAccess(id, req.body || {})
+    const item = await updateCustomerAccess(id, req.body || {}, scope)
     return res.json({ ok: true, item })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(400).json({ error: `Falha ao atualizar acesso: ${detail}` })
+    const status = /sessao nao informado|acesso negado/i.test(detail) ? 403 : 400
+    return res.status(status).json({ error: `Falha ao atualizar acesso: ${detail}` })
   }
 })
 
 app.delete('/api/customer-hub/accesses/:id', async (req, res) => {
   try {
+    const scope = getSessionUserFromRequest(req)
     const id = parseCustomerHubIdInput(req.params.id, 'acesso')
-    await deleteCustomerAccess(id)
+    await deleteCustomerAccess(id, scope)
     return res.json({ ok: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(500).json({ error: `Falha ao excluir acesso: ${detail}` })
+    const status = /sessao nao informado|acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao excluir acesso: ${detail}` })
   }
 })
 

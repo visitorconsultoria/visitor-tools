@@ -69,6 +69,8 @@ type Acesso = {
   usuario: string
   senha: string
   observacoes: string
+  particular: boolean
+  createdByUsername: string
 }
 
 type Sistema = {
@@ -187,6 +189,8 @@ function mapAcesso(r: Record<string, unknown>): Acesso {
     usuario: String(r.usuario ?? ''),
     senha: String(r.senha ?? ''),
     observacoes: String(r.observacoes ?? ''),
+    particular: r.particular === true,
+    createdByUsername: String(r.createdByUsername ?? ''),
   }
 }
 
@@ -223,7 +227,7 @@ function mapAtividade(r: Record<string, unknown>): Atividade {
   }
 }
 
-export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage }) {
+export default function CustomerHubTool({ subPage, currentUsername, currentDisplayName }: { subPage: CustomerHubPage; currentUsername: string; currentDisplayName: string }) {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [contatos, setContatos] = useState<Contato[]>([])
   const [acessos, setAcessos] = useState<Acesso[]>([])
@@ -258,11 +262,20 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
   const [processoSearch, setProcessoSearch] = useState('')
   const [atividadeSearch, setAtividadeSearch] = useState('')
 
+  const requestHeaders = useMemo<Record<string, string>>(() => {
+    const headers: Record<string, string> = {}
+    if (!currentUsername.trim()) return headers
+
+    headers['x-user'] = currentUsername.trim().toLowerCase()
+    headers['x-user-display'] = currentDisplayName.trim()
+    return headers
+  }, [currentUsername, currentDisplayName])
+
   // Bootstrap: load all data on mount
   useEffect(() => {
     setIsLoading(true)
     setError(null)
-    fetch(apiUrl('/api/customer-hub/bootstrap'))
+    fetch(apiUrl('/api/customer-hub/bootstrap'), { headers: requestHeaders })
       .then((res) => {
         if (!res.ok) return res.json().then((b) => Promise.reject(new Error(b.error ?? `HTTP ${res.status}`)))
         return res.json()
@@ -284,7 +297,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Erro ao carregar dados.'))
       .finally(() => setIsLoading(false))
-  }, [])
+  }, [requestHeaders])
 
   useEffect(() => {
     const hasOpenModal = (
@@ -374,7 +387,11 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
     const url = isEdit ? apiUrl(`/api/customer-hub/contacts/${d.id}`) : apiUrl('/api/customer-hub/contacts')
     const method = isEdit ? 'PUT' : 'POST'
     try {
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...requestHeaders },
+        body: JSON.stringify(d),
+      })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
       const saved = mapContato(body.item as Record<string, unknown>)
@@ -418,7 +435,11 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
     const url = isEdit ? apiUrl(`/api/customer-hub/accesses/${d.id}`) : apiUrl('/api/customer-hub/accesses')
     const method = isEdit ? 'PUT' : 'POST'
     try {
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) })
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...requestHeaders },
+        body: JSON.stringify(d),
+      })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
       const saved = mapAcesso(body.item as Record<string, unknown>)
@@ -432,7 +453,10 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
   const handleDeleteAcesso = async (id: string) => {
     if (!window.confirm('Excluir este acesso?')) return
     try {
-      const res = await fetch(apiUrl(`/api/customer-hub/accesses/${id}`), { method: 'DELETE' })
+      const res = await fetch(apiUrl(`/api/customer-hub/accesses/${id}`), {
+        method: 'DELETE',
+        headers: requestHeaders,
+      })
       if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
       setAcessos((prev) => prev.filter((a) => a.id !== id))
     } catch (err) {
@@ -767,6 +791,16 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
             <label className="estimativas-form__full">
               Observações
               <textarea rows={3} value={d.observacoes ?? ''} onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, observacoes: e.target.value } }))} />
+            </label>
+            <label className="estimativas-form__full">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={d.particular === true}
+                  onChange={(e) => setAcessoModal((m) => ({ ...m, data: { ...m.data, particular: e.target.checked } }))}
+                />
+                Marcar como acesso particular (somente o criador visualiza)
+              </span>
             </label>
             <div className="estimativas-actions estimativas-form__full">
               <button type="submit" className="button-primary">{isEdit ? 'Salvar' : 'Cadastrar'}</button>
@@ -1227,6 +1261,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                   <th>Acesso</th>
                   <th>Endereço / Host</th>
                   <th>Credenciais</th>
+                  <th>Privacidade</th>
                   <th>Observações</th>
                   <th>Ações</th>
                 </tr>
@@ -1246,6 +1281,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                         <span className="muted">{a.senha || '-'}</span>
                       </div>
                     </td>
+                    <td>{a.particular ? 'Particular' : 'Compartilhado'}</td>
                     <td>{a.observacoes || '-'}</td>
                     <td>
                       <div className="ch-row-actions ch-row-actions--icons">
@@ -1260,7 +1296,7 @@ export default function CustomerHubTool({ subPage }: { subPage: CustomerHubPage 
                   </tr>
                 ))}
                 {filteredAcessosView.length === 0 && (
-                  <tr><td colSpan={7} className="ch-empty">Nenhum acesso encontrado.</td></tr>
+                  <tr><td colSpan={8} className="ch-empty">Nenhum acesso encontrado.</td></tr>
                 )}
               </tbody>
             </table>

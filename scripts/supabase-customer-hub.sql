@@ -30,6 +30,8 @@ create table if not exists public.customer_hub_accesses (
   usuario text not null default '',
   senha text not null default '',
   observacoes text not null default '',
+  particular boolean not null default false,
+  created_by_username text not null default '',
   created_at timestamptz not null default now()
 );
 
@@ -72,6 +74,9 @@ create index if not exists idx_customer_hub_accesses_cliente_id
 
 create index if not exists idx_customer_hub_accesses_tipo
   on public.customer_hub_accesses (tipo);
+
+create index if not exists idx_customer_hub_accesses_particular_owner
+  on public.customer_hub_accesses (particular, created_by_username);
 
 create index if not exists idx_customer_hub_systems_cliente_id
   on public.customer_hub_systems (cliente_id);

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS digte_demands (
   number     text NOT NULL DEFAULT '',
   date       date NOT NULL,
   type       text NOT NULL DEFAULT '',
+  client     text NOT NULL DEFAULT '',
   requester  text NOT NULL DEFAULT '',
   description text NOT NULL DEFAULT '',
   responsible text NOT NULL DEFAULT '',
@@ -14,6 +15,10 @@ CREATE TABLE IF NOT EXISTS digte_demands (
   notes      text NOT NULL DEFAULT '',
   created_at timestamp with time zone DEFAULT now()
 );
+
+-- Compatibilidade com bases ja existentes
+ALTER TABLE digte_demands
+  ADD COLUMN IF NOT EXISTS client text NOT NULL DEFAULT '';
 
 -- Indice por status para filtros rapidos
 CREATE INDEX IF NOT EXISTS idx_digte_demands_status ON digte_demands (status);

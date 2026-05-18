@@ -49,6 +49,7 @@ function getSupabaseConfig() {
     customerActivitiesTable: process.env.SUPABASE_CUSTOMER_ACTIVITIES_TABLE || 'customer_hub_activities',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
+    rubricaRulesTable: process.env.SUPABASE_RUBRICA_RULES_TABLE || 'rubrica_validation_rules',
   }
 }
 
@@ -94,6 +95,7 @@ function getSupabaseClient() {
     customerActivitiesTable: config.customerActivitiesTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
+    rubricaRulesTable: config.rubricaRulesTable,
   }
 }
 
@@ -3414,6 +3416,181 @@ app.post('/api/ticket-hub/tickets/reply/operator', async (req, res) => {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     const status = /acesso negado/i.test(detail) ? 403 : 500
     return res.status(status).json({ error: `Falha ao responder chamado: ${detail}` })
+  }
+})
+
+// ─── Validacao de Rubricas ───────────────────────────────────────────────────
+
+const RUBRICA_RULE_SELECT = 'id, rule_name, trigger_column, trigger_value, expected_column, expected_value, expected_conditions, is_active, notes, created_at, updated_at'
+
+function normalizeRubricaExpectedConditions(raw, fallbackColumn = '', fallbackValue = '') {
+  const source = Array.isArray(raw)
+    ? raw
+    : (fallbackColumn && fallbackValue ? [{ column: fallbackColumn, value: fallbackValue }] : [])
+
+  const normalized = source
+    .map((item) => {
+      const record = item && typeof item === 'object' ? item : {}
+      return {
+        column: String(record.column ?? '').trim(),
+        value: String(record.value ?? '').trim(),
+      }
+    })
+    .filter((item) => item.column && item.value)
+
+  return normalized
+}
+
+function parseRubricaRuleIdInput(raw) {
+  const id = Number(String(raw ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('ID da regra invalido.')
+  }
+  return id
+}
+
+function normalizeRubricaRuleRow(row) {
+  const expectedConditions = normalizeRubricaExpectedConditions(
+    row.expected_conditions,
+    row.expected_column,
+    row.expected_value,
+  )
+
+  return {
+    id: Number(row.id ?? 0),
+    ruleName: String(row.rule_name ?? ''),
+    triggerColumn: String(row.trigger_column ?? ''),
+    triggerValue: String(row.trigger_value ?? ''),
+    expectedColumn: String(expectedConditions[0]?.column ?? row.expected_column ?? ''),
+    expectedValue: String(expectedConditions[0]?.value ?? row.expected_value ?? ''),
+    expectedConditions,
+    isActive: Boolean(row.is_active),
+    notes: String(row.notes ?? ''),
+    createdAt: String(row.created_at ?? ''),
+    updatedAt: String(row.updated_at ?? ''),
+  }
+}
+
+function parseRubricaRulePayload(payload) {
+  const expectedConditions = normalizeRubricaExpectedConditions(
+    payload.expectedConditions,
+    payload.expectedColumn,
+    payload.expectedValue,
+  )
+
+  return {
+    rule_name: String(payload.ruleName ?? '').trim(),
+    trigger_column: String(payload.triggerColumn ?? '').trim(),
+    trigger_value: String(payload.triggerValue ?? '').trim(),
+    expected_column: String(expectedConditions[0]?.column ?? '').trim(),
+    expected_value: String(expectedConditions[0]?.value ?? '').trim(),
+    expected_conditions: expectedConditions,
+    is_active: payload.isActive !== false,
+    notes: String(payload.notes ?? '').trim(),
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function validateRubricaRulePayload(parsed) {
+  if (!parsed.rule_name) throw new Error('Nome da regra obrigatorio.')
+  if (!parsed.trigger_column) throw new Error('Coluna gatilho obrigatoria.')
+  if (!parsed.trigger_value) throw new Error('Valor gatilho obrigatorio.')
+  if (!Array.isArray(parsed.expected_conditions) || !parsed.expected_conditions.length) {
+    throw new Error('Informe ao menos um campo esperado para a regra.')
+  }
+}
+
+async function listRubricaRules() {
+  const { client, rubricaRulesTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(rubricaRulesTable)
+    .select(RUBRICA_RULE_SELECT)
+    .order('id', { ascending: false })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeRubricaRuleRow)
+}
+
+async function createRubricaRule(payload) {
+  const parsed = parseRubricaRulePayload(payload)
+  validateRubricaRulePayload(parsed)
+
+  const { client, rubricaRulesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaRulesTable)
+    .insert({ ...parsed, created_at: new Date().toISOString() })
+    .select(RUBRICA_RULE_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRubricaRuleRow(row)
+}
+
+async function updateRubricaRule(id, payload) {
+  const parsed = parseRubricaRulePayload(payload)
+  validateRubricaRulePayload(parsed)
+
+  const { client, rubricaRulesTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaRulesTable)
+    .update(parsed)
+    .eq('id', id)
+    .select(RUBRICA_RULE_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRubricaRuleRow(row)
+}
+
+async function deleteRubricaRule(id) {
+  const { client, rubricaRulesTable } = getSupabaseClient()
+  const { error } = await client
+    .from(rubricaRulesTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+app.get('/api/rubrica-rules', async (_req, res) => {
+  try {
+    const items = await listRubricaRules()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar regras de rubricas: ${detail}` })
+  }
+})
+
+app.post('/api/rubrica-rules', async (req, res) => {
+  try {
+    const item = await createRubricaRule(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar regra de rubrica: ${detail}` })
+  }
+})
+
+app.put('/api/rubrica-rules/:id', async (req, res) => {
+  try {
+    const id = parseRubricaRuleIdInput(req.params.id)
+    const item = await updateRubricaRule(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar regra de rubrica: ${detail}` })
+  }
+})
+
+app.delete('/api/rubrica-rules/:id', async (req, res) => {
+  try {
+    const id = parseRubricaRuleIdInput(req.params.id)
+    await deleteRubricaRule(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir regra de rubrica: ${detail}` })
   }
 })
 

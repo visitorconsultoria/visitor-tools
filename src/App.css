@@ -694,7 +694,8 @@ button:disabled {
 .app--xml-excel .card,
 .app--excel-csv-sqlite .card,
 .app--resume-ranking .card,
-.app--estimativas .card {
+.app--estimativas .card,
+.app--rubricas-validacao .card {
   border-top: 4px solid #d3e7e0;
 }
 

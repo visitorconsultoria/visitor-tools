@@ -14,6 +14,7 @@ import ChangePasswordTool from './components/ChangePasswordTool'
 import CustomerHubTool, { type CustomerHubPage } from './components/CustomerHubTool'
 import TicketHubTool from './components/TicketHubTool'
 import PropostaComercialTool from './components/PropostaComercialTool'
+import RubricasValidationTool from './components/RubricasValidationTool'
 import { ALL_MENU_KEYS, getEffectiveMenus, type AllowedMenu } from './lib/menuConfig'
 
 type CsvData = {
@@ -77,6 +78,7 @@ type SidebarIconName =
   | 'customer-hub'
   | 'ticket-hub'
   | 'propostas'
+  | 'rubricas-validacao'
   | 'user-admin'
   | 'change-password'
 
@@ -108,6 +110,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M7 9h10m-10 5h10m2-12H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 0V3a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2h14z" />
     case 'propostas':
       return <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1v5h5M9 13h6M9 17h4" />
+    case 'rubricas-validacao':
+      return <path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm3 4h8M8 12h8M8 16h5m4-5l2 2m0-2l-2 2" />
     case 'change-password':
       return <path d="M7 11V8a5 5 0 1 1 10 0v3m-8 0h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
     default:
@@ -903,6 +907,24 @@ function App() {
               <span>Propostas Comerciais</span>
             </button>
           )}
+          {canAccessPage('rubricas-validacao', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'rubricas-validacao' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('rubricas-validacao')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'rubricas-validacao' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="rubricas-validacao" />
+                </svg>
+              </span>
+              <span>Validação de Rubricas</span>
+            </button>
+          )}
           {canAccessPage('ticket-hub', currentUser) && currentPage === 'ticket-hub' && openSidebarSubmenu === 'ticket-hub' && (
             <div className="sidebar__subnav" aria-label="Central de Chamados">
               <button
@@ -1019,6 +1041,8 @@ function App() {
                   ? 'Central de Chamados'
                 : currentPage === 'propostas'
                   ? 'Propostas Comerciais'
+                : currentPage === 'rubricas-validacao'
+                  ? 'Validação de Rubricas'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
@@ -1048,6 +1072,8 @@ function App() {
                   ? 'Gestão de chamados e tickets através do TomTicket.'
                 : currentPage === 'propostas'
                   ? 'Criação e gestão de propostas comerciais da Visitor Consultoria.'
+                : currentPage === 'rubricas-validacao'
+                  ? 'Valide arquivos CSV/Excel de rubricas com regras persistidas em banco.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -1160,6 +1186,15 @@ function App() {
                     }}
                   >
                     Abrir Central de Chamados
+                  </button>
+                )}
+                {canAccessPage('rubricas-validacao', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('rubricas-validacao')}
+                  >
+                    Abrir Validação de Rubricas
                   </button>
                 )}
               </div>
@@ -1306,6 +1341,19 @@ function App() {
                       setCurrentPage('ticket-hub')
                       setTicketHubPage('todos')
                     }}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('rubricas-validacao', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Validação de Rubricas</h3>
+                  <p>Aplique regras de conferência em arquivos CSV/Excel e gere relatório de divergências.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('rubricas-validacao')}
                   >
                     Acessar
                   </button>
@@ -1556,6 +1604,8 @@ function App() {
           <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
         ) : currentPage === 'propostas' ? (
           <PropostaComercialTool />
+        ) : currentPage === 'rubricas-validacao' ? (
+          <RubricasValidationTool />
         ) : currentPage === 'user-admin' ? (
           <UserAccessTool currentUsername={currentUser?.username || ''} />
         ) : currentPage === 'change-password' ? (

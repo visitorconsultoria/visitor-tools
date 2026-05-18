@@ -1,6 +1,5 @@
 export const MENU_DEFINITIONS = Object.freeze([
   { key: 'process', label: 'Comparar Projeto', assignable: true },
-  { key: 'data-comparison', label: 'Comparacao de Dados', assignable: true },
   { key: 'xml-excel', label: 'XML para Excel', assignable: true },
   { key: 'excel-csv-sqlite', label: 'Excel/CSV para SQL', assignable: true },
   { key: 'resume-ranking', label: 'Ranking de Curriculos', assignable: true },

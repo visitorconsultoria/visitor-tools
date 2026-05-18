@@ -598,11 +598,11 @@ export default function RubricasValidationTool() {
       writeWrapped('Nenhuma divergencia encontrada para as regras aplicadas.', 11)
     } else {
       divergences.forEach((divergence, index) => {
-        ensureSpace(110)
+        ensureSpace(126)
 
         doc.setDrawColor(218, 228, 224)
         doc.setFillColor(247, 251, 249)
-        doc.roundedRect(margin, y - 12, contentWidth, 88, 6, 6, 'FD')
+        doc.roundedRect(margin, y - 12, contentWidth, 104, 6, 6, 'FD')
 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(10)
@@ -614,15 +614,17 @@ export default function RubricasValidationTool() {
           ? `Linha ${divergence.rowNumber}: quando ${divergence.triggerColumn} = ${divergence.triggerValue}`
           : `Regra com problema de cabecalho: ${divergence.triggerColumn} / ${divergence.expectedColumn}`
 
-        const lineTwo = `Esperado em ${divergence.expectedColumn}: ${divergence.expectedValue}`
-        const lineThree = `Encontrado: ${divergence.foundValue || '(vazio)'}`
-        const lineFour = `Motivo: ${divergence.reason}`
+        const lineTwo = `Gatilho: ${divergence.triggerColumn} = ${divergence.triggerValue}`
+        const lineThree = `Esperado em ${divergence.expectedColumn}: ${divergence.expectedValue}`
+        const lineFour = `Encontrado: ${divergence.foundValue || '(vazio)'}`
+        const lineFive = `Motivo: ${divergence.reason}`
 
         doc.text(doc.splitTextToSize(lineOne, contentWidth - 16), margin + 8, y + 20)
         doc.text(doc.splitTextToSize(lineTwo, contentWidth - 16), margin + 8, y + 35)
         doc.text(doc.splitTextToSize(lineThree, contentWidth - 16), margin + 8, y + 50)
         doc.text(doc.splitTextToSize(lineFour, contentWidth - 16), margin + 8, y + 65)
-        y += 96
+        doc.text(doc.splitTextToSize(lineFive, contentWidth - 16), margin + 8, y + 80)
+        y += 110
       })
     }
 
@@ -760,6 +762,7 @@ export default function RubricasValidationTool() {
                   <th>#</th>
                   <th>Regra</th>
                   <th>Linha</th>
+                  <th>Gatilho</th>
                   <th>Esperado</th>
                   <th>Encontrado</th>
                   <th>Motivo</th>
@@ -771,6 +774,7 @@ export default function RubricasValidationTool() {
                     <td>{index + 1}</td>
                     <td>{item.ruleName}</td>
                     <td>{item.rowNumber > 0 ? item.rowNumber : '-'}</td>
+                    <td>{item.triggerColumn} = {item.triggerValue}</td>
                     <td>{item.expectedColumn} = {item.expectedValue}</td>
                     <td>{item.foundValue || '(vazio)'}</td>
                     <td>{item.reason}</td>

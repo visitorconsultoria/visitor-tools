@@ -14,7 +14,6 @@ import ChangePasswordTool from './components/ChangePasswordTool'
 import CustomerHubTool, { type CustomerHubPage } from './components/CustomerHubTool'
 import TicketHubTool from './components/TicketHubTool'
 import PropostaComercialTool from './components/PropostaComercialTool'
-import TermoValidacaoTool from './components/TermoValidacaoTool'
 import { ALL_MENU_KEYS, getEffectiveMenus, type AllowedMenu } from './lib/menuConfig'
 
 type CsvData = {
@@ -78,7 +77,6 @@ type SidebarIconName =
   | 'customer-hub'
   | 'ticket-hub'
   | 'propostas'
-  | 'termo-validacao'
   | 'user-admin'
   | 'change-password'
 
@@ -110,8 +108,6 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M7 9h10m-10 5h10m2-12H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 0V3a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2h14z" />
     case 'propostas':
       return <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1v5h5M9 13h6M9 17h4" />
-    case 'termo-validacao':
-      return <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zm-1 1.5V9h4.5M9 13h6m-6 4h4m4-3l-2 2-1-1" />
     case 'change-password':
       return <path d="M7 11V8a5 5 0 1 1 10 0v3m-8 0h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
     default:
@@ -907,24 +903,6 @@ function App() {
               <span>Propostas Comerciais</span>
             </button>
           )}
-          {canAccessPage('termo-validacao', currentUser) && (
-            <button
-              type="button"
-              className={`sidebar__link ${currentPage === 'termo-validacao' ? 'sidebar__link--active' : ''}`}
-              onClick={() => {
-                setCurrentPage('termo-validacao')
-                setShowSourceMenu(false)
-              }}
-              aria-current={currentPage === 'termo-validacao' ? 'page' : undefined}
-            >
-              <span className="sidebar__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <SidebarIcon name="termo-validacao" />
-                </svg>
-              </span>
-              <span>Termo de Validação</span>
-            </button>
-          )}
           {canAccessPage('ticket-hub', currentUser) && currentPage === 'ticket-hub' && openSidebarSubmenu === 'ticket-hub' && (
             <div className="sidebar__subnav" aria-label="Central de Chamados">
               <button
@@ -1041,8 +1019,6 @@ function App() {
                   ? 'Central de Chamados'
                 : currentPage === 'propostas'
                   ? 'Propostas Comerciais'
-                : currentPage === 'termo-validacao'
-                  ? 'Termo de Validação'
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
@@ -1072,8 +1048,6 @@ function App() {
                   ? 'Gestão de chamados e tickets através do TomTicket.'
                 : currentPage === 'propostas'
                   ? 'Criação e gestão de propostas comerciais da Visitor Consultoria.'
-                : currentPage === 'termo-validacao'
-                  ? 'Geração de termos de validação com identidade visual por parceiro.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -1186,15 +1160,6 @@ function App() {
                     }}
                   >
                     Abrir Central de Chamados
-                  </button>
-                )}
-                {canAccessPage('termo-validacao', currentUser) && (
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    onClick={() => setCurrentPage('termo-validacao')}
-                  >
-                    Abrir Termo de Validação
                   </button>
                 )}
               </div>
@@ -1341,19 +1306,6 @@ function App() {
                       setCurrentPage('ticket-hub')
                       setTicketHubPage('todos')
                     }}
-                  >
-                    Acessar
-                  </button>
-                </section>
-              )}
-              {canAccessPage('termo-validacao', currentUser) && (
-                <section className="card home-tool">
-                  <h3>Termo de Validação</h3>
-                  <p>Gere termos de validação em PDF com logo e paleta ajustados conforme o parceiro.</p>
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    onClick={() => setCurrentPage('termo-validacao')}
                   >
                     Acessar
                   </button>
@@ -1604,8 +1556,6 @@ function App() {
           <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
         ) : currentPage === 'propostas' ? (
           <PropostaComercialTool />
-        ) : currentPage === 'termo-validacao' ? (
-          <TermoValidacaoTool />
         ) : currentPage === 'user-admin' ? (
           <UserAccessTool currentUsername={currentUser?.username || ''} />
         ) : currentPage === 'change-password' ? (

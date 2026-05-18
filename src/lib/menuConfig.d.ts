@@ -10,7 +10,6 @@ export type AllowedMenu =
   | 'customer-hub'
   | 'ticket-hub'
   | 'propostas'
-  | 'termo-validacao'
   | 'user-admin'
   | 'change-password'
 

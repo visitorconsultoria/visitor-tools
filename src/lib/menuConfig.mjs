@@ -10,7 +10,6 @@ export const MENU_DEFINITIONS = Object.freeze([
   { key: 'customer-hub', label: 'Central de Clientes', assignable: true },
   { key: 'ticket-hub', label: 'Central de Chamados', assignable: true },
   { key: 'propostas', label: 'Propostas Comerciais', assignable: true },
-  { key: 'termo-validacao', label: 'Termo de Validacao', assignable: true },
   { key: 'user-admin', label: 'Usuarios e Acessos', assignable: false },
   { key: 'change-password', label: 'Alterar Senha', assignable: false },
 ])

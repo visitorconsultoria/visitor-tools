@@ -22,7 +22,7 @@ begin
       date date not null,
       demand text not null,
       notes text not null default '',
-      status text not null default 'pending' check (status in ('pending', 'sent')),
+      status text not null default 'pending' check (status in ('pending', 'sent', 'cancelled', 'completed')),
       created_at timestamptz not null default now()
     );
 
@@ -74,9 +74,16 @@ create table if not exists public.estimativas (
   date date not null,
   demand text not null,
   notes text not null default '',
-  status text not null default 'pending' check (status in ('pending', 'sent')),
+  status text not null default 'pending' check (status in ('pending', 'sent', 'cancelled', 'completed')),
   created_at timestamptz not null default now()
 );
+
+alter table if exists public.estimativas
+  drop constraint if exists estimativas_status_check;
+
+alter table if exists public.estimativas
+  add constraint estimativas_status_check
+  check (status in ('pending', 'sent', 'cancelled', 'completed'));
 
 create table if not exists public.estimativa_items (
   id bigint generated always as identity primary key,

@@ -1,5 +1,6 @@
 export const MENU_DEFINITIONS = Object.freeze([
   { key: 'process', label: 'Comparar Projeto', assignable: true },
+  { key: 'data-comparison', label: 'Comparacao de Dados', assignable: true },
   { key: 'xml-excel', label: 'XML para Excel', assignable: true },
   { key: 'excel-csv-sqlite', label: 'Excel/CSV para SQL', assignable: true },
   { key: 'resume-ranking', label: 'Ranking de Curriculos', assignable: true },
@@ -9,6 +10,7 @@ export const MENU_DEFINITIONS = Object.freeze([
   { key: 'customer-hub', label: 'Central de Clientes', assignable: true },
   { key: 'ticket-hub', label: 'Central de Chamados', assignable: true },
   { key: 'propostas', label: 'Propostas Comerciais', assignable: true },
+  { key: 'termo-validacao', label: 'Termo de Validacao', assignable: true },
   { key: 'user-admin', label: 'Usuarios e Acessos', assignable: false },
   { key: 'change-password', label: 'Alterar Senha', assignable: false },
 ])

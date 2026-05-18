@@ -396,7 +396,11 @@ function normalizeDateInput(value) {
 }
 
 function normalizeEstimateStatus(value) {
-  return value === 'sent' ? 'sent' : 'pending'
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'sent') return 'sent'
+  if (normalized === 'cancelled') return 'cancelled'
+  if (normalized === 'completed') return 'completed'
+  return 'pending'
 }
 
 function parseEstimateIdInput(value) {
@@ -1588,6 +1592,30 @@ const SYSTEM_PROMPT = `Voce e um especialista em recrutamento e selecao de RH. A
 }
 Seja objetivo e preciso. Limite pontos_fortes e lacunas a no maximo 4 itens cada. Limite habilidades a no maximo 12 itens cada.`
 
+const DATA_COMPARISON_SYSTEM_PROMPT = `Voce e um especialista em reconciliacao de dados financeiros. Recebera um resumo de comparacao entre arquivo base e arquivos comparados, focado em itens ausentes no arquivo comparado.
+Retorne SOMENTE um objeto JSON valido, sem texto adicional, com exatamente esta estrutura:
+{
+  "resumoGeral": "<resumo em portugues com foco no impacto dos itens ausentes>",
+  "arquivos": [
+    {
+      "comparedFile": "<nome do arquivo comparado>",
+      "diagnosis": "<diagnostico objetivo da causa provavel das ausencias>",
+      "missingCount": <numero de itens ausentes>,
+      "missingValueTotal": <valor total ausente em numero>,
+      "topMissingKeys": ["<ate 8 chaves mais criticas>"],
+      "recommendations": ["<acoes praticas de correcao>"]
+    }
+  ],
+  "alertas": ["<riscos ou inconsistencias de alto impacto>"],
+  "planoAcao": ["<passo 1>", "<passo 2>"]
+}
+Regras:
+- Foco principal: identificar e explicar o que existe no base e esta ausente no comparado.
+- Seja direto e acionavel.
+- recommendations com no maximo 5 itens por arquivo.
+- alertas com no maximo 8 itens.
+- planoAcao com no maximo 8 passos.`
+
 app.use(express.json({ limit: '40mb' }))
 
 app.use((req, res, next) => {
@@ -1844,8 +1872,8 @@ app.patch('/api/estimativas/:id/status', async (req, res) => {
     const id = parseEstimateIdInput(req.params.id)
     const status = req.body?.status
 
-    if (status !== 'pending' && status !== 'sent') {
-      return res.status(400).json({ error: 'Status invalido. Use pending ou sent.' })
+    if (status !== 'pending' && status !== 'sent' && status !== 'cancelled' && status !== 'completed') {
+      return res.status(400).json({ error: 'Status invalido. Use pending, sent, cancelled ou completed.' })
     }
 
     await updateEstimateStatus(id, status)
@@ -2395,6 +2423,128 @@ app.post('/api/resume-ranking/analyze', async (req, res) => {
     })
   } catch {
     return res.status(500).json({ error: 'Falha interna ao analisar curriculo.' })
+  }
+})
+
+app.post('/api/data-comparison/analyze', async (req, res) => {
+  try {
+    const githubModelsToken = process.env.GITHUB_MODELS_TOKEN || ''
+    const githubModelsModel = process.env.GITHUB_MODELS_MODEL || 'gpt-4o-mini'
+
+    if (!githubModelsToken) {
+      return res.status(500).json({
+        error: 'Servidor sem token configurado. Defina GITHUB_MODELS_TOKEN no arquivo .env.',
+      })
+    }
+
+    const payload = req.body || {}
+    if (
+      typeof payload !== 'object'
+      || typeof payload.baseFileName !== 'string'
+      || !Array.isArray(payload.keyFields)
+      || !Array.isArray(payload.files)
+    ) {
+      return res.status(400).json({ error: 'Payload invalido para analise de comparacao.' })
+    }
+
+    const safePayload = {
+      comparisonMode: String(payload.comparisonMode || 'row'),
+      baseFileName: String(payload.baseFileName || ''),
+      keyFields: payload.keyFields.slice(0, 10).map((item) => String(item || '')),
+      valueFields: Array.isArray(payload.valueFields)
+        ? payload.valueFields.slice(0, 10).map((item) => String(item || ''))
+        : [],
+      files: payload.files.slice(0, 25).map((item) => ({
+        comparedFile: String(item?.comparedFile || ''),
+        missingCount: Number(item?.missingCount || 0),
+        missingValueTotal: Number(item?.missingValueTotal || 0),
+        missingItems: Array.isArray(item?.missingItems)
+          ? item.missingItems.slice(0, 60).map((missing) => ({
+            key: String(missing?.key || ''),
+            baseValue: typeof missing?.baseValue === 'string' ? missing.baseValue : '',
+            baseTotal: Number(missing?.baseTotal || 0),
+          }))
+          : [],
+      })),
+    }
+
+    const userMessage = `RESUMO PARA ANALISE DE AUSENCIAS:\n${JSON.stringify(safePayload).slice(0, 22000)}`
+
+    const response = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${githubModelsToken}`,
+      },
+      body: JSON.stringify({
+        model: githubModelsModel,
+        messages: [
+          { role: 'system', content: DATA_COMPARISON_SYSTEM_PROMPT },
+          { role: 'user', content: userMessage },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.15,
+        max_tokens: 1200,
+      }),
+    })
+
+    if (!response.ok) {
+      let detail = ''
+      try {
+        const err = await response.json()
+        detail = err?.error?.message || response.statusText
+      } catch {
+        detail = response.statusText
+      }
+
+      if (response.status === 401 && /models permission is required|models:read|permission/i.test(detail)) {
+        return res.status(502).json({
+          error: 'Erro 401 no provedor: o token do GitHub precisa da permissao models:read.',
+        })
+      }
+
+      return res.status(502).json({
+        error: `Erro ${response.status} no provedor: ${detail}`,
+      })
+    }
+
+    const data = await response.json()
+    const content = data?.choices?.[0]?.message?.content || '{}'
+
+    let parsed
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      return res.status(502).json({ error: 'Resposta da IA em formato invalido.' })
+    }
+
+    const arquivos = Array.isArray(parsed.arquivos)
+      ? parsed.arquivos.slice(0, 25).map((item) => ({
+        comparedFile: String(item?.comparedFile || ''),
+        diagnosis: String(item?.diagnosis || ''),
+        missingCount: Number(item?.missingCount || 0),
+        missingValueTotal: Number(item?.missingValueTotal || 0),
+        topMissingKeys: Array.isArray(item?.topMissingKeys)
+          ? item.topMissingKeys.slice(0, 8).map((value) => String(value || ''))
+          : [],
+        recommendations: Array.isArray(item?.recommendations)
+          ? item.recommendations.slice(0, 5).map((value) => String(value || ''))
+          : [],
+      }))
+      : []
+
+    return res.json({
+      resumoGeral: String(parsed.resumoGeral || ''),
+      arquivos,
+      alertas: Array.isArray(parsed.alertas)
+        ? parsed.alertas.slice(0, 8).map((item) => String(item || ''))
+        : [],
+      planoAcao: Array.isArray(parsed.planoAcao)
+        ? parsed.planoAcao.slice(0, 8).map((item) => String(item || ''))
+        : [],
+    })
+  } catch {
+    return res.status(500).json({ error: 'Falha interna ao analisar comparacao de dados.' })
   }
 })
 

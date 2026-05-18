@@ -101,49 +101,59 @@ const DEFAULT_OBJETIVO =
   '<p>Em atenção solicitação, apresentamos a seguir nossa Proposta Comercial nos termos abaixo.</p>'
 
 const DEFAULT_ESCOPO_TITULO =
-  'Sustentação – Consultoria especializada para Sustentação, Suporte, Manutenção e Desenvolvimento do ERP Protheus e seus Módulos de Negócio.'
+  'FLUIG – Ajustes e melhorias em Processo e Relatórios.'
 
 const DEFAULT_ESCOPO_CONTEUDO =
-  '<p><strong>Resumo:</strong></p>' +
+  '<p><strong>Sprint 1 - Validações de Fluxo e Integração de Solicitantes</strong></p>' +
   '<ul>' +
-  '<li>Consultoria especializada nos sistemas TOTVS e temas de negócios relacionados.</li>' +
-  '<li>Suporte na correção de problemas, atualizações e manutenções dos sistemas TOTVS.</li>' +
-  '<li>Desenvolvimento, customizações e implementações de rotinas nos Sistemas TOTVS e suas integrações.</li>' +
+  '<li><strong>1.1 Validação de transição de etapas:</strong> Impedir avanço manual para etapas futuras no painel de consulta de pedidos, respeitando fluxo natural do processo e sequência do diagrama.</li>' +
+  '<li><strong>1.2 Vinculação do solicitante do Pedido de Compras:</strong> Ajustar processo de Pagamento de NF para herdar solicitante do processo de Pedido de Compras vinculado.</li>' +
   '</ul>' +
-  '<p><strong>PREMISSAS:</strong></p>' +
+  '<p><strong>Sprint 2 - Cadastros, Datas e Notificações</strong></p>' +
   '<ul>' +
-  '<li>É de responsabilidade da Visitor dispor e manter todos os equipamentos pessoais necessários para execução das atividades, como (Computador, telefone, internet, periféricos e afins)</li>' +
-  '<li>O Expediente fixado é de segunda-feira a sexta-feira (exceto feriados) – das 09h às 18h00 com 01h00 de intervalo.</li>' +
-  '<li>O modelo de atendimento e disponibilidade é programado em conjunto com o Cliente definir as atividades e sua Ordem de Prioridade, bem como o planejamento.</li>' +
-  '<li>É de responsabilidade do Cliente a devida disponibilização dos ambientes de acesso, bem como a deliberação de informações e procedimentos pertinentes e/ou concorrentes com os processos internos e esclarecimento das regras e compliance da companhia.</li>' +
+  '<li><strong>2.1 Cadastro de datas de pagamento mensal:</strong> Criar formulário para configuração de vencimentos por mês, com tratamento de calendário comercial e feriados.</li>' +
+  '<li><strong>2.2 Regra de data de vencimento automática:</strong> Criar campo dataVencimento e lógica de preenchimento automático baseada no cadastro mensal e data de entrada do documento.</li>' +
+  '<li><strong>2.3 Notificação por e-mail em cópia (CC):</strong> Envio de e-mail de movimentação com cópia para grupo Contas a Pagar.</li>' +
   '</ul>' +
-  '<p><strong>LIMITAÇÕES COMPARTILHADAS:</strong></p>' +
+  '<p><strong>Sprint 3 - Portal do Fornecedor, Depuração e Monitoramento</strong></p>' +
   '<ul>' +
-  '<li>A contratação de atendimento é remota, podendo existir visitas programadas previamente acordadas entre as partes de acordo com a necessidade do cliente e disponibilidade da contratada.</li>' +
-  '<li>Eventuais custos de translado e hospedagem são de responsabilidade do Cliente.</li>' +
-  '<li>A atuação nos aspectos técnicos é limitada às permissões funcionais do Sistema ERP Protheus, e a responsabilidade bem como Garantia do sistema é de seu Proprietário "Totvs S/A".</li>' +
-  '<li>A volumetria de demanda de serviços para o suporte deve comportar o número de consultores contratados e disponibilizado, ficando a cargo do cliente o controle e acompanhamento de suas priorizações.</li>' +
+  '<li><strong>3.1 Diagnóstico e log de erros:</strong> Implementar rastreabilidade e identificar causas de parada no temporizador do Portal do Fornecedor.</li>' +
+  '<li><strong>3.2 Serviço automático de verificação:</strong> Criar rotina periódica para detectar solicitações paradas e seu motivo.</li>' +
+  '<li><strong>3.3 Notificação automática de parada por erro:</strong> Disparar alertas automáticos para solicitante, Contas a Pagar e TI quando houver falha de integração/sistema.</li>' +
   '</ul>'
 
 const DEFAULT_PRECIFICACAO_TITULO = 'Consultoria Especializada'
 
 const DEFAULT_PRECIFICACAO_DESCRICAO =
-  '<p>Coordenação e Sustentação completa com a disponibilização de 01 Consultor Generalista e uma equipe de Consultores Especialistas de Negócio.</p>' +
-  '<p>Neste modelo, a Visitor irá coordenar as atividades alternando o Consultor dedicado de acordo com a especialidade requerida e necessidade do cliente, bem como atuará no cenário de Melhoria Contínua e Ciclo de Vida do ERP e seus processos.</p>' +
-  '<p><strong>Perfil recomendado:</strong> Clientes que demandem gestão técnica do ERP, com direcionamento de boas práticas e melhoria contínua. Bem como clientes que possuem regras de negócios complexas que exigem atenção especializada além de técnica.</p>'
+  '<p>Valores por sprint conforme escopo fechado definido para o projeto.</p>'
+
+const DEFAULT_PRECIFICACAO_ITENS: PrecificacaoItem[] = [
+  { escopo: 'Sprint 1 - Validações de Fluxo e Integração de Solicitantes', descricao: 'Escopo Fechado', valorMensal: '4.800,00' },
+  { escopo: 'Sprint 2 - Cadastros, Datas e Notificações', descricao: 'Escopo Fechado', valorMensal: '4.800,00' },
+  { escopo: 'Sprint 3 - Portal do Fornecedor, Depuração e Monitoramento', descricao: 'Escopo Fechado', valorMensal: '7.680,00' },
+]
 
 const DEFAULT_BANCO_HORAS =
-  '<p>O Modelo de Banco de Horas provisiona os profissionais previstos no escopo para o atendimento sob demanda do Cliente. Considerando as seguintes premissas:</p>' +
+  '<p><strong>Cronograma Estimado</strong></p>' +
   '<ul>' +
-  '<li>A contratação do Banco de Horas não configura a obrigatoriedade de consumo por parte do cliente.</li>' +
-  '<li>A alocação do recurso está sujeita a prerrogativa do Cliente, que irá demandar e planejar os atendimentos conforme a necessidade.</li>' +
-  '<li>A programação dos atendimentos se dará por meio de solicitação formal por parte do Cliente no canal indicado pela Visitor. Atualmente reservado em seu HelpDesk online. (Canal de Suporte VISITOR para abertura de Chamados e controle de BackLog)</li>' +
-  '<li>Para atendimento de SLA, prevalece em horário Comercial (Segunda a Sexta das 8hs às 12:00 e das 13:30 às 18hs em dias úteis)</li>' +
-  '<li>A modalidade de Banco de Horas não contempla atendimento Stand By.</li>' +
-  '<li>Os serviços agendados poderão ser cancelados, desde que para tanto o CLIENTE notifique a VISITOR, com antecedência mínima de 2 (dois) dias úteis da data do agendamento. Caso contrário, serão cobradas as horas agendadas.</li>' +
+  '<li>Sprint 1 (Semana 1-2): Regra de transição de etapas e vinculação de solicitante.</li>' +
+  '<li>Sprint 2 (Semana 3-4): Cadastro de datas, vencimento automático e e-mail em cópia.</li>' +
+  '<li>Sprint 3 (Semana 5-7): Diagnóstico do Portal do Fornecedor, monitoramento e alertas.</li>' +
   '</ul>' +
-  '<p><strong>Condições de Faturamento e Prazos</strong></p>' +
-  '<ul><li>Atividades de Delivery são faturadas a partir <strong>(Medição Mensal)</strong> com Faturamento para o dia 10 do mês subsequente.</li></ul>'
+  '<p><strong>Premissas e Considerações Técnicas</strong></p>' +
+  '<ul>' +
+  '<li>As horas estimadas consideram ambiente Fluig já provisionado e acessos liberados.</li>' +
+  '<li>Para o Sprint 3, é necessário acesso aos logs de integração do Protheus e serviços utilizados.</li>' +
+  '<li>O monitoramento automático será implementado por Timer do Fluig ou serviço externo conforme definição técnica.</li>' +
+  '<li>Templates de e-mail seguirão a identidade visual corporativa já existente.</li>' +
+  '<li>Não inclui homologação completa, treinamento e deploy em produção.</li>' +
+  '</ul>' +
+  '<p><strong>Riscos e Dependências</strong></p>' +
+  '<ul>' +
+  '<li>Indisponibilidade de integração com Protheus pode impactar o Sprint 3.</li>' +
+  '<li>Definição do grupo Contas a Pagar deve estar alinhada com a equipe de segurança.</li>' +
+  '<li>Mudanças no processo de Pedido de Compras podem afetar a vinculação do solicitante.</li>' +
+  '</ul>'
 
 const DEFAULT_DELIVERY_ITENS: DeliveryItem[] = [
   { tipoServico: 'Consultoria e Suporte ERP – Geral', tipo: 'Horas', valorUnit: '150,00' },
@@ -155,6 +165,12 @@ const DEFAULT_DELIVERY_ITENS: DeliveryItem[] = [
 ]
 
 const DEFAULT_OUTRAS_INFORMACOES =
+  '<p><strong>Condições de Aceite e Pagamento</strong></p>' +
+  '<ul>' +
+  '<li>O planejamento do projeto será realizado após o aceite da proposta, com definição detalhada do cronograma.</li>' +
+  '<li>O projeto será faturado por sprint concluída, mediante aceite de cada etapa.</li>' +
+  '<li>O faturamento é realizado no mês seguinte ao da sprint concluída.</li>' +
+  '</ul>' +
   '<p><strong>Central de Atendimento:</strong></p>' +
   '<p>Área do Cliente: https://visitorconsultoria.tomticket.com/helpdesk</p>' +
   '<p>Base de Conhecimento: https://visitorconsultoria.tomticket.com/kb/</p>'
@@ -171,7 +187,7 @@ const EMPTY_FORM: FormState = {
   escopoConteudo: DEFAULT_ESCOPO_CONTEUDO,
   precificacaoTitulo: DEFAULT_PRECIFICACAO_TITULO,
   precificacaoDescricao: DEFAULT_PRECIFICACAO_DESCRICAO,
-  precificacaoItens: [{ escopo: '', descricao: '', valorMensal: '' }],
+  precificacaoItens: DEFAULT_PRECIFICACAO_ITENS.map((i) => ({ ...i })),
   bancoHorasConteudo: DEFAULT_BANCO_HORAS,
   deliveryItens: DEFAULT_DELIVERY_ITENS.map((i) => ({ ...i })),
   outrasInformacoes: DEFAULT_OUTRAS_INFORMACOES,
@@ -179,7 +195,7 @@ const EMPTY_FORM: FormState = {
   incluirEscopo: true,
   incluirPrecificacao: true,
   incluirBancoHoras: true,
-  incluirDelivery: true,
+  incluirDelivery: false,
   incluirOutrasInformacoes: true,
   status: 'draft',
   estimativaId: null,
@@ -206,6 +222,33 @@ function toDisplayDate(value: string): string {
 function getTodayISODate(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function parseMonetaryValue(value: string): number {
+  if (!value) return 0
+  // Remove tudo exceto números e vírgula, depois substitui vírgula por ponto
+  const cleaned = value.replace(/[^0-9,]/g, '').replace(',', '.')
+  const parsed = parseFloat(cleaned)
+  return isNaN(parsed) ? 0 : parsed
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function calculatePrecificacaoTotal(items: PrecificacaoItem[]): number {
+  return items.reduce((sum, item) => sum + parseMonetaryValue(item.valorMensal), 0)
+}
+
+function normalizeMonetaryInput(value: string): string {
+  if (!value) return ''
+  // Remove tudo exceto números
+  const cleaned = value.replace(/\D/g, '')
+  if (!cleaned) return ''
+  // Formata como "X.XXX,XX"
+  const num = parseInt(cleaned, 10)
+  const formatted = (num / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return formatted
 }
 
 function toFriendlyError(error: unknown, fallback: string): string {
@@ -658,7 +701,21 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
       doc.text(item.valorMensal || '-', margin + colEsc + colDesc + 6, y + 10)
       y += rowH
     })
-    y += 8
+
+    // Total row
+    const totalRowH = 22
+    ensureSpace(totalRowH)
+    doc.setFillColor(...C_GREEN_LIGHT_BG)
+    doc.setDrawColor(...C_BORDER)
+    doc.setLineWidth(0.4)
+    doc.rect(margin, y, cw, totalRowH, 'FD')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...C_GREEN_DARK)
+    const total = calculatePrecificacaoTotal(items)
+    doc.text('TOTAL', margin + colEsc + colDesc - 40, y + 13)
+    doc.text(`R$ ${formatCurrency(total)}`, margin + colEsc + colDesc + 6, y + 13)
+    y += totalRowH + 8
   }
 
   // ── Delivery table ────────────────────────────────────────────────────────────
@@ -741,7 +798,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
   if (proposta.incluirBancoHoras !== false) {
     y += 16
     ensureSpace(90)
-    sectionTitle('BANCO DE HORAS E DELIVERY')
+    sectionTitle('OBSERVAÇÕES E PONTOS DE ATENÇÃO')
     await renderBoxedBlocks(htmlToBlocks(proposta.bancoHorasConteudo))
     y += 16
   }
@@ -749,7 +806,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
   // TABELA DE SERVIÇOS DELIVERY
   if (proposta.incluirDelivery !== false) {
     ensureSpace(70)
-    sectionTitle('TABELA DE SERVIÇOS DELIVERY')
+    sectionTitle('TABELA DE SERVIÇOS (OPCIONAL)')
     drawDeliveryTable(proposta.deliveryItens)
   }
 
@@ -757,7 +814,7 @@ async function generatePropostaPdf(proposta: PropostaRow): Promise<void> {
   if (proposta.incluirOutrasInformacoes !== false) {
     y += 12
     ensureSpace(70)
-    sectionTitle('OUTRAS INFORMAÇÕES')
+    sectionTitle('CONDIÇÕES DE ACEITE E PAGAMENTO')
     await renderBoxedBlocks(htmlToBlocks(proposta.outrasInformacoes))
   }
 
@@ -1069,9 +1126,9 @@ export default function PropostaComercialTool() {
     { id: 'objetivo', label: 'Objetivo', flagKey: 'incluirObjetivo' },
     { id: 'escopo', label: 'Escopo', flagKey: 'incluirEscopo' },
     { id: 'precificacao', label: 'Precificação', flagKey: 'incluirPrecificacao' },
-    { id: 'banco', label: 'Banco de Horas', flagKey: 'incluirBancoHoras' },
-    { id: 'delivery', label: 'Tabela Delivery', flagKey: 'incluirDelivery' },
-    { id: 'outras', label: 'Outras Informações', flagKey: 'incluirOutrasInformacoes' },
+    { id: 'banco', label: 'Observações e Riscos', flagKey: 'incluirBancoHoras' },
+    { id: 'delivery', label: 'Tabela de Serviços (Opcional)', flagKey: 'incluirDelivery' },
+    { id: 'outras', label: 'Condições de Aceite', flagKey: 'incluirOutrasInformacoes' },
   ]
 
   return (
@@ -1413,10 +1470,14 @@ export default function PropostaComercialTool() {
                                 const upd = form.precificacaoItens.map((x, i) => i === idx ? { ...x, descricao: e.target.value } : x)
                                 setF('precificacaoItens', upd)
                               }} readOnly={isViewMode} placeholder="Descrição" /></td>
-                              <td><input value={item.valorMensal} onChange={(e) => {
-                                const upd = form.precificacaoItens.map((x, i) => i === idx ? { ...x, valorMensal: e.target.value } : x)
-                                setF('precificacaoItens', upd)
-                              }} readOnly={isViewMode} placeholder="0,00" /></td>
+                              <td style={{ position: 'relative' }}>
+                                <span style={{ position: 'absolute', left: '6px', top: '50%', transform: 'translateY(-50%)', fontWeight: 'bold', color: '#173b35', pointerEvents: 'none', fontSize: '0.9em' }}>R$</span>
+                                <input value={item.valorMensal} onChange={(e) => {
+                                  const normalized = normalizeMonetaryInput(e.target.value)
+                                  const upd = form.precificacaoItens.map((x, i) => i === idx ? { ...x, valorMensal: normalized } : x)
+                                  setF('precificacaoItens', upd)
+                                }} readOnly={isViewMode} placeholder="0,00" style={{ paddingLeft: '28px', textAlign: 'right' }} />
+                              </td>
                               {!isViewMode && (
                                 <td>
                                   <button type="button" onClick={() => setF('precificacaoItens', form.precificacaoItens.filter((_, i) => i !== idx))} disabled={form.precificacaoItens.length <= 1}>Remover</button>
@@ -1424,6 +1485,11 @@ export default function PropostaComercialTool() {
                               )}
                             </tr>
                           ))}
+                          <tr style={{ fontWeight: 'bold', backgroundColor: '#e6f3ed' }}>
+                            <td colSpan={2}>TOTAL</td>
+                            <td style={{ textAlign: 'right', paddingRight: '6px' }}>R$ {formatCurrency(calculatePrecificacaoTotal(form.precificacaoItens))}</td>
+                            {!isViewMode && <td></td>}
+                          </tr>
                         </tbody>
                       </table>
                     </div>
@@ -1434,12 +1500,12 @@ export default function PropostaComercialTool() {
               {/* ── Banco de Horas ───────────────────────────── */}
               {activeSection === 'banco' && (
                 <div className="estimativas-form__full" style={{ display: 'grid', gap: '0.38rem', fontSize: '0.88rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
-                  Banco de Horas e Delivery
+                  Observações e Pontos de Atenção
                   <RichTextEditor
                     key={`banco-${formVersion}`}
                     value={form.bancoHorasConteudo}
                     onChange={(html) => setF('bancoHorasConteudo', html)}
-                    placeholder="Descrição do modelo de banco de horas..."
+                    placeholder="Cronograma, premissas, riscos e dependências..."
                     rows={8}
                     disabled={isViewMode || isSaving}
                   />
@@ -1478,10 +1544,14 @@ export default function PropostaComercialTool() {
                               const upd = form.deliveryItens.map((x, i) => i === idx ? { ...x, tipo: e.target.value } : x)
                               setF('deliveryItens', upd)
                             }} readOnly={isViewMode} placeholder="Horas" /></td>
-                            <td><input value={item.valorUnit} onChange={(e) => {
-                              const upd = form.deliveryItens.map((x, i) => i === idx ? { ...x, valorUnit: e.target.value } : x)
-                              setF('deliveryItens', upd)
-                            }} readOnly={isViewMode} placeholder="0,00" /></td>
+                            <td style={{ position: 'relative' }}>
+                              <span style={{ position: 'absolute', left: '6px', top: '50%', transform: 'translateY(-50%)', fontWeight: 'bold', color: '#173b35', pointerEvents: 'none', fontSize: '0.9em' }}>R$</span>
+                              <input value={item.valorUnit} onChange={(e) => {
+                                const normalized = normalizeMonetaryInput(e.target.value)
+                                const upd = form.deliveryItens.map((x, i) => i === idx ? { ...x, valorUnit: normalized } : x)
+                                setF('deliveryItens', upd)
+                              }} readOnly={isViewMode} placeholder="0,00" style={{ paddingLeft: '28px', textAlign: 'right' }} />
+                            </td>
                             {!isViewMode && (
                               <td>
                                 <button type="button" onClick={() => setF('deliveryItens', form.deliveryItens.filter((_, i) => i !== idx))} disabled={form.deliveryItens.length <= 1}>Remover</button>
@@ -1498,12 +1568,12 @@ export default function PropostaComercialTool() {
               {/* ── Outras Informações ───────────────────────── */}
               {activeSection === 'outras' && (
                 <div className="estimativas-form__full" style={{ display: 'grid', gap: '0.38rem', fontSize: '0.88rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
-                  Outras Informações
+                  Condições de Aceite e Pagamento
                   <RichTextEditor
                     key={`outras-${formVersion}`}
                     value={form.outrasInformacoes}
                     onChange={(html) => setF('outrasInformacoes', html)}
-                    placeholder="Central de atendimento, links e informações adicionais..."
+                    placeholder="Condições de aceite, pagamento e informações de atendimento..."
                     rows={5}
                     disabled={isViewMode || isSaving}
                   />

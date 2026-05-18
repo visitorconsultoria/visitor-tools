@@ -5,7 +5,7 @@ import internalPartnerLogo from '../assets/logo_3.png'
 import { apiUrl } from '../lib/api'
 import RichTextEditor from './RichTextEditor'
 
-type EstimateStatus = 'pending' | 'sent'
+type EstimateStatus = 'pending' | 'sent' | 'cancelled' | 'completed'
 
 type EstimateItem = {
   id: number
@@ -71,7 +71,10 @@ function toDisplayDate(value: string): string {
 }
 
 function toStatusLabel(status: EstimateStatus): string {
-  return status === 'sent' ? 'Enviado' : 'Pendente'
+  if (status === 'sent') return 'Enviado'
+  if (status === 'cancelled') return 'Cancelado'
+  if (status === 'completed') return 'Concluido'
+  return 'Pendente'
 }
 
 function getTodayISODate(): string {
@@ -109,6 +112,22 @@ function toSafePdfFilename(input: string): string {
     || 'estimativa'
 }
 
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function isInternalPartner(partner: string): boolean {
   return partner.trim().toLowerCase() === 'interno'
 }
@@ -141,7 +160,13 @@ function normalizeEstimateResponse(input: unknown): EstimateRow {
     date: String(row.date ?? ''),
     demand: String(row.demand ?? ''),
     notes: String(row.notes ?? ''),
-    status: row.status === 'sent' ? 'sent' : 'pending',
+    status: row.status === 'sent'
+      ? 'sent'
+      : row.status === 'cancelled'
+        ? 'cancelled'
+        : row.status === 'completed'
+          ? 'completed'
+          : 'pending',
     items: items.map((item, index) => {
       const itemData = item as Partial<EstimateItem>
       return {
@@ -230,10 +255,15 @@ export default function EstimativasTool() {
   const stats = useMemo(() => {
     const total = items.length
     const sent = items.filter((item) => item.status === 'sent').length
+    const cancelled = items.filter((item) => item.status === 'cancelled').length
+    const completed = items.filter((item) => item.status === 'completed').length
+    const pending = items.filter((item) => item.status === 'pending').length
     return {
       total,
       sent,
-      pending: total - sent,
+      pending,
+      cancelled,
+      completed,
     }
   }, [items])
 
@@ -453,9 +483,8 @@ export default function EstimativasTool() {
     }
   }
 
-  const toggleStatus = async (estimate: EstimateRow) => {
+  const updateStatus = async (estimate: EstimateRow, nextStatus: EstimateStatus) => {
     setError(null)
-    const nextStatus: EstimateStatus = estimate.status === 'sent' ? 'pending' : 'sent'
 
     try {
       const response = await fetch(apiUrl(`/api/estimativas/${encodeURIComponent(String(estimate.id))}/status`), {
@@ -647,7 +676,7 @@ export default function EstimativasTool() {
       doc.setTextColor(branded ? 21 : 44, branded ? 68 : 44, branded ? 58 : 44)
       doc.text('Observações', margin, y)
       y += 16
-      y += writeWrapped(estimate.notes || '-', {
+      y += writeWrapped(estimate.notes ? stripHtml(estimate.notes) : '-', {
         x: margin,
         y,
         width: contentWidth,
@@ -727,6 +756,8 @@ export default function EstimativasTool() {
           <span>Total: <strong>{stats.total}</strong></span>
           <span>Pendentes: <strong>{stats.pending}</strong></span>
           <span>Enviadas: <strong>{stats.sent}</strong></span>
+          <span>Concluidas: <strong>{stats.completed}</strong></span>
+          <span>Canceladas: <strong>{stats.cancelled}</strong></span>
           <button type="button" className="button-secondary" onClick={() => void fetchEstimates()} disabled={isLoadingRecords}>
             {isLoadingRecords ? 'Atualizando...' : 'Atualizar'}
           </button>
@@ -749,6 +780,8 @@ export default function EstimativasTool() {
             <option value="all">Todos</option>
             <option value="pending">Pendentes</option>
             <option value="sent">Enviadas</option>
+            <option value="completed">Concluidas</option>
+            <option value="cancelled">Canceladas</option>
           </select>
         </div>
 
@@ -794,11 +827,17 @@ export default function EstimativasTool() {
                       <button type="button" className="ch-icon-action" title="Copiar" onClick={() => openCopyModal(estimate)}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                       </button>
-                      <button type="button" className="ch-icon-action" title={estimate.status === 'sent' ? 'Marcar como pendente' : 'Marcar como enviado'} onClick={() => void toggleStatus(estimate)}>
-                        {estimate.status === 'sent'
-                          ? <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
-                          : <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                        }
+                      <button type="button" className="ch-icon-action" title="Marcar como pendente" onClick={() => void updateStatus(estimate, 'pending')}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l2.5 2.5"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+                      </button>
+                      <button type="button" className="ch-icon-action" title="Marcar como enviado" onClick={() => void updateStatus(estimate, 'sent')}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                      </button>
+                      <button type="button" className="ch-icon-action" title="Marcar como concluído" onClick={() => void updateStatus(estimate, 'completed')}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                      </button>
+                      <button type="button" className="ch-icon-action" title="Marcar como cancelado" onClick={() => void updateStatus(estimate, 'cancelled')}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 8l8 8"/></svg>
                       </button>
                       <button type="button" className="ch-icon-action ch-icon-action--danger" title="Excluir" onClick={() => void removeEstimate(estimate.id)}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
@@ -873,6 +912,8 @@ export default function EstimativasTool() {
                 <select value={form.status} onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value as EstimateStatus }))} disabled={isViewMode}>
                   <option value="pending">Pendente</option>
                   <option value="sent">Enviado</option>
+                  <option value="completed">Concluido</option>
+                  <option value="cancelled">Cancelado</option>
                 </select>
               </label>
               <div className="estimativas-form__full" style={{ display: 'grid', gap: '0.38rem', fontSize: '0.88rem', fontWeight: 700, color: 'var(--ink-primary)' }}>

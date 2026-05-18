@@ -112,6 +112,61 @@ As variaveis `VITE_SUPABASE_*` permitem que a rotina `Excel/CSV para SQL` consul
 - `npm run preview`: pré-visualização do build
 - `npm run deploy`: publica versão atual no GitHub Pages
 - `npm run deploy:prod`: deploy com variaveis de producao carregadas via `.env`
+- `npm run supabase:keepalive`: mantem o Supabase ativo com pings periodicos
+- `npm run supabase:keepalive:once`: executa somente um ping de teste
+
+## Keep-alive do Supabase (evitar idle/cold start)
+
+Para reduzir o atraso no primeiro acesso apos inatividade, rode o keep-alive em um processo sempre ativo.
+
+Variaveis usadas:
+
+```bash
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+# opcional (padrao 5)
+SUPABASE_KEEP_ALIVE_MINUTES=5
+# opcional: tabela usada para ping
+SUPABASE_KEEP_ALIVE_TABLE=estimativas
+```
+
+Execucao:
+
+```bash
+npm run supabase:keepalive
+```
+
+Opcoes por linha de comando:
+
+```bash
+npm run supabase:keepalive -- --once
+npm run supabase:keepalive -- --interval-minutes=10
+npm run supabase:keepalive -- --table=estimativas
+```
+
+Observacao: para funcionar continuamente, esse processo precisa ficar rodando em algum host (Render, Railway, VPS, Task Scheduler etc.).
+
+### Deploy no Render (worker dedicado)
+
+O arquivo [render.yaml](render.yaml) ja inclui o worker `visitor-tools-supabase-keepalive` com:
+
+- `startCommand: npm run supabase:keepalive`
+- ping a cada `5` minutos (configuravel)
+
+No Render, confirme as variaveis no worker:
+
+```bash
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+SUPABASE_KEEP_ALIVE_MINUTES=5
+SUPABASE_KEEP_ALIVE_TABLE=estimativas
+```
+
+Se o plano nao aceitar `worker`, alternativa: criar um `Cron Job` no Render executando:
+
+```bash
+npm run supabase:keepalive:once
+```
 
 ## Estimativas via Supabase
 

@@ -28,3 +28,21 @@ services:
         sync: false
       - key: GITHUB_MODELS_MODEL
         value: gpt-4o-mini
+
+  - type: worker
+    name: visitor-tools-supabase-keepalive
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run supabase:keepalive
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_KEEP_ALIVE_MINUTES
+        value: 5
+      - key: SUPABASE_KEEP_ALIVE_TABLE
+        value: estimativas

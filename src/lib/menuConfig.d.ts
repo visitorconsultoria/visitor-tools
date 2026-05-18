@@ -1,5 +1,6 @@
 export type AllowedMenu =
   | 'process'
+  | 'data-comparison'
   | 'xml-excel'
   | 'excel-csv-sqlite'
   | 'resume-ranking'
@@ -9,6 +10,7 @@ export type AllowedMenu =
   | 'customer-hub'
   | 'ticket-hub'
   | 'propostas'
+  | 'termo-validacao'
   | 'user-admin'
   | 'change-password'
 

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently --restart-tries 5 --restart-after 1200 \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "vite",
-    "dev:api": "node server.mjs",
+    "dev:api": "node --watch server.mjs",
     "start": "node server.mjs",
     "dev:all": "npm run dev",
     "build": "tsc -b && vite build",
@@ -15,7 +15,9 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
     "deploy:prod": "node scripts/deploy-prod.mjs",
-    "import:customer-hub": "node scripts/import-customer-hub-xlsx.mjs"
+    "import:customer-hub": "node scripts/import-customer-hub-xlsx.mjs",
+    "supabase:keepalive": "node scripts/supabase-keepalive.mjs",
+    "supabase:keepalive:once": "node scripts/supabase-keepalive.mjs --once"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",

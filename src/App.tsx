@@ -14,6 +14,7 @@ import CustomerHubTool, { type CustomerHubPage } from './components/CustomerHubT
 import TicketHubTool from './components/TicketHubTool'
 import PropostaComercialTool from './components/PropostaComercialTool'
 import RubricasValidationTool from './components/RubricasValidationTool'
+import DataComparisonTool from './components/DataComparisonTool'
 import { ALL_MENU_KEYS, getEffectiveMenus, type AllowedMenu } from './lib/menuConfig'
 
 type CsvData = {
@@ -67,6 +68,7 @@ const XML_EXCEL_ROUTINES: XmlExcelRoutineOption[] = [
 type SidebarIconName =
   | 'home'
   | 'process'
+  | 'data-compare'
   | 'xml-excel'
   | 'excel-csv-sqlite'
   | 'resume-ranking'
@@ -86,6 +88,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-9.5z" />
     case 'process':
       return <path d="M4 6h7v5H4V6zm9 0h7v3h-7V6zM4 13h7v5H4v-5zm9-2h7v7h-7v-7z" />
+    case 'data-compare':
+      return <path d="M4 6h7v5H4V6zm9 0h7v5h-7V6zM4 13h7v5H4v-5zm9 0h7v5h-7v-5M11 8.5h2m-1-1v2M11 15.5h2m-1-1v2" />
     case 'xml-excel':
       return <path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm6 1.5V9h4.5M9 13h8M9 16h8" />
     case 'excel-csv-sqlite':
@@ -664,6 +668,24 @@ function App() {
               <span>Comparar Projeto</span>
             </button>
           )}
+          {canAccessPage('data-compare', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'data-compare' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('data-compare')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'data-compare' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="data-compare" />
+                </svg>
+              </span>
+              <span>Comparar Arquivos</span>
+            </button>
+          )}
           {canAccessPage('xml-excel', currentUser) && (
             <button
               type="button"
@@ -997,6 +1019,8 @@ function App() {
                 ? 'Visitor Tools'
                 : currentPage === 'process'
                   ? 'Compara Projeto'
+                : currentPage === 'data-compare'
+                  ? 'Comparar Arquivos'
                   : currentPage === 'excel-csv-sqlite'
                     ? 'Excel/CSV para SQL'
                   : currentPage === 'resume-ranking'
@@ -1026,6 +1050,8 @@ function App() {
                 ? 'Central de ferramentas da Visitor Consultoria.'
                 : currentPage === 'process'
                   ? 'Comparar projeto com o inspetor de objetos'
+                : currentPage === 'data-compare'
+                  ? 'Compare dois arquivos por chave e exporte divergencias em Excel.'
                   : currentPage === 'excel-csv-sqlite'
                     ? 'Gere scripts SQL de insercao a partir de planilhas Excel e arquivos CSV.'
                   : currentPage === 'resume-ranking'
@@ -1076,6 +1102,15 @@ function App() {
                     onClick={() => setCurrentPage('process')}
                   >
                     Abrir Comparar Projeto
+                  </button>
+                )}
+                {canAccessPage('data-compare', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('data-compare')}
+                  >
+                    Abrir Comparar Arquivos
                   </button>
                 )}
                 {canAccessPage('xml-excel', currentUser) && (
@@ -1173,6 +1208,19 @@ function App() {
                     type="button"
                     className="button-secondary"
                     onClick={() => setCurrentPage('process')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('data-compare', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Comparar Arquivos</h3>
+                  <p>Compare arquivos CSV, Excel, TXT ou PDF por chaves e gere planilha com divergencias.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('data-compare')}
                   >
                     Acessar
                   </button>
@@ -1534,6 +1582,8 @@ function App() {
           </div>
         </section>
         </div>
+        ) : currentPage === 'data-compare' ? (
+          <DataComparisonTool />
         ) : currentPage === 'excel-csv-sqlite' ? (
           <ExcelCsvToSqliteTool />
         ) : currentPage === 'resume-ranking' ? (

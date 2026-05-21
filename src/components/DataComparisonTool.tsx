@@ -1,24 +1,30 @@
-import { jsPDF } from 'jspdf'
 import { useMemo, useState, type ChangeEvent } from 'react'
 import * as XLSX from 'xlsx'
-import { apiUrl } from '../lib/api'
 
-type DatasetRecord = {
+type ParsedRow = {
   rowNumber: number
   values: Record<string, string>
 }
 
-type NormalizedDataset = {
+type ParsedDataset = {
   fileName: string
   headers: string[]
-  records: DatasetRecord[]
+  rows: ParsedRow[]
+}
+
+type MappingType = 'key' | 'value'
+
+type MappingRule = {
+  id: number
+  type: MappingType
+  baseField: string
+  targetField: string
 }
 
 type IssueType = 'missing_in_target' | 'extra_in_target' | 'value_mismatch' | 'duplicate_key'
 
 type ComparisonIssue = {
   type: IssueType
-  comparedFile: string
   key: string
   field: string
   baseValue: string
@@ -26,337 +32,27 @@ type ComparisonIssue = {
   detail: string
 }
 
-type FileComparisonSummary = {
-  comparedFile: string
+type ComparisonSummary = {
   missingInTarget: number
   extraInTarget: number
   mismatches: number
-  duplicateKeys: number
+  duplicateKeysInBase: number
+  duplicateKeysInTarget: number
 }
 
 type ComparisonResult = {
-  keyFields: string[]
   baseFileName: string
-  comparedFiles: string[]
+  targetFileName: string
+  keyMappings: MappingRule[]
+  valueMappings: MappingRule[]
+  summary: ComparisonSummary
   issues: ComparisonIssue[]
-  summaries: FileComparisonSummary[]
-  analyzedAt: string
 }
 
-type IssueFilter = 'all' | IssueType
-
-type ComparisonMode = 'row' | 'aggregated'
-
-type AggregatedGroupStatus = 'match' | 'missing_in_target' | 'extra_in_target' | 'divergent'
-
-type AggregatedGroup = {
-  key: string
-  status: AggregatedGroupStatus
-  baseTotal: number
-  targetTotal: number
-  difference: number
-  baseCount: number
-  targetCount: number
-}
-
-type AggregatedFileSummary = {
-  comparedFile: string
-  groups: AggregatedGroup[]
-  totalDifference: number
-  matchCount: number
-  divergentCount: number
-  missingCount: number
-  extraCount: number
-}
-
-type AggregatedResult = {
-  keyFields: string[]
-  valueFields: string[]
-  baseFileName: string
-  comparedFiles: string[]
-  fileSummaries: AggregatedFileSummary[]
-  analyzedAt: string
-}
-
-type CopilotMissingItem = {
-  key: string
-  baseValue?: string
-  baseTotal?: number
-}
-
-type CopilotAnalysisInputFile = {
-  comparedFile: string
-  missingCount: number
-  missingValueTotal: number
-  missingItems: CopilotMissingItem[]
-}
-
-type CopilotAnalysisInput = {
-  comparisonMode: ComparisonMode
-  baseFileName: string
-  keyFields: string[]
-  valueFields: string[]
-  files: CopilotAnalysisInputFile[]
-}
-
-type CopilotAnalysisFileResult = {
-  comparedFile: string
-  diagnosis: string
-  missingCount: number
-  missingValueTotal: number
-  topMissingKeys: string[]
-  recommendations: string[]
-}
-
-type CopilotAnalysisResult = {
-  resumoGeral: string
-  arquivos: CopilotAnalysisFileResult[]
-  alertas: string[]
-  planoAcao: string[]
-}
-
-type NormalizationOptions = {
-  trim: boolean
-  collapseSpaces: boolean
-  ignoreCase: boolean
-  ignoreAccents: boolean
-}
-
-const PREVIEW_LIMIT = 8
 const DELIMITER_CANDIDATES = [';', ',', '\t', '|']
-const DEFAULT_NORMALIZATION: NormalizationOptions = {
-  trim: true,
-  collapseSpaces: true,
-  ignoreCase: true,
-  ignoreAccents: true,
-}
-const DEFAULT_NUMERIC_TOLERANCE = 0.01
-
-function parseNumericValue(raw: string): number | null {
-  const str = String(raw ?? '').trim().replace(/R\$\s*/g, '').replace(/%$/, '').trim()
-  if (!str) return null
-
-  // Detect Brazilian format: 1.234,56 (dot=thousands, comma=decimal)
-  const brFormat = /^-?[\d.]+,\d{1,2}$/.test(str)
-  if (brFormat) {
-    const normalized = str.replace(/\./g, '').replace(',', '.')
-    const parsed = parseFloat(normalized)
-    return isFinite(parsed) ? parsed : null
-  }
-
-  // Detect US format: 1,234.56 (comma=thousands, dot=decimal)
-  const usFormat = /^-?[\d,]+\.\d{1,2}$/.test(str)
-  if (usFormat) {
-    const normalized = str.replace(/,/g, '')
-    const parsed = parseFloat(normalized)
-    return isFinite(parsed) ? parsed : null
-  }
-
-  // Plain number
-  const plain = str.replace(',', '.')
-  const parsed = parseFloat(plain)
-  return isFinite(parsed) ? parsed : null
-}
-
-function formatBrl(value: number): string {
-  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function buildAggregatedIndex(
-  records: DatasetRecord[],
-  keyFields: string[],
-  valueFields: string[],
-  options: NormalizationOptions,
-  fieldMapping?: FieldMapping[],
-): Map<string, { total: number; count: number }> {
-  const index = new Map<string, { total: number; count: number }>()
-
-  records.forEach((record) => {
-    const key = buildKey(record, keyFields, options, fieldMapping)
-    if (!key) return
-
-    let rowTotal = 0
-    valueFields.forEach((field) => {
-      const raw = record.values[field] ?? ''
-      const parsed = parseNumericValue(raw)
-      if (parsed !== null) rowTotal += parsed
-    })
-
-    const existing = index.get(key)
-    if (existing) {
-      existing.total += rowTotal
-      existing.count += 1
-    } else {
-      index.set(key, { total: rowTotal, count: 1 })
-    }
-  })
-
-  return index
-}
-
-function buildAggregatedResult(
-  baseDataset: NormalizedDataset,
-  targetDatasets: NormalizedDataset[],
-  keyFields: string[],
-  valueFields: string[],
-  options: NormalizationOptions,
-  allMappings: FileFieldMappings[],
-  tolerance: number,
-): AggregatedResult {
-  const fileSummaries: AggregatedFileSummary[] = []
-
-  const baseIndex = buildAggregatedIndex(baseDataset.records, keyFields, valueFields, options, undefined)
-
-  targetDatasets.forEach((targetDataset) => {
-    const targetMapping = allMappings.find((m) => m.fileName === targetDataset.fileName)?.mappings
-    const targetIndex = buildAggregatedIndex(targetDataset.records, keyFields, valueFields, options, targetMapping)
-
-    const groups: AggregatedGroup[] = []
-
-    baseIndex.forEach(({ total: baseTotal, count: baseCount }, key) => {
-      const targetEntry = targetIndex.get(key)
-      if (!targetEntry) {
-        groups.push({
-          key,
-          status: 'missing_in_target',
-          baseTotal,
-          targetTotal: 0,
-          difference: -baseTotal,
-          baseCount,
-          targetCount: 0,
-        })
-        return
-      }
-
-      const diff = targetEntry.total - baseTotal
-      const status: AggregatedGroupStatus = Math.abs(diff) <= tolerance ? 'match' : 'divergent'
-      groups.push({
-        key,
-        status,
-        baseTotal,
-        targetTotal: targetEntry.total,
-        difference: diff,
-        baseCount,
-        targetCount: targetEntry.count,
-      })
-    })
-
-    targetIndex.forEach(({ total: targetTotal, count: targetCount }, key) => {
-      if (baseIndex.has(key)) return
-      groups.push({
-        key,
-        status: 'extra_in_target',
-        baseTotal: 0,
-        targetTotal,
-        difference: targetTotal,
-        baseCount: 0,
-        targetCount,
-      })
-    })
-
-    groups.sort((a, b) => a.key.localeCompare(b.key))
-
-    const totalDifference = groups.reduce((sum, g) => sum + g.difference, 0)
-
-    fileSummaries.push({
-      comparedFile: targetDataset.fileName,
-      groups,
-      totalDifference,
-      matchCount: groups.filter((g) => g.status === 'match').length,
-      divergentCount: groups.filter((g) => g.status === 'divergent').length,
-      missingCount: groups.filter((g) => g.status === 'missing_in_target').length,
-      extraCount: groups.filter((g) => g.status === 'extra_in_target').length,
-    })
-  })
-
-  return {
-    keyFields,
-    valueFields,
-    baseFileName: baseDataset.fileName,
-    comparedFiles: targetDatasets.map((d) => d.fileName),
-    fileSummaries,
-    analyzedAt: new Date().toISOString(),
-  }
-}
-
-type FieldMapping = {
-  baseField: string
-  targetField: string
-  confidence: number
-}
-
-type FileFieldMappings = {
-  fileName: string
-  mappings: FieldMapping[]
-}
-
-function levenshteinDistance(str1: string, str2: string): number {
-  const a = str1.toLowerCase()
-  const b = str2.toLowerCase()
-  const matrix: number[][] = []
-
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i]
-  }
-
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j
-  }
-
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1]
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1,
-        )
-      }
-    }
-  }
-
-  return matrix[b.length][a.length]
-}
-
-function stringSimilarity(str1: string, str2: string): number {
-  const distance = levenshteinDistance(str1, str2)
-  const maxLength = Math.max(str1.length, str2.length)
-  if (maxLength === 0) return 1
-  return 1 - distance / maxLength
-}
-
-function suggestFieldMappings(
-  targetHeaders: string[],
-  baseKeyFields: string[],
-): FieldMapping[] {
-  return baseKeyFields
-    .map((baseField) => {
-      const candidates = targetHeaders
-        .map((targetField) => ({
-          field: targetField,
-          similarity: stringSimilarity(baseField, targetField),
-        }))
-        .sort((a, b) => b.similarity - a.similarity)
-
-      const best = candidates[0]
-      if (!best || best.similarity < 0.3) {
-        return {
-          baseField,
-          targetField: '',
-          confidence: 0,
-        }
-      }
-
-      return {
-        baseField,
-        targetField: best.field,
-        confidence: Math.round(best.similarity * 100),
-      }
-    })
-    .sort((a, b) => (b.confidence - a.confidence))
-}
+const RESULT_PAGE_SIZE = 100
+const KEY_HINTS = ['id', 'codigo', 'cod', 'codi', 'chave', 'documento', 'doc', 'numero', 'num', 'matricula', 'cnpj', 'cpf', 'cbase']
+const VALUE_HINTS = ['valor', 'vl', 'depre', 'saldo', 'total', 'preco', 'price', 'amount', 'custo', 'taxa']
 
 let pdfjsModulePromise: Promise<typeof import('pdfjs-dist')> | null = null
 
@@ -387,162 +83,337 @@ function normalizeCell(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim()
 }
 
-function stripAccents(value: string): string {
-  return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+function normalizeForCompare(value: string): string {
+  const normalized = normalizeCell(value).toLowerCase()
+
+  if (/^-?\d+$/.test(normalized)) {
+    const sign = normalized.startsWith('-') ? '-' : ''
+    const digits = normalized.replace(/^-/, '').replace(/^0+(?=\d)/, '')
+    return `${sign}${digits || '0'}`
+  }
+
+  return normalized
 }
 
-function normalizeForComparison(value: string, options: NormalizationOptions): string {
-  let output = String(value ?? '')
+function parseNumericValue(value: string): number | null {
+  const trimmed = String(value ?? '').trim().replace(/^r\$\s*/i, '').replace(/%$/, '')
+  if (!trimmed) return null
 
-  if (options.trim) output = output.trim()
-  if (options.collapseSpaces) output = output.replace(/\s+/g, ' ')
-  if (options.ignoreAccents) output = stripAccents(output)
-  if (options.ignoreCase) output = output.toLowerCase()
+  const brFormat = /^-?[\d.]+,\d+$/.test(trimmed)
+  if (brFormat) {
+    const normalized = trimmed.replace(/\./g, '').replace(',', '.')
+    const parsed = Number(normalized)
+    return Number.isFinite(parsed) ? parsed : null
+  }
 
-  return output
+  const usFormat = /^-?[\d,]+\.\d+$/.test(trimmed)
+  if (usFormat) {
+    const normalized = trimmed.replace(/,/g, '')
+    const parsed = Number(normalized)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  const plain = trimmed.replace(',', '.')
+  const parsed = Number(plain)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function formatDecimalValue(value: number): string {
+  return value.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function normalizeValueForComparison(value: string): string {
+  const parsed = parseNumericValue(value)
+  if (parsed === null) return normalizeForCompare(value)
+  return formatDecimalValue(parsed)
+}
+
+function isWithinTolerance(baseValue: number, targetValue: number, tolerance: number): boolean {
+  const difference = Math.abs(baseValue - targetValue)
+  return difference <= tolerance + 1e-9
+}
+
+function normalizeValueForDisplay(value: string): string {
+  const parsed = parseNumericValue(value)
+  if (parsed === null) return normalizeCell(value)
+  return formatDecimalValue(parsed)
+}
+
+function normalizeFieldForSimilarity(value: string): string {
+  return normalizeHeader(value)
+    .replace(/^[a-z]\d+_/, '')
+    .replace(/^n\d+_/, '')
+    .replace(/[^a-z0-9_]/g, '')
+}
+
+function tokenizeField(value: string): string[] {
+  const normalized = normalizeFieldForSimilarity(value)
+  const rawTokens = normalized.split('_').map((token) => token.trim()).filter(Boolean)
+
+  return rawTokens.map((token) => {
+    if (['codigo', 'cod', 'codi', 'id', 'chave', 'doc', 'documento', 'numero', 'num'].includes(token)) return 'id'
+    if (['valor', 'vl', 'amount', 'price', 'saldo', 'total', 'depre', 'depreciacao', 'custo', 'taxa'].includes(token)) return 'valor'
+    return token
+  })
+}
+
+function containsHint(field: string, hints: string[]): boolean {
+  const normalized = normalizeFieldForSimilarity(field)
+  return hints.some((hint) => normalized.includes(hint))
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  const a = left.toLowerCase()
+  const b = right.toLowerCase()
+  const matrix: number[][] = []
+
+  for (let i = 0; i <= b.length; i += 1) {
+    matrix[i] = [i]
+  }
+
+  for (let j = 0; j <= a.length; j += 1) {
+    matrix[0][j] = j
+  }
+
+  for (let i = 1; i <= b.length; i += 1) {
+    for (let j = 1; j <= a.length; j += 1) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1]
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1,
+        )
+      }
+    }
+  }
+
+  return matrix[b.length][a.length]
+}
+
+function stringSimilarity(left: string, right: string): number {
+  const a = normalizeFieldForSimilarity(left)
+  const b = normalizeFieldForSimilarity(right)
+  const maxLength = Math.max(a.length, b.length)
+  if (!maxLength) return 1
+
+  const distance = levenshteinDistance(a, b)
+  return 1 - distance / maxLength
+}
+
+function tokenSimilarity(left: string, right: string): number {
+  const leftTokens = new Set(tokenizeField(left))
+  const rightTokens = new Set(tokenizeField(right))
+
+  if (!leftTokens.size || !rightTokens.size) return 0
+
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length
+  const union = new Set([...leftTokens, ...rightTokens]).size
+  return union ? intersection / union : 0
+}
+
+function fieldSimilarity(left: string, right: string): number {
+  const lexical = stringSimilarity(left, right)
+  const token = tokenSimilarity(left, right)
+  return (lexical * 0.6) + (token * 0.4)
+}
+
+function suggestMappings(
+  baseHeaders: string[],
+  targetHeaders: string[],
+): { keys: Array<{ baseField: string; targetField: string }>; values: Array<{ baseField: string; targetField: string }> } {
+  const usedTargets = new Set<string>()
+
+  const rankCandidates = (baseField: string, candidates: string[]) => {
+    return candidates
+      .map((targetField) => ({
+        targetField,
+        score: fieldSimilarity(baseField, targetField),
+      }))
+      .sort((a, b) => b.score - a.score)
+  }
+
+  const pickMappings = (baseCandidates: string[], minScore: number, maxCount: number) => {
+    const picked: Array<{ baseField: string; targetField: string }> = []
+
+    for (const baseField of baseCandidates) {
+      const ranked = rankCandidates(baseField, targetHeaders.filter((target) => !usedTargets.has(target)))
+      const best = ranked[0]
+      if (!best || best.score < minScore) continue
+
+      usedTargets.add(best.targetField)
+      picked.push({ baseField, targetField: best.targetField })
+      if (picked.length >= maxCount) break
+    }
+
+    return picked
+  }
+
+  const keyBaseCandidates = baseHeaders.filter((field) => containsHint(field, KEY_HINTS))
+  const valueBaseCandidates = baseHeaders.filter((field) => containsHint(field, VALUE_HINTS))
+
+  const keyMappings = pickMappings(
+    keyBaseCandidates.length ? keyBaseCandidates : baseHeaders,
+    0.2,
+    3,
+  )
+
+  const valueMappings = pickMappings(
+    valueBaseCandidates.length ? valueBaseCandidates : baseHeaders,
+    0.2,
+    6,
+  )
+
+  return {
+    keys: keyMappings,
+    values: valueMappings,
+  }
 }
 
 function detectDelimiter(line: string): string | null {
-  let winner: string | null = null
-  let winnerCount = 0
+  let best: string | null = null
+  let bestCount = 0
 
   for (const delimiter of DELIMITER_CANDIDATES) {
     const count = line.split(delimiter).length - 1
-    if (count > winnerCount) {
-      winner = delimiter
-      winnerCount = count
+    if (count > bestCount) {
+      best = delimiter
+      bestCount = count
     }
   }
 
-  return winnerCount > 0 ? winner : null
+  return bestCount > 0 ? best : null
 }
 
 function splitLine(line: string, delimiter: string): string[] {
-  if (delimiter === ',') {
-    const output: string[] = []
-    let current = ''
-    let inQuotes = false
+  const output: string[] = []
+  let current = ''
+  let inQuotes = false
 
-    for (let i = 0; i < line.length; i += 1) {
-      const char = line[i]
-      const next = line[i + 1]
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i]
+    const next = line[i + 1]
 
-      if (char === '"') {
-        if (inQuotes && next === '"') {
-          current += '"'
-          i += 1
-        } else {
-          inQuotes = !inQuotes
-        }
-        continue
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"'
+        i += 1
+      } else {
+        inQuotes = !inQuotes
       }
-
-      if (!inQuotes && char === delimiter) {
-        output.push(current)
-        current = ''
-        continue
-      }
-
-      current += char
+      continue
     }
 
-    output.push(current)
-    return output.map((value) => value.trim())
+    if (char === delimiter && !inQuotes) {
+      output.push(current)
+      current = ''
+      continue
+    }
+
+    current += char
   }
 
-  return line.split(delimiter).map((value) => value.trim())
+  output.push(current)
+  return output.map((value) => normalizeCell(value))
 }
 
-function normalizeRowsToDataset(fileName: string, matrix: string[][]): NormalizedDataset {
+function matrixToDataset(fileName: string, matrix: string[][]): ParsedDataset {
   const cleanedRows = matrix
     .map((row) => row.map((cell) => normalizeCell(cell)))
     .filter((row) => row.some((cell) => cell.length > 0))
 
   if (!cleanedRows.length) {
-    return { fileName, headers: [], records: [] }
+    return { fileName, headers: [], rows: [] }
   }
 
-  const firstRow = cleanedRows[0]
-  const headers = firstRow.map((cell, index) => normalizeHeader(cell || `coluna_${index + 1}`))
-  const uniqueHeaders = headers.map((header, index) => {
-    const duplicates = headers.slice(0, index).filter((item) => item === header).length
+  const rawHeaders = cleanedRows[0]
+  const normalizedHeaders = rawHeaders.map((header, index) => normalizeHeader(header || `coluna_${index + 1}`))
+
+  const headers = normalizedHeaders.map((header, index) => {
+    const duplicates = normalizedHeaders.slice(0, index).filter((h) => h === header).length
     return duplicates ? `${header}_${duplicates + 1}` : header
   })
 
-  const records: DatasetRecord[] = cleanedRows.slice(1).map((row, rowIndex) => {
+  const rows: ParsedRow[] = cleanedRows.slice(1).map((row, index) => {
     const values: Record<string, string> = {}
-    uniqueHeaders.forEach((header, index) => {
-      values[header] = normalizeCell(row[index])
+
+    headers.forEach((header, colIndex) => {
+      values[header] = normalizeCell(row[colIndex])
     })
+
     return {
-      rowNumber: rowIndex + 2,
+      rowNumber: index + 2,
       values,
     }
   })
 
   return {
     fileName,
-    headers: uniqueHeaders,
-    records,
+    headers,
+    rows,
   }
 }
 
-function parseTextDataset(fileName: string, text: string): NormalizedDataset {
+function parseTextDataset(fileName: string, text: string): ParsedDataset {
   const lines = text
+    .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
 
-  if (!lines.length) return { fileName, headers: [], records: [] }
+  if (!lines.length) return { fileName, headers: [], rows: [] }
 
   const delimiter = detectDelimiter(lines[0])
 
   if (!delimiter) {
-    return normalizeRowsToDataset(
-      fileName,
-      [['conteudo'], ...lines.map((line) => [line])],
-    )
+    return matrixToDataset(fileName, [['conteudo'], ...lines.map((line) => [line])])
   }
 
   const matrix = lines.map((line) => splitLine(line, delimiter))
-  return normalizeRowsToDataset(fileName, matrix)
+  return matrixToDataset(fileName, matrix)
 }
 
-async function parsePdfDataset(file: File): Promise<NormalizedDataset> {
+async function parsePdfDataset(file: File): Promise<ParsedDataset> {
   const pdfjs = await loadPdfjs()
   const data = await file.arrayBuffer()
   const pdf = await pdfjs.getDocument({ data }).promise
-  const texts: string[] = []
+  const lines: string[] = []
 
   for (let page = 1; page <= pdf.numPages; page += 1) {
     const pageRef = await pdf.getPage(page)
     const content = await pageRef.getTextContent()
-    const lines = content.items
+    const line = content.items
       .map((item) => ('str' in item ? item.str : ''))
       .map((item) => item.trim())
       .filter(Boolean)
-    texts.push(lines.join(' '))
+      .join(' ')
+
+    if (line) lines.push(line)
   }
 
-  return parseTextDataset(file.name, texts.join('\n'))
+  return parseTextDataset(file.name, lines.join('\n'))
 }
 
-async function parseFileDataset(file: File): Promise<NormalizedDataset> {
+async function parseFileDataset(file: File): Promise<ParsedDataset> {
   const lowerName = file.name.toLowerCase()
 
   if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
     const buffer = await file.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array' })
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-    if (!firstSheet) return { fileName: file.name, headers: [], records: [] }
+    if (!firstSheet) return { fileName: file.name, headers: [], rows: [] }
 
     const matrix = XLSX.utils.sheet_to_json<(string | number | null)[]>(firstSheet, {
       header: 1,
       raw: false,
       defval: '',
     })
-    const textMatrix = matrix.map((row) => row.map((cell) => String(cell ?? '')))
-    return normalizeRowsToDataset(file.name, textMatrix)
+
+    return matrixToDataset(file.name, matrix.map((row) => row.map((cell) => String(cell ?? ''))))
   }
 
   if (lowerName.endsWith('.pdf')) {
@@ -553,193 +424,6 @@ async function parseFileDataset(file: File): Promise<NormalizedDataset> {
   return parseTextDataset(file.name, text)
 }
 
-function buildKey(
-  record: DatasetRecord,
-  keyFields: string[],
-  options: NormalizationOptions,
-  fieldMapping?: FieldMapping[],
-): string | null {
-  const fieldsToUse = fieldMapping
-    ? fieldMapping
-        .filter((m) => m.targetField)
-        .map((m) => m.targetField)
-    : keyFields
-
-  const values = fieldsToUse.map((field) => normalizeForComparison(record.values[field], options))
-  if (values.some((value) => !value)) return null
-  return values.join(' | ')
-}
-
-function buildIndex(
-  records: DatasetRecord[],
-  keyFields: string[],
-  options: NormalizationOptions,
-  fieldMapping?: FieldMapping[],
-): {
-  rowByKey: Map<string, DatasetRecord>
-  duplicateKeys: string[]
-} {
-  const rowByKey = new Map<string, DatasetRecord>()
-  const duplicateKeys = new Set<string>()
-
-  records.forEach((record) => {
-    const key = buildKey(record, keyFields, options, fieldMapping)
-    if (!key) return
-    if (rowByKey.has(key)) {
-      duplicateKeys.add(key)
-      return
-    }
-    rowByKey.set(key, record)
-  })
-
-  return {
-    rowByKey,
-    duplicateKeys: [...duplicateKeys],
-  }
-}
-
-function buildComparisonResult(
-  baseDataset: NormalizedDataset,
-  targetDatasets: NormalizedDataset[],
-  keyFields: string[],
-  options: NormalizationOptions,
-  allMappings: FileFieldMappings[],
-): ComparisonResult {
-  const issues: ComparisonIssue[] = []
-  const summaries: FileComparisonSummary[] = []
-
-  const baseIndex = buildIndex(baseDataset.records, keyFields, options, undefined)
-
-  targetDatasets.forEach((targetDataset) => {
-    const targetMapping = allMappings.find((m) => m.fileName === targetDataset.fileName)?.mappings
-    const targetIndex = buildIndex(targetDataset.records, keyFields, options, targetMapping)
-    const sharedFields = baseDataset.headers
-      .filter((field) => targetDataset.headers.includes(field))
-      .filter((field) => !keyFields.includes(field))
-
-    const summary: FileComparisonSummary = {
-      comparedFile: targetDataset.fileName,
-      missingInTarget: 0,
-      extraInTarget: 0,
-      mismatches: 0,
-      duplicateKeys: 0,
-    }
-
-    if (baseIndex.duplicateKeys.length) {
-      baseIndex.duplicateKeys.forEach((key) => {
-        issues.push({
-          type: 'duplicate_key',
-          comparedFile: targetDataset.fileName,
-          key,
-          field: keyFields.join(', '),
-          baseValue: key,
-          targetValue: key,
-          detail: `Chave duplicada no arquivo base: ${key}`,
-        })
-      })
-      summary.duplicateKeys += baseIndex.duplicateKeys.length
-    }
-
-    if (targetIndex.duplicateKeys.length) {
-      targetIndex.duplicateKeys.forEach((key) => {
-        issues.push({
-          type: 'duplicate_key',
-          comparedFile: targetDataset.fileName,
-          key,
-          field: keyFields.join(', '),
-          baseValue: key,
-          targetValue: key,
-          detail: `Chave duplicada no arquivo comparado: ${key}`,
-        })
-      })
-      summary.duplicateKeys += targetIndex.duplicateKeys.length
-    }
-
-    baseIndex.rowByKey.forEach((baseRecord, key) => {
-      const targetRecord = targetIndex.rowByKey.get(key)
-      if (!targetRecord) {
-        issues.push({
-          type: 'missing_in_target',
-          comparedFile: targetDataset.fileName,
-          key,
-          field: keyFields.join(', '),
-          baseValue: key,
-          targetValue: '',
-          detail: 'Registro não encontrado no arquivo comparado.',
-        })
-        summary.missingInTarget += 1
-        return
-      }
-
-      sharedFields.forEach((field) => {
-        const baseValue = normalizeCell(baseRecord.values[field])
-        const targetValue = normalizeCell(targetRecord.values[field])
-        const normalizedBase = normalizeForComparison(baseValue, options)
-        const normalizedTarget = normalizeForComparison(targetValue, options)
-        if (normalizedBase === normalizedTarget) return
-
-        issues.push({
-          type: 'value_mismatch',
-          comparedFile: targetDataset.fileName,
-          key,
-          field,
-          baseValue,
-          targetValue,
-          detail: 'Valor divergente entre base e comparado.',
-        })
-        summary.mismatches += 1
-      })
-    })
-
-    targetIndex.rowByKey.forEach((_targetRecord, key) => {
-      if (baseIndex.rowByKey.has(key)) return
-      issues.push({
-        type: 'extra_in_target',
-        comparedFile: targetDataset.fileName,
-        key,
-        field: keyFields.join(', '),
-        baseValue: '',
-        targetValue: key,
-        detail: 'Registro existe no comparado, mas não está na base.',
-      })
-      summary.extraInTarget += 1
-    })
-
-    summaries.push(summary)
-  })
-
-  return {
-    keyFields,
-    baseFileName: baseDataset.fileName,
-    comparedFiles: targetDatasets.map((item) => item.fileName),
-    issues,
-    summaries,
-    analyzedAt: new Date().toISOString(),
-  }
-}
-
-function toCsvLine(values: string[]): string {
-  return values
-    .map((value) => {
-      const normalized = String(value ?? '')
-      const escaped = normalized.replace(/"/g, '""')
-      return /[";,\n\r]/.test(normalized) ? `"${escaped}"` : escaped
-    })
-    .join(';')
-}
-
-function downloadTextFile(fileName: string, content: string, contentType: string) {
-  const blob = new Blob([content], { type: contentType })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
-}
-
 function issueTypeLabel(type: IssueType): string {
   if (type === 'missing_in_target') return 'Ausente no comparado'
   if (type === 'extra_in_target') return 'Extra no comparado'
@@ -747,1019 +431,629 @@ function issueTypeLabel(type: IssueType): string {
   return 'Chave duplicada'
 }
 
-function buildCopilotPrompt(result: ComparisonResult): string {
-  const topIssues = result.issues.slice(0, 25)
-  const summaryLines = result.summaries.map((item) => {
-    return `- ${item.comparedFile}: ausentes=${item.missingInTarget}, extras=${item.extraInTarget}, divergencias=${item.mismatches}, duplicidades=${item.duplicateKeys}`
+function buildMappedKey(row: ParsedRow, mappings: MappingRule[], side: 'base' | 'target'): string | null {
+  const values = mappings.map((mapping) => {
+    const fieldName = side === 'base' ? mapping.baseField : mapping.targetField
+    return normalizeForCompare(row.values[fieldName] ?? '')
   })
 
-  const issueLines = topIssues.map((issue) => {
-    return `- arquivo=${issue.comparedFile}; tipo=${issueTypeLabel(issue.type)}; chave=${issue.key}; campo=${issue.field}; base=${issue.baseValue}; comparado=${issue.targetValue}`
-  })
-
-  return [
-    'Analise as divergencias de dados abaixo e proponha causas provaveis e um plano de saneamento.',
-    '',
-    `Arquivo base: ${result.baseFileName}`,
-    `Campos-chave: ${result.keyFields.join(', ')}`,
-    `Total de arquivos comparados: ${result.comparedFiles.length}`,
-    `Total de divergencias: ${result.issues.length}`,
-    '',
-    'Resumo por arquivo:',
-    ...summaryLines,
-    '',
-    'Amostra de divergencias:',
-    ...issueLines,
-    '',
-    'Quero como resposta:',
-    '1) Diagnostico com as hipoteses mais provaveis por tipo de divergencia.',
-    '2) Regras de validacao para evitar reincidencia.',
-    '3) Checklist de acao para corrigir os dados origem e destino.',
-  ].join('\n')
+  if (values.some((value) => !value)) return null
+  return values.join(' | ')
 }
 
-function buildAggregatedCopilotPrompt(result: AggregatedResult): string {
-  const lines: string[] = [
-    'Confira os dados financeiros abaixo e identifique as causas das divergencias, localize os registros faltantes e proponha um plano de correcao.',
-    '',
-    `Arquivo base: ${result.baseFileName}`,
-    `Campos-chave: ${result.keyFields.join(', ')}`,
-    `Campos de valor somados: ${result.valueFields.join(', ')}`,
-    `Total de arquivos comparados: ${result.comparedFiles.length}`,
-    '',
+function buildMappedIndex(rows: ParsedRow[], mappings: MappingRule[], side: 'base' | 'target') {
+  const byKey = new Map<string, ParsedRow>()
+  const duplicateKeys = new Set<string>()
+
+  rows.forEach((row) => {
+    const key = buildMappedKey(row, mappings, side)
+    if (!key) return
+
+    if (byKey.has(key)) {
+      duplicateKeys.add(key)
+      return
+    }
+
+    byKey.set(key, row)
+  })
+
+  return {
+    byKey,
+    duplicateKeys: [...duplicateKeys],
+  }
+}
+
+function compareDatasets(
+  base: ParsedDataset,
+  target: ParsedDataset,
+  keyMappings: MappingRule[],
+  valueMappings: MappingRule[],
+  valueTolerance: number,
+): ComparisonResult {
+  const issues: ComparisonIssue[] = []
+
+  const baseIndex = buildMappedIndex(base.rows, keyMappings, 'base')
+  const targetIndex = buildMappedIndex(target.rows, keyMappings, 'target')
+
+  baseIndex.duplicateKeys.forEach((key) => {
+    issues.push({
+      type: 'duplicate_key',
+      key,
+      field: keyMappings.map((mapping) => `${mapping.baseField} -> ${mapping.targetField}`).join(' | '),
+      baseValue: key,
+      targetValue: key,
+      detail: 'Chave duplicada no arquivo A.',
+    })
+  })
+
+  targetIndex.duplicateKeys.forEach((key) => {
+    issues.push({
+      type: 'duplicate_key',
+      key,
+      field: keyMappings.map((mapping) => `${mapping.baseField} -> ${mapping.targetField}`).join(' | '),
+      baseValue: key,
+      targetValue: key,
+      detail: 'Chave duplicada no arquivo B.',
+    })
+  })
+
+  baseIndex.byKey.forEach((baseRow, key) => {
+    const targetRow = targetIndex.byKey.get(key)
+
+    if (!targetRow) {
+      issues.push({
+        type: 'missing_in_target',
+        key,
+        field: keyMappings.map((mapping) => `${mapping.baseField} -> ${mapping.targetField}`).join(' | '),
+        baseValue: key,
+        targetValue: '',
+        detail: 'Registro existe no arquivo A e nao foi encontrado no arquivo B.',
+      })
+      return
+    }
+
+    valueMappings.forEach((mapping) => {
+      const baseValue = normalizeCell(baseRow.values[mapping.baseField] ?? '')
+      const targetValue = normalizeCell(targetRow.values[mapping.targetField] ?? '')
+
+      const baseNumeric = parseNumericValue(baseValue)
+      const targetNumeric = parseNumericValue(targetValue)
+
+      if (baseNumeric !== null && targetNumeric !== null) {
+        if (isWithinTolerance(baseNumeric, targetNumeric, valueTolerance)) return
+
+        issues.push({
+          type: 'value_mismatch',
+          key,
+          field: `${mapping.baseField} -> ${mapping.targetField}`,
+          baseValue: formatDecimalValue(baseNumeric),
+          targetValue: formatDecimalValue(targetNumeric),
+          detail: `Valor divergente acima da tolerância de ${formatDecimalValue(valueTolerance)}.`,
+        })
+        return
+      }
+
+      const normalizedBaseValue = normalizeValueForComparison(baseValue)
+      const normalizedTargetValue = normalizeValueForComparison(targetValue)
+
+      if (normalizedBaseValue === normalizedTargetValue) return
+
+      issues.push({
+        type: 'value_mismatch',
+        key,
+        field: `${mapping.baseField} -> ${mapping.targetField}`,
+        baseValue: normalizeValueForDisplay(baseValue),
+        targetValue: normalizeValueForDisplay(targetValue),
+        detail: 'Valor divergente entre os campos mapeados.',
+      })
+    })
+  })
+
+  targetIndex.byKey.forEach((_targetRow, key) => {
+    if (baseIndex.byKey.has(key)) return
+
+    issues.push({
+      type: 'extra_in_target',
+      key,
+      field: keyMappings.map((mapping) => `${mapping.baseField} -> ${mapping.targetField}`).join(' | '),
+      baseValue: '',
+      targetValue: key,
+      detail: 'Registro existe no arquivo B e nao existe no arquivo A.',
+    })
+  })
+
+  const summary: ComparisonSummary = {
+    missingInTarget: issues.filter((item) => item.type === 'missing_in_target').length,
+    extraInTarget: issues.filter((item) => item.type === 'extra_in_target').length,
+    mismatches: issues.filter((item) => item.type === 'value_mismatch').length,
+    duplicateKeysInBase: baseIndex.duplicateKeys.length,
+    duplicateKeysInTarget: targetIndex.duplicateKeys.length,
+  }
+
+  return {
+    baseFileName: base.fileName,
+    targetFileName: target.fileName,
+    keyMappings,
+    valueMappings,
+    summary,
+    issues,
+  }
+}
+
+function exportComparisonToExcel(result: ComparisonResult, issues: ComparisonIssue[]) {
+  const workbook = XLSX.utils.book_new()
+
+  const summaryRows = [
+    {
+      arquivo_a: result.baseFileName,
+      arquivo_b: result.targetFileName,
+      total_divergencias: issues.length,
+      ausentes_no_b: result.summary.missingInTarget,
+      extras_no_b: result.summary.extraInTarget,
+      valores_divergentes: result.summary.mismatches,
+      chaves_duplicadas_a: result.summary.duplicateKeysInBase,
+      chaves_duplicadas_b: result.summary.duplicateKeysInTarget,
+    },
   ]
 
-  result.fileSummaries.forEach((summary) => {
-    lines.push(`=== Conferencia: ${summary.comparedFile} ===`)
-    lines.push(
-      `Resumo: OK=${summary.matchCount}, divergentes=${summary.divergentCount}, ausentes_no_comparado=${summary.missingCount}, extras_no_comparado=${summary.extraCount}`,
-    )
-    lines.push(`Diferenca total: R$ ${formatBrl(summary.totalDifference)}`)
-    lines.push('')
+  const mappingRows = [
+    ...result.keyMappings.map((mapping) => ({
+      tipo: 'chave',
+      campo_arquivo_a: mapping.baseField,
+      campo_arquivo_b: mapping.targetField,
+    })),
+    ...result.valueMappings.map((mapping) => ({
+      tipo: 'valor',
+      campo_arquivo_a: mapping.baseField,
+      campo_arquivo_b: mapping.targetField,
+    })),
+  ]
 
-    const divergent = summary.groups.filter((g) => g.status !== 'match')
-    if (divergent.length) {
-      lines.push('Grupos com divergencia:')
-      divergent.forEach((g) => {
-        const statusLabel =
-          g.status === 'missing_in_target'
-            ? 'AUSENTE no comparado'
-            : g.status === 'extra_in_target'
-              ? 'EXTRA no comparado'
-              : 'VALOR DIVERGENTE'
-        lines.push(
-          `- ${g.key} | ${statusLabel} | base: R$ ${formatBrl(g.baseTotal)} (${g.baseCount} reg.) | comparado: R$ ${formatBrl(g.targetTotal)} (${g.targetCount} reg.) | diferenca: R$ ${formatBrl(g.difference)}`,
-        )
-      })
-      lines.push('')
-    }
-  })
+  const issueRows = issues.length
+    ? issues.map((issue) => ({
+      tipo: issueTypeLabel(issue.type),
+      chave: issue.key,
+      campo: issue.field,
+      valor_arquivo_a: issue.baseValue,
+      valor_arquivo_b: issue.targetValue,
+      detalhe: issue.detail,
+    }))
+    : [{
+      tipo: 'Sem divergências',
+      chave: '',
+      campo: '',
+      valor_arquivo_a: '',
+      valor_arquivo_b: '',
+      detalhe: 'Nenhuma divergência encontrada para os filtros selecionados.',
+    }]
 
-  lines.push('Quero como resposta:')
-  lines.push('1) Diagnostico: para cada grupo com divergencia, quais registros provavelmente estao faltando ou incorretos.')
-  lines.push('2) Localizacao: como identificar os registros individuais que causam a diferenca (campos de busca sugeridos).')
-  lines.push('3) Plano de correcao: checklist para regularizar cada grupo divergente.')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Resumo')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(mappingRows), 'Mapeamentos')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(issueRows), 'Divergencias')
 
-  return lines.join('\n')
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+  XLSX.writeFile(workbook, `comparacao-arquivos-${stamp}.xlsx`)
 }
 
-function exportAggregatedPdfReport(result: AggregatedResult) {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const pageHeight = doc.internal.pageSize.getHeight()
-  const margin = 40
-  const lineHeight = 14
-  let y = margin
-
-  const writeLine = (text: string, fontSize = 10, isBold = false) => {
-    if (y > pageHeight - margin) {
-      doc.addPage()
-      y = margin
-    }
-    doc.setFont('helvetica', isBold ? 'bold' : 'normal')
-    doc.setFontSize(fontSize)
-    const wrapped = doc.splitTextToSize(text, pageWidth - margin * 2)
-    doc.text(wrapped, margin, y)
-    y += wrapped.length * lineHeight
+function toFriendlyError(error: unknown, fallback: string): string {
+  if (error instanceof TypeError) {
+    return 'Falha ao ler arquivo. Verifique se o formato e valido e tente novamente.'
   }
 
-  writeLine('Relatorio de Conferencia Financeira - Comparacao Consolidada', 13, true)
-  y += 4
-  writeLine(`Base: ${result.baseFileName}`)
-  writeLine(`Campos-chave: ${result.keyFields.join(', ')}`)
-  writeLine(`Campos de valor: ${result.valueFields.join(', ')}`)
-  writeLine(`Arquivos comparados: ${result.comparedFiles.length}`)
-  writeLine(`Analise realizada em: ${new Date(result.analyzedAt).toLocaleString('pt-BR')}`)
-  y += 8
-
-  result.fileSummaries.forEach((summary) => {
-    writeLine(`Arquivo comparado: ${summary.comparedFile}`, 11, true)
-    writeLine(
-      `OK=${summary.matchCount} | Divergentes=${summary.divergentCount} | Ausentes=${summary.missingCount} | Extras=${summary.extraCount} | Diferenca total: R$ ${formatBrl(summary.totalDifference)}`,
-    )
-    y += 4
-
-    summary.groups.forEach((g, i) => {
-      const statusLabel =
-        g.status === 'match'
-          ? 'OK'
-          : g.status === 'missing_in_target'
-            ? 'AUSENTE'
-            : g.status === 'extra_in_target'
-              ? 'EXTRA'
-              : 'DIVERGENTE'
-      writeLine(
-        `${i + 1}. [${statusLabel}] ${g.key} | Base: R$ ${formatBrl(g.baseTotal)} (${g.baseCount} reg.) | Comparado: R$ ${formatBrl(g.targetTotal)} (${g.targetCount} reg.) | Dif: R$ ${formatBrl(g.difference)}`,
-      )
-    })
-    y += 8
-  })
-
-  const stamp = new Date().toISOString().slice(0, 10)
-  doc.save(`relatorio-financeiro-${stamp}.pdf`)
-}
-
-function exportAggregatedCsvReport(result: AggregatedResult) {
-  const header = toCsvLine(['arquivo', 'chave', 'status', 'qtd_base', 'qtd_comparado', 'valor_base', 'valor_comparado', 'diferenca'])
-  const rows: string[] = []
-
-  result.fileSummaries.forEach((summary) => {
-    summary.groups.forEach((g) => {
-      const statusLabel =
-        g.status === 'match'
-          ? 'OK'
-          : g.status === 'missing_in_target'
-            ? 'Ausente no comparado'
-            : g.status === 'extra_in_target'
-              ? 'Extra no comparado'
-              : 'Valor divergente'
-      rows.push(
-        toCsvLine([
-          summary.comparedFile,
-          g.key,
-          statusLabel,
-          String(g.baseCount),
-          String(g.targetCount),
-          formatBrl(g.baseTotal),
-          formatBrl(g.targetTotal),
-          formatBrl(g.difference),
-        ]),
-      )
-    })
-  })
-
-  const csv = [header, ...rows].join('\n') + '\n'
-  const stamp = new Date().toISOString().slice(0, 10)
-  downloadTextFile(`relatorio-financeiro-${stamp}.csv`, csv, 'text/csv;charset=utf-8;')
-}
-
-function buildCopilotAnalysisInput(
-  mode: ComparisonMode,
-  rowResult: ComparisonResult | null,
-  aggResult: AggregatedResult | null,
-): CopilotAnalysisInput | null {
-  if (mode === 'aggregated') {
-    if (!aggResult) return null
-
-    const files: CopilotAnalysisInputFile[] = aggResult.fileSummaries.map((summary) => {
-      const missingGroups = summary.groups.filter((g) => g.status === 'missing_in_target')
-      return {
-        comparedFile: summary.comparedFile,
-        missingCount: missingGroups.length,
-        missingValueTotal: missingGroups.reduce((sum, g) => sum + g.baseTotal, 0),
-        missingItems: missingGroups.slice(0, 60).map((g) => ({
-          key: g.key,
-          baseTotal: g.baseTotal,
-        })),
-      }
-    })
-
-    return {
-      comparisonMode: mode,
-      baseFileName: aggResult.baseFileName,
-      keyFields: aggResult.keyFields,
-      valueFields: aggResult.valueFields,
-      files,
-    }
+  if (error instanceof Error) {
+    return error.message || fallback
   }
 
-  if (!rowResult) return null
-
-  const files: CopilotAnalysisInputFile[] = rowResult.summaries.map((summary) => {
-    const missingRows = rowResult.issues.filter(
-      (issue) => issue.comparedFile === summary.comparedFile && issue.type === 'missing_in_target',
-    )
-    return {
-      comparedFile: summary.comparedFile,
-      missingCount: missingRows.length,
-      missingValueTotal: 0,
-      missingItems: missingRows.slice(0, 60).map((issue) => ({
-        key: issue.key,
-        baseValue: issue.baseValue,
-      })),
-    }
-  })
-
-  return {
-    comparisonMode: mode,
-    baseFileName: rowResult.baseFileName,
-    keyFields: rowResult.keyFields,
-    valueFields: [],
-    files,
-  }
-}
-
-async function analyzeDataComparisonWithCopilot(
-  payload: CopilotAnalysisInput,
-): Promise<CopilotAnalysisResult> {
-  const response = await fetch(apiUrl('/api/data-comparison/analyze'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-
-  if (!response.ok) {
-    let detail = 'Falha ao executar analise com Copilot.'
-    try {
-      const err = await response.json()
-      detail = (err as { error?: string })?.error ?? response.statusText
-    } catch {
-      detail = response.statusText
-    }
-    throw new Error(`Erro ${response.status}: ${detail}`)
-  }
-
-  const parsed = await response.json() as Partial<CopilotAnalysisResult>
-
-  return {
-    resumoGeral: typeof parsed.resumoGeral === 'string' ? parsed.resumoGeral : '',
-    arquivos: Array.isArray(parsed.arquivos)
-      ? parsed.arquivos.map((item) => ({
-        comparedFile: typeof item?.comparedFile === 'string' ? item.comparedFile : 'arquivo',
-        diagnosis: typeof item?.diagnosis === 'string' ? item.diagnosis : '',
-        missingCount: typeof item?.missingCount === 'number' ? item.missingCount : 0,
-        missingValueTotal: typeof item?.missingValueTotal === 'number' ? item.missingValueTotal : 0,
-        topMissingKeys: Array.isArray(item?.topMissingKeys) ? item.topMissingKeys.slice(0, 8).map(String) : [],
-        recommendations: Array.isArray(item?.recommendations)
-          ? item.recommendations.slice(0, 5).map(String)
-          : [],
-      }))
-      : [],
-    alertas: Array.isArray(parsed.alertas) ? parsed.alertas.slice(0, 8).map(String) : [],
-    planoAcao: Array.isArray(parsed.planoAcao) ? parsed.planoAcao.slice(0, 8).map(String) : [],
-  }
-}
-
-function toReportRows(issues: ComparisonIssue[]): string[][] {
-  return issues.map((issue) => [
-    issue.comparedFile,
-    issueTypeLabel(issue.type),
-    issue.key,
-    issue.field,
-    issue.baseValue,
-    issue.targetValue,
-    issue.detail,
-  ])
-}
-
-function exportPdfReport(
-  result: ComparisonResult,
-  issues: ComparisonIssue[],
-  selectedType: IssueFilter,
-  selectedFile: string,
-) {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const pageHeight = doc.internal.pageSize.getHeight()
-  const margin = 40
-  const lineHeight = 14
-  let y = margin
-
-  const writeLine = (text: string, fontSize = 10, isBold = false) => {
-    if (y > pageHeight - margin) {
-      doc.addPage()
-      y = margin
-    }
-
-    doc.setFont('helvetica', isBold ? 'bold' : 'normal')
-    doc.setFontSize(fontSize)
-    const wrapped = doc.splitTextToSize(text, pageWidth - margin * 2)
-    doc.text(wrapped, margin, y)
-    y += wrapped.length * lineHeight
-  }
-
-  writeLine('Relatorio de Divergencias - Comparacao de Dados', 13, true)
-  y += 4
-  writeLine(`Base: ${result.baseFileName}`)
-  writeLine(`Campos-chave: ${result.keyFields.join(', ')}`)
-  writeLine(`Arquivos comparados: ${result.comparedFiles.length}`)
-  writeLine(`Divergencias no filtro: ${issues.length}`)
-  writeLine(`Filtro por tipo: ${selectedType === 'all' ? 'Todos' : issueTypeLabel(selectedType)}`)
-  writeLine(`Filtro por arquivo: ${selectedFile === 'all' ? 'Todos' : selectedFile}`)
-  writeLine(`Analise realizada em: ${new Date(result.analyzedAt).toLocaleString('pt-BR')}`)
-  y += 6
-
-  result.summaries.forEach((summary) => {
-    writeLine(
-      `Resumo ${summary.comparedFile}: ausentes=${summary.missingInTarget}, extras=${summary.extraInTarget}, divergencias=${summary.mismatches}, duplicidades=${summary.duplicateKeys}`,
-    )
-  })
-
-  y += 8
-  writeLine('Divergencias detalhadas', 11, true)
-
-  if (!issues.length) {
-    writeLine('Nenhuma divergencia encontrada para os filtros selecionados.')
-  } else {
-    issues.forEach((issue, index) => {
-      writeLine(
-        `${index + 1}. [${issueTypeLabel(issue.type)}] arquivo=${issue.comparedFile}; chave=${issue.key}; campo=${issue.field}; base=${issue.baseValue}; comparado=${issue.targetValue}`,
-      )
-    })
-  }
-
-  const stamp = new Date().toISOString().slice(0, 10)
-  doc.save(`relatorio-divergencias-${stamp}.pdf`)
+  return fallback
 }
 
 export default function DataComparisonTool() {
-  const [baseFile, setBaseFile] = useState<File | null>(null)
-  const [comparisonFiles, setComparisonFiles] = useState<File[]>([])
-  const [keyFieldsInput, setKeyFieldsInput] = useState('')
-  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('row')
-  const [valueFieldsInput, setValueFieldsInput] = useState('')
-  const [numericTolerance, setNumericTolerance] = useState(DEFAULT_NUMERIC_TOLERANCE)
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [baseDataset, setBaseDataset] = useState<ParsedDataset | null>(null)
+  const [targetDataset, setTargetDataset] = useState<ParsedDataset | null>(null)
+  const [isParsingBase, setIsParsingBase] = useState(false)
+  const [isParsingTarget, setIsParsingTarget] = useState(false)
+  const [isComparing, setIsComparing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [result, setResult] = useState<ComparisonResult | null>(null)
-  const [aggregatedResult, setAggregatedResult] = useState<AggregatedResult | null>(null)
-  const [copilotPrompt, setCopilotPrompt] = useState('')
-  const [copiedPrompt, setCopiedPrompt] = useState(false)
-  const [executedPrompt, setExecutedPrompt] = useState(false)
-  const [copilotAnalysis, setCopilotAnalysis] = useState<CopilotAnalysisResult | null>(null)
-  const [isAnalyzingCopilot, setIsAnalyzingCopilot] = useState(false)
-  const [copilotAnalysisError, setCopilotAnalysisError] = useState<string | null>(null)
-  const [isExecutePromptModalOpen, setIsExecutePromptModalOpen] = useState(false)
-  const [typeFilter, setTypeFilter] = useState<IssueFilter>('all')
-  const [fileFilter, setFileFilter] = useState<string>('all')
-  const [aggFileFilter, setAggFileFilter] = useState<string>('all')
-  const [aggStatusFilter, setAggStatusFilter] = useState<AggregatedGroupStatus | 'all'>('all')
-  const [normalization, setNormalization] = useState<NormalizationOptions>(DEFAULT_NORMALIZATION)
-  const [baseDataset, setBaseDataset] = useState<NormalizedDataset | null>(null)
-  const [comparisonDatasets, setComparisonDatasets] = useState<NormalizedDataset[]>([])
-  const [fieldMappings, setFieldMappings] = useState<FileFieldMappings[]>([])
-  const [showMappingPanel, setShowMappingPanel] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<'all' | IssueType>('all')
+  const [keyFilter, setKeyFilter] = useState('')
+  const [suggestionMode, setSuggestionMode] = useState<'keys' | 'keys-and-values'>('keys-and-values')
+  const [resultPage, setResultPage] = useState(1)
+  const [valueTolerance, setValueTolerance] = useState(0.01)
 
-  const parsedKeyFields = useMemo(() => {
-    return Array.from(
-      new Set(
-        keyFieldsInput
-          .split(',')
-          .map((item) => normalizeHeader(item))
-          .filter(Boolean),
-      ),
-    )
-  }, [keyFieldsInput])
+  const [mappings, setMappings] = useState<MappingRule[]>([
+    { id: 1, type: 'key', baseField: '', targetField: '' },
+    { id: 2, type: 'value', baseField: '', targetField: '' },
+  ])
 
-  const parsedValueFields = useMemo(() => {
-    return Array.from(
-      new Set(
-        valueFieldsInput
-          .split(',')
-          .map((item) => normalizeHeader(item))
-          .filter(Boolean),
-      ),
-    )
-  }, [valueFieldsInput])
+  const keyMappings = useMemo(
+    () => mappings.filter((mapping) => mapping.type === 'key' && mapping.baseField && mapping.targetField),
+    [mappings],
+  )
+
+  const valueMappings = useMemo(
+    () => mappings.filter((mapping) => mapping.type === 'value' && mapping.baseField && mapping.targetField),
+    [mappings],
+  )
 
   const filteredIssues = useMemo(() => {
     if (!result) return []
 
+    const term = keyFilter.trim().toLowerCase()
+
     return result.issues.filter((issue) => {
       if (typeFilter !== 'all' && issue.type !== typeFilter) return false
-      if (fileFilter !== 'all' && issue.comparedFile !== fileFilter) return false
+      if (term && !issue.key.toLowerCase().includes(term)) return false
       return true
     })
-  }, [fileFilter, result, typeFilter])
+  }, [keyFilter, result, typeFilter])
 
-  const issuePreview = useMemo(() => filteredIssues.slice(0, PREVIEW_LIMIT), [filteredIssues])
+  const totalResultPages = useMemo(() => {
+    if (!filteredIssues.length) return 0
+    return Math.ceil(filteredIssues.length / RESULT_PAGE_SIZE)
+  }, [filteredIssues])
 
-  const fileFilterOptions = useMemo(() => result?.comparedFiles ?? [], [result])
+  const currentResultPage = useMemo(() => {
+    if (!totalResultPages) return 0
+    return Math.min(resultPage, totalResultPages)
+  }, [resultPage, totalResultPages])
 
-  const aggFileSummaries = useMemo(() => {
-    if (!aggregatedResult) return []
-    if (aggFileFilter === 'all') return aggregatedResult.fileSummaries
-    return aggregatedResult.fileSummaries.filter((s) => s.comparedFile === aggFileFilter)
-  }, [aggregatedResult, aggFileFilter])
+  const previewIssues = useMemo(() => {
+    if (!currentResultPage) return []
+    const startIndex = (currentResultPage - 1) * RESULT_PAGE_SIZE
+    return filteredIssues.slice(startIndex, startIndex + RESULT_PAGE_SIZE)
+  }, [currentResultPage, filteredIssues])
 
-  const aggFileFilterOptions = useMemo(() => aggregatedResult?.comparedFiles ?? [], [aggregatedResult])
+  const handleDatasetChange = async (file: File | null, side: 'base' | 'target') => {
+    if (!file) {
+      if (side === 'base') {
+        setBaseDataset(null)
+      } else {
+        setTargetDataset(null)
+      }
+      return
+    }
+
+    setError(null)
+    setSuccess(null)
+    setResult(null)
+
+    if (side === 'base') {
+      setIsParsingBase(true)
+    } else {
+      setIsParsingTarget(true)
+    }
+
+    try {
+      const parsed = await parseFileDataset(file)
+      if (!parsed.headers.length) {
+        throw new Error('Arquivo sem cabecalho valido para comparação.')
+      }
+
+      if (side === 'base') {
+        setBaseDataset(parsed)
+      } else {
+        setTargetDataset(parsed)
+      }
+    } catch (parseError) {
+      setError(toFriendlyError(parseError, 'Nao foi possivel processar o arquivo informado.'))
+      if (side === 'base') {
+        setBaseDataset(null)
+      } else {
+        setTargetDataset(null)
+      }
+    } finally {
+      if (side === 'base') {
+        setIsParsingBase(false)
+      } else {
+        setIsParsingTarget(false)
+      }
+    }
+  }
 
   const handleBaseFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = event.target.files?.[0] ?? null
-    setBaseFile(selected)
-    setResult(null)
-    setAggregatedResult(null)
-    setCopilotPrompt('')
-    setError(null)
-    setCopiedPrompt(false)
-    setExecutedPrompt(false)
-    setCopilotAnalysis(null)
-    setCopilotAnalysisError(null)
-    setIsExecutePromptModalOpen(false)
-    setTypeFilter('all')
-    setFileFilter('all')
-    setAggFileFilter('all')
-    setAggStatusFilter('all')
+    void handleDatasetChange(event.target.files?.[0] ?? null, 'base')
   }
 
-  const handleComparisonFilesChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files ?? [])
-    setComparisonFiles(selectedFiles)
-    setResult(null)
-    setAggregatedResult(null)
-    setCopilotPrompt('')
-    setError(null)
-    setCopiedPrompt(false)
-    setExecutedPrompt(false)
-    setCopilotAnalysis(null)
-    setCopilotAnalysisError(null)
-    setIsExecutePromptModalOpen(false)
-    setTypeFilter('all')
-    setFileFilter('all')
-    setAggFileFilter('all')
-    setAggStatusFilter('all')
+  const handleTargetFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    void handleDatasetChange(event.target.files?.[0] ?? null, 'target')
   }
 
-  const handleCompare = async () => {
-    if (!baseFile) {
-      setError('Selecione o arquivo base para iniciar a comparação.')
-      return
-    }
-
-    if (!comparisonFiles.length) {
-      setError('Selecione ao menos um arquivo para comparar com a base.')
-      return
-    }
-
-    if (!parsedKeyFields.length) {
-      setError('Informe pelo menos um campo-chave separado por vírgula.')
-      return
-    }
-
-    if (comparisonMode === 'aggregated' && !parsedValueFields.length) {
-      setError('No modo financeiro, informe os campos de valor separados por vírgula.')
-      return
-    }
-
-    setIsProcessing(true)
-    setError(null)
-    setCopiedPrompt(false)
-    setExecutedPrompt(false)
-    setCopilotAnalysis(null)
-    setCopilotAnalysisError(null)
-    setIsExecutePromptModalOpen(false)
-
-    try {
-      const newBaseDataset = await parseFileDataset(baseFile)
-      const newTargetDatasets = await Promise.all(comparisonFiles.map((file) => parseFileDataset(file)))
-
-      const missingKeys = parsedKeyFields.filter((key) => !newBaseDataset.headers.includes(key))
-      if (missingKeys.length) {
-        throw new Error(`Os campos-chave não existem no arquivo base: ${missingKeys.join(', ')}`)
-      }
-
-      if (comparisonMode === 'aggregated') {
-        const missingValues = parsedValueFields.filter((v) => !newBaseDataset.headers.includes(v))
-        if (missingValues.length) {
-          throw new Error(`Os campos de valor não existem no arquivo base: ${missingValues.join(', ')}`)
-        }
-      }
-
-      setBaseDataset(newBaseDataset)
-      setComparisonDatasets(newTargetDatasets)
-
-      const newMappings: FileFieldMappings[] = newTargetDatasets.map((dataset) => ({
-        fileName: dataset.fileName,
-        mappings: suggestFieldMappings(dataset.headers, parsedKeyFields),
-      }))
-
-      setFieldMappings(newMappings)
-      setShowMappingPanel(true)
-    } catch (comparisonError) {
-      const detail = comparisonError instanceof Error ? comparisonError.message : 'Erro ao comparar arquivos.'
-      setError(detail)
-    } finally {
-      setIsProcessing(false)
-    }
+  const addMapping = (type: MappingType) => {
+    const nextId = mappings.length ? Math.max(...mappings.map((item) => item.id)) + 1 : 1
+    setMappings((prev) => [...prev, { id: nextId, type, baseField: '', targetField: '' }])
   }
 
-  const handleExecuteComparison = () => {
-    if (!baseDataset || !comparisonDatasets.length) {
-      setError('Erro ao executar comparação: datasets não carregados.')
-      return
-    }
-
-    try {
-      if (comparisonMode === 'aggregated') {
-        const builtResult = buildAggregatedResult(
-          baseDataset,
-          comparisonDatasets,
-          parsedKeyFields,
-          parsedValueFields,
-          normalization,
-          fieldMappings,
-          numericTolerance,
-        )
-        setAggregatedResult(builtResult)
-        setResult(null)
-        setCopilotPrompt(buildAggregatedCopilotPrompt(builtResult))
-        setExecutedPrompt(false)
-        setCopilotAnalysis(null)
-        setCopilotAnalysisError(null)
-        setIsExecutePromptModalOpen(false)
-      } else {
-        const builtResult = buildComparisonResult(
-          baseDataset,
-          comparisonDatasets,
-          parsedKeyFields,
-          normalization,
-          fieldMappings,
-        )
-        setResult(builtResult)
-        setAggregatedResult(null)
-        setCopilotPrompt(buildCopilotPrompt(builtResult))
-        setExecutedPrompt(false)
-        setCopilotAnalysis(null)
-        setCopilotAnalysisError(null)
-        setIsExecutePromptModalOpen(false)
-      }
-      setTypeFilter('all')
-      setFileFilter('all')
-      setAggFileFilter('all')
-      setAggStatusFilter('all')
-      setShowMappingPanel(false)
-    } catch (comparisonError) {
-      const detail = comparisonError instanceof Error ? comparisonError.message : 'Erro ao comparar arquivos.'
-      setError(detail)
-      setResult(null)
-      setAggregatedResult(null)
-      setCopilotPrompt('')
-      setExecutedPrompt(false)
-      setCopilotAnalysis(null)
-      setCopilotAnalysisError(null)
-      setIsExecutePromptModalOpen(false)
-    }
-  }
-
-  const handleMappingChange = (fileIndex: number, fieldIndex: number, newTargetField: string) => {
-    setFieldMappings((prev) => {
-      const updated = [...prev]
-      if (updated[fileIndex]) {
-        updated[fileIndex] = {
-          ...updated[fileIndex],
-          mappings: updated[fileIndex].mappings.map((mapping, idx) => {
-            if (idx === fieldIndex) {
-              return { ...mapping, targetField: newTargetField }
-            }
-            return mapping
-          }),
-        }
-      }
-      return updated
+  const removeMapping = (id: number) => {
+    setMappings((prev) => {
+      if (prev.length <= 1) return prev
+      return prev.filter((item) => item.id !== id)
     })
   }
 
-  const handleExportReport = () => {
-    if (comparisonMode === 'aggregated') {
-      if (!aggregatedResult) return
-      exportAggregatedCsvReport(aggregatedResult)
-      return
-    }
-    if (!result) return
-
-    const header = ['arquivo', 'tipo', 'chave', 'campo', 'valor_base', 'valor_comparado', 'detalhe']
-    const rows = toReportRows(filteredIssues)
-
-    const csv = [header, ...rows].map((line) => toCsvLine(line)).join('\n') + '\n'
-    const stamp = new Date().toISOString().slice(0, 10)
-    downloadTextFile(`relatorio-divergencias-${stamp}.csv`, csv, 'text/csv;charset=utf-8;')
+  const updateMapping = (id: number, patch: Partial<MappingRule>) => {
+    setMappings((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
   }
 
-  const handleExportPdfReport = () => {
-    if (comparisonMode === 'aggregated') {
-      if (!aggregatedResult) return
-      exportAggregatedPdfReport(aggregatedResult)
+  const applySuggestedMappings = () => {
+    if (!baseDataset || !targetDataset) {
+      setError('Selecione os dois arquivos antes de sugerir os mapeamentos.')
       return
     }
-    if (!result) return
-    exportPdfReport(result, filteredIssues, typeFilter, fileFilter)
+
+    const suggested = suggestMappings(baseDataset.headers, targetDataset.headers)
+    const nextMappings: MappingRule[] = []
+    let nextId = 1
+
+    suggested.keys.forEach((mapping) => {
+      nextMappings.push({
+        id: nextId,
+        type: 'key',
+        baseField: mapping.baseField,
+        targetField: mapping.targetField,
+      })
+      nextId += 1
+    })
+
+    if (suggestionMode === 'keys-and-values') {
+      suggested.values.forEach((mapping) => {
+        nextMappings.push({
+          id: nextId,
+          type: 'value',
+          baseField: mapping.baseField,
+          targetField: mapping.targetField,
+        })
+        nextId += 1
+      })
+    }
+
+    if (!nextMappings.length) {
+      setError('Nao foi possivel sugerir mapeamentos automaticamente. Ajuste manualmente os campos.')
+      return
+    }
+
+    setMappings(nextMappings)
+    setError(null)
+    const valueCount = suggestionMode === 'keys-and-values' ? suggested.values.length : 0
+    setSuccess(`Mapeamentos sugeridos: ${suggested.keys.length} chave(s) e ${valueCount} valor(es).`)
+    setResult(null)
   }
 
-  const handleCopyCopilotPrompt = async () => {
-    if (!copilotPrompt.trim()) return
+  const runComparison = () => {
+    if (!baseDataset || !targetDataset) {
+      setError('Selecione os dois arquivos para comparar.')
+      return
+    }
+
+    if (!keyMappings.length) {
+      setError('Informe ao menos um mapeamento do tipo chave para comparar os arquivos.')
+      return
+    }
+
+    setError(null)
+    setSuccess(null)
+    setIsComparing(true)
 
     try {
-      await navigator.clipboard.writeText(copilotPrompt)
-      setCopiedPrompt(true)
-      window.setTimeout(() => setCopiedPrompt(false), 1800)
-    } catch {
-      setCopiedPrompt(false)
-    }
-  }
+      const invalidBaseFields = [...keyMappings, ...valueMappings]
+        .map((mapping) => mapping.baseField)
+        .filter((field, index, all) => all.indexOf(field) === index)
+        .filter((field) => !baseDataset.headers.includes(field))
 
-  const handleExecuteCopilotPrompt = async () => {
-    if (!copilotPrompt.trim()) return
+      const invalidTargetFields = [...keyMappings, ...valueMappings]
+        .map((mapping) => mapping.targetField)
+        .filter((field, index, all) => all.indexOf(field) === index)
+        .filter((field) => !targetDataset.headers.includes(field))
 
-    setIsExecutePromptModalOpen(true)
-  }
+      if (invalidBaseFields.length || invalidTargetFields.length) {
+        const details: string[] = []
+        if (invalidBaseFields.length) {
+          details.push(`Campos nao encontrados no arquivo A: ${invalidBaseFields.join(', ')}`)
+        }
+        if (invalidTargetFields.length) {
+          details.push(`Campos nao encontrados no arquivo B: ${invalidTargetFields.join(', ')}`)
+        }
+        throw new Error(details.join(' | '))
+      }
 
-  const handleConfirmExecuteCopilotPrompt = async () => {
-    if (!copilotPrompt.trim()) {
-      setIsExecutePromptModalOpen(false)
-      return
-    }
-
-    const analysisInput = buildCopilotAnalysisInput(comparisonMode, result, aggregatedResult)
-    if (!analysisInput) {
-      setIsExecutePromptModalOpen(false)
-      setCopilotAnalysisError('Execute a comparacao antes de rodar a analise com Copilot.')
-      return
-    }
-
-    setIsExecutePromptModalOpen(false)
-    setIsAnalyzingCopilot(true)
-    setCopilotAnalysisError(null)
-    setExecutedPrompt(false)
-
-    try {
-      const analysis = await analyzeDataComparisonWithCopilot(analysisInput)
-      setCopilotAnalysis(analysis)
-      setExecutedPrompt(true)
-      setCopiedPrompt(false)
-      window.setTimeout(() => {
-        setExecutedPrompt(false)
-      }, 2200)
-    } catch (analysisError) {
-      const detail = analysisError instanceof Error ? analysisError.message : 'Falha ao analisar com Copilot.'
-      setCopilotAnalysisError(detail)
-      setExecutedPrompt(false)
-      setCopiedPrompt(false)
-      setCopilotAnalysis(null)
+      const nextResult = compareDatasets(baseDataset, targetDataset, keyMappings, valueMappings, valueTolerance)
+      setResult(nextResult)
+      setTypeFilter('all')
+      setKeyFilter('')
+      setResultPage(1)
+      setSuccess(`Comparação concluída com ${nextResult.issues.length} divergência(s).`)
+    } catch (comparisonError) {
+      setResult(null)
+      setError(toFriendlyError(comparisonError, 'Falha ao comparar os arquivos.'))
     } finally {
-      setIsAnalyzingCopilot(false)
+      setIsComparing(false)
     }
   }
 
-  const handleCancelExecuteCopilotPrompt = () => {
-    setIsExecutePromptModalOpen(false)
-    setExecutedPrompt(false)
+  const exportExcel = () => {
+    if (!result) {
+      setError('Execute a comparação antes de exportar o Excel.')
+      return
+    }
+
+    exportComparisonToExcel(result, filteredIssues)
   }
 
   return (
-    <div className="grid data-compare-layout">
+    <div className="estimativas-layout">
       <section className="card">
-        <h2>1) Fonte e chave da comparação</h2>
-        <div className="controls">
-          <label className="file-input">
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv,.txt"
-              onChange={handleBaseFileChange}
-            />
-            <span>Selecionar arquivo base</span>
-          </label>
-          {baseFile && <span className="muted">Base: {baseFile.name}</span>}
+        <div className="estimativas-header-row">
+          <div>
+            <h2>Configurar Comparação</h2>
+            <p className="muted">Selecione dois arquivos e monte os mapeamentos de campos em tempo de execucao.</p>
+          </div>
         </div>
 
-        <div className="controls">
-          <label className="file-input">
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv,.txt,.pdf"
-              multiple
-              onChange={handleComparisonFilesChange}
-            />
-            <span>Selecionar arquivos para comparar</span>
+        <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '0.75rem' }}>
+          <label className="file-input file-input--small">
+            <input type="file" accept=".csv,.txt,.xlsx,.xls,.pdf" onChange={handleBaseFileChange} />
+            <span>{isParsingBase ? 'Processando arquivo A...' : 'Selecionar arquivo A (base)'}</span>
           </label>
-          {comparisonFiles.length > 0 && (
-            <span className="muted">Arquivos: {comparisonFiles.length}</span>
-          )}
+
+          <label className="file-input file-input--small">
+            <input type="file" accept=".csv,.txt,.xlsx,.xls,.pdf" onChange={handleTargetFileChange} />
+            <span>{isParsingTarget ? 'Processando arquivo B...' : 'Selecionar arquivo B (comparado)'}</span>
+          </label>
         </div>
 
-        <label className="data-compare-field">
-          Campos-chave (separados por vírgula)
+        {(baseDataset || targetDataset) && (
+          <div className="estimativas-stats" style={{ marginTop: '0.15rem' }}>
+            <span>Arquivo A: {baseDataset?.fileName || '-'}</span>
+            <span>Colunas A: {baseDataset?.headers.length ?? 0}</span>
+            <span>Linhas A: {baseDataset?.rows.length ?? 0}</span>
+            <span>Arquivo B: {targetDataset?.fileName || '-'}</span>
+            <span>Colunas B: {targetDataset?.headers.length ?? 0}</span>
+            <span>Linhas B: {targetDataset?.rows.length ?? 0}</span>
+          </div>
+        )}
+
+        <div className="estimativas-header-row" style={{ marginTop: '0.35rem' }}>
+          <strong>Mapeamentos de Campos</strong>
+          <div className="estimativas-actions">
+            <label style={{ display: 'grid', gap: '0.2rem', minWidth: '220px' }}>
+              <span className="muted" style={{ fontSize: '0.78rem' }}>Modo da sugestao</span>
+              <select
+                value={suggestionMode}
+                onChange={(event) => setSuggestionMode(event.target.value as 'keys' | 'keys-and-values')}
+              >
+                <option value="keys">Somente chaves</option>
+                <option value="keys-and-values">Chaves + valores</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={applySuggestedMappings}
+              disabled={!baseDataset || !targetDataset || isParsingBase || isParsingTarget}
+            >
+              Sugerir mapeamentos
+            </button>
+            <button type="button" className="button-secondary" onClick={() => addMapping('key')}>
+              Adicionar chave
+            </button>
+            <button type="button" className="button-secondary" onClick={() => addMapping('value')}>
+              Adicionar valor
+            </button>
+          </div>
+        </div>
+
+        <div className="estimativas-table ch-table-theme" style={{ marginTop: '0.65rem' }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Campo arquivo A</th>
+                <th>Campo arquivo B</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mappings.map((mapping) => (
+                <tr key={mapping.id}>
+                  <td>
+                    <select
+                      value={mapping.type}
+                      onChange={(event) => updateMapping(mapping.id, { type: event.target.value as MappingType })}
+                    >
+                      <option value="key">Chave</option>
+                      <option value="value">Valor</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={mapping.baseField}
+                      onChange={(event) => updateMapping(mapping.id, { baseField: event.target.value })}
+                    >
+                      <option value="">Selecionar campo</option>
+                      {(baseDataset?.headers || []).map((header) => (
+                        <option key={`a-${mapping.id}-${header}`} value={header}>{header}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={mapping.targetField}
+                      onChange={(event) => updateMapping(mapping.id, { targetField: event.target.value })}
+                    >
+                      <option value="">Selecionar campo</option>
+                      {(targetDataset?.headers || []).map((header) => (
+                        <option key={`b-${mapping.id}-${header}`} value={header}>{header}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <div className="estimativas-actions">
+                      <button type="button" className="button-secondary" onClick={() => removeMapping(mapping.id)}>
+                        Remover
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="estimativas-actions" style={{ marginTop: '0.75rem' }}>
+          <button
+            type="button"
+            className="button-primary"
+            onClick={runComparison}
+            disabled={isComparing || isParsingBase || isParsingTarget || !baseDataset || !targetDataset}
+          >
+            {isComparing ? 'Comparando...' : 'Executar comparação'}
+          </button>
+          <button type="button" className="button-secondary" onClick={exportExcel} disabled={!result}>
+            Gerar planilha Excel
+          </button>
+        </div>
+
+        <label className="data-compare-field" style={{ marginTop: '0.75rem', maxWidth: '260px' }}>
+          Tolerância para campos de valor
           <input
-            type="text"
-            value={keyFieldsInput}
-            onChange={(event) => setKeyFieldsInput(event.target.value)}
-            placeholder="ex.: codigo_cliente, filial, documento"
+            type="number"
+            min="0"
+            step="0.01"
+            value={valueTolerance}
+            onChange={(event) => setValueTolerance(Number(event.target.value) || 0)}
           />
         </label>
 
-        <div className="data-compare-normalization">
-          <span className="data-compare-normalization__title">Modo de comparação</span>
-          <label className="checkbox">
-            <input
-              type="radio"
-              name="comparisonMode"
-              value="row"
-              checked={comparisonMode === 'row'}
-              onChange={() => setComparisonMode('row')}
-            />
-            Por registro — compara linha a linha pelos campos-chave
-          </label>
-          <label className="checkbox">
-            <input
-              type="radio"
-              name="comparisonMode"
-              value="aggregated"
-              checked={comparisonMode === 'aggregated'}
-              onChange={() => setComparisonMode('aggregated')}
-            />
-            Financeiro / Consolidado — soma valores por chave e compara totais
-          </label>
-        </div>
-
-        {comparisonMode === 'aggregated' && (
-          <>
-            <label className="data-compare-field">
-              Campos de valor a somar (separados por vírgula)
-              <input
-                type="text"
-                value={valueFieldsInput}
-                onChange={(event) => setValueFieldsInput(event.target.value)}
-                placeholder="ex.: valor, deprec, saldo"
-              />
-            </label>
-            <label className="data-compare-field">
-              Tolerância numérica (diferença máxima aceita como igualdade)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={numericTolerance}
-                onChange={(event) => setNumericTolerance(Number(event.target.value))}
-              />
-            </label>
-          </>
-        )}
-
-        <div className="data-compare-normalization">
-          <span className="data-compare-normalization__title">Normalização avançada</span>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={normalization.trim}
-              onChange={(event) => setNormalization((prev) => ({ ...prev, trim: event.target.checked }))}
-            />
-            Remover espaços no início/fim
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={normalization.collapseSpaces}
-              onChange={(event) => setNormalization((prev) => ({ ...prev, collapseSpaces: event.target.checked }))}
-            />
-            Unificar múltiplos espaços internos
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={normalization.ignoreCase}
-              onChange={(event) => setNormalization((prev) => ({ ...prev, ignoreCase: event.target.checked }))}
-            />
-            Ignorar diferença entre maiúsculas/minúsculas
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={normalization.ignoreAccents}
-              onChange={(event) => setNormalization((prev) => ({ ...prev, ignoreAccents: event.target.checked }))}
-            />
-            Ignorar acentos
-          </label>
-        </div>
-
-        <p className="muted">
-          Suporta base em Excel/CSV/TXT e comparação em Excel/CSV/TXT/PDF.
-          Para PDF, a comparação usa o texto extraído e pode exigir ajuste de chaves.
-        </p>
-
-        <div className="results__actions">
-          <button type="button" className="button-primary" onClick={handleCompare} disabled={isProcessing}>
-            {isProcessing ? 'Comparando...' : 'Comparar arquivos'}
-          </button>
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={handleExportReport}
-            disabled={comparisonMode === 'aggregated' ? !aggregatedResult : !result}
-          >
-            Gerar relatório CSV
-          </button>
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={handleExportPdfReport}
-            disabled={comparisonMode === 'aggregated' ? !aggregatedResult : !result}
-          >
-            Gerar relatório PDF
-          </button>
-        </div>
-
         {error && <p className="error">{error}</p>}
+        {success && <p className="success">{success}</p>}
       </section>
 
-      {showMappingPanel && baseDataset && comparisonDatasets.length > 0 && (
-        <section className="card data-compare-mapping-panel">
-          <h2>Mapeamento de campos-chave</h2>
-          <p className="muted">
-            Os campos-chave podem ter nomes diferentes nos arquivos. Revise e ajuste o mapeamento detectado automaticamente.
-          </p>
-
-          {fieldMappings.map((fileMapping, fileIndex) => (
-            <div key={fileMapping.fileName} className="data-compare-mapping-file">
-              <h3>{fileMapping.fileName}</h3>
-              <div className="data-compare-mapping-grid">
-                {fileMapping.mappings.map((mapping, fieldIndex) => (
-                  <div key={`${fileMapping.fileName}-${mapping.baseField}`} className="data-compare-mapping-row">
-                    <div className="data-compare-mapping-base">
-                      <label>Campo base</label>
-                      <input type="text" value={mapping.baseField} readOnly />
-                    </div>
-                    <div className="data-compare-mapping-arrow">→</div>
-                    <div className="data-compare-mapping-target">
-                      <label>
-                        Campo comparado
-                        {mapping.confidence > 0 && (
-                          <span className="data-compare-confidence">
-                            ({mapping.confidence}% confiança)
-                          </span>
-                        )}
-                      </label>
-                      <select
-                        value={mapping.targetField}
-                        onChange={(e) => handleMappingChange(fileIndex, fieldIndex, e.target.value)}
-                      >
-                        <option value="">-- Selecionar --</option>
-                        {comparisonDatasets[fileIndex]?.headers.map((header) => (
-                          <option key={header} value={header}>
-                            {header}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          <div className="results__actions">
-            <button type="button" className="button-primary" onClick={handleExecuteComparison}>
-              Executar comparação com mapeamento
-            </button>
-            <button type="button" className="button-secondary" onClick={() => setShowMappingPanel(false)}>
-              Cancelar
-            </button>
-          </div>
-        </section>
-      )}
-
       <section className="card">
-        <h2>2) Resultado da comparação</h2>
+        <div className="estimativas-header-row">
+          <div>
+            <h2>Resultado da Comparação</h2>
+            <p className="muted">Visualize ausentes, extras e valores divergentes entre os arquivos A e B.</p>
+          </div>
+        </div>
 
-        {!result && !aggregatedResult && <p className="muted">Execute a comparação para visualizar divergências.</p>}
-
-        {aggregatedResult && (
+        {!result ? (
+          <p className="muted">Selecione os arquivos, configure os mapeamentos e execute a comparação.</p>
+        ) : (
           <>
-            <div className="data-compare-summary">
-              <span><strong>Base:</strong> {aggregatedResult.baseFileName}</span>
-              <span><strong>Chaves:</strong> {aggregatedResult.keyFields.join(', ')}</span>
-              <span><strong>Valores:</strong> {aggregatedResult.valueFields.join(', ')}</span>
+            <div className="estimativas-stats">
+              <span>Ausentes no B: {result.summary.missingInTarget}</span>
+              <span>Extras no B: {result.summary.extraInTarget}</span>
+              <span>Valores divergentes: {result.summary.mismatches}</span>
+              <span>Duplicadas A: {result.summary.duplicateKeysInBase}</span>
+              <span>Duplicadas B: {result.summary.duplicateKeysInTarget}</span>
+              <span>Total divergências: {result.issues.length}</span>
             </div>
 
-            <div className="data-compare-filters">
-              <label>
-                Arquivo comparado
-                <select value={aggFileFilter} onChange={(event) => setAggFileFilter(event.target.value)}>
-                  <option value="all">Todos</option>
-                  {aggFileFilterOptions.map((fileName) => (
-                    <option key={fileName} value={fileName}>{fileName}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Status
-                <select
-                  value={aggStatusFilter}
-                  onChange={(event) => setAggStatusFilter(event.target.value as AggregatedGroupStatus | 'all')}
-                >
-                  <option value="all">Todos</option>
-                  <option value="divergent">Valor divergente</option>
-                  <option value="missing_in_target">Ausente no comparado</option>
-                  <option value="extra_in_target">Extra no comparado</option>
-                  <option value="match">OK</option>
-                </select>
-              </label>
-            </div>
-
-            {aggFileSummaries.map((summary) => {
-              const groups =
-                aggStatusFilter === 'all'
-                  ? summary.groups
-                  : summary.groups.filter((g) => g.status === aggStatusFilter)
-              return (
-                <div key={summary.comparedFile} className="data-compare-agg-file">
-                  <div className="data-compare-agg-file__header">
-                    <strong>{summary.comparedFile}</strong>
-                    <span className="data-compare-agg-stats">
-                      <span className="badge badge--success">OK: {summary.matchCount}</span>
-                      {summary.divergentCount > 0 && (
-                        <span className="badge badge--error">Divergentes: {summary.divergentCount}</span>
-                      )}
-                      {summary.missingCount > 0 && (
-                        <span className="badge badge--warning">Ausentes: {summary.missingCount}</span>
-                      )}
-                      {summary.extraCount > 0 && (
-                        <span className="badge badge--info">Extras: {summary.extraCount}</span>
-                      )}
-                    </span>
-                    <span className={`data-compare-agg-total ${Math.abs(summary.totalDifference) > 0 ? 'data-compare-agg-total--diff' : ''}`}>
-                      Diferença total: R$ {formatBrl(summary.totalDifference)}
-                    </span>
-                  </div>
-
-                  <div className="csv-table data-compare-agg-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Chave</th>
-                          <th>Status</th>
-                          <th>Qtd Base</th>
-                          <th>Qtd Comp.</th>
-                          <th>Valor Base (R$)</th>
-                          <th>Valor Comp. (R$)</th>
-                          <th>Diferença (R$)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {groups.map((g) => {
-                          const statusClass =
-                            g.status === 'match'
-                              ? 'agg-row--ok'
-                              : g.status === 'divergent'
-                                ? 'agg-row--diff'
-                                : g.status === 'missing_in_target'
-                                  ? 'agg-row--missing'
-                                  : 'agg-row--extra'
-                          const statusLabel =
-                            g.status === 'match'
-                              ? 'OK'
-                              : g.status === 'divergent'
-                                ? 'Divergente'
-                                : g.status === 'missing_in_target'
-                                  ? 'Ausente'
-                                  : 'Extra'
-                          return (
-                            <tr key={g.key} className={statusClass}>
-                              <td>{g.key}</td>
-                              <td>{statusLabel}</td>
-                              <td>{g.baseCount}</td>
-                              <td>{g.targetCount}</td>
-                              <td className="agg-value">{formatBrl(g.baseTotal)}</td>
-                              <td className="agg-value">{formatBrl(g.targetTotal)}</td>
-                              <td className={`agg-value ${g.difference !== 0 ? 'agg-value--diff' : ''}`}>
-                                {g.difference > 0 ? '+' : ''}{formatBrl(g.difference)}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!groups.length && <p className="muted">Nenhum grupo para os filtros selecionados.</p>}
-                </div>
-              )
-            })}
-          </>
-        )}
-
-        {result && (
-          <>
-            <div className="data-compare-summary">
-              <span><strong>Base:</strong> {result.baseFileName}</span>
-              <span><strong>Campos-chave:</strong> {result.keyFields.join(', ')}</span>
-              <span><strong>Divergências (filtro):</strong> {filteredIssues.length}</span>
-              <span><strong>Divergências (total):</strong> {result.issues.length}</span>
-            </div>
-
-            <div className="data-compare-filters">
+            <div className="estimativas-filters">
               <label>
                 Tipo de divergência
-                <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as IssueFilter)}>
+                <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as 'all' | IssueType)}>
                   <option value="all">Todos</option>
                   <option value="missing_in_target">Ausente no comparado</option>
                   <option value="extra_in_target">Extra no comparado</option>
@@ -1767,186 +1061,78 @@ export default function DataComparisonTool() {
                   <option value="duplicate_key">Chave duplicada</option>
                 </select>
               </label>
+
               <label>
-                Arquivo comparado
-                <select value={fileFilter} onChange={(event) => setFileFilter(event.target.value)}>
-                  <option value="all">Todos</option>
-                  {fileFilterOptions.map((fileName) => (
-                    <option key={fileName} value={fileName}>{fileName}</option>
-                  ))}
-                </select>
+                Filtro por chave
+                <input
+                  type="search"
+                  value={keyFilter}
+                  onChange={(event) => setKeyFilter(event.target.value)}
+                  placeholder="Digite parte da chave"
+                />
               </label>
             </div>
 
-            <div className="csv-table">
+            <div className="estimativas-table ch-table-theme">
               <table>
                 <thead>
                   <tr>
-                    <th>Arquivo</th>
-                    <th>Ausentes</th>
-                    <th>Extras</th>
-                    <th>Divergências</th>
-                    <th>Duplicidades</th>
+                    <th>Tipo</th>
+                    <th>Chave</th>
+                    <th>Mapeamento</th>
+                    <th>Valor A</th>
+                    <th>Valor B</th>
+                    <th>Detalhe</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {result.summaries.map((summary) => (
-                    <tr key={summary.comparedFile}>
-                      <td>{summary.comparedFile}</td>
-                      <td>{summary.missingInTarget}</td>
-                      <td>{summary.extraInTarget}</td>
-                      <td>{summary.mismatches}</td>
-                      <td>{summary.duplicateKeys}</td>
+                  {previewIssues.map((issue, index) => (
+                    <tr key={`${issue.type}-${issue.key}-${issue.field}-${index}`}>
+                      <td>{issueTypeLabel(issue.type)}</td>
+                      <td>{issue.key}</td>
+                      <td>{issue.field}</td>
+                      <td>{issue.baseValue}</td>
+                      <td>{issue.targetValue}</td>
+                      <td>{issue.detail}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="results">
-              <div className="results__header">
-                <strong>Pré-visualização de divergências</strong>
-                <span className="muted">Mostrando até {PREVIEW_LIMIT} itens após filtros</span>
+            {totalResultPages > 1 && (
+              <div className="estimativas-actions" style={{ marginTop: '0.65rem', justifyContent: 'space-between' }}>
+                <span className="muted">
+                  Página {currentResultPage} de {totalResultPages} • {filteredIssues.length} registro(s)
+                </span>
+                <div className="estimativas-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setResultPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentResultPage <= 1}
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setResultPage((prev) => Math.min(prev + 1, totalResultPages))}
+                    disabled={currentResultPage >= totalResultPages}
+                  >
+                    Próxima
+                  </button>
+                </div>
               </div>
-              <ul>
-                {issuePreview.map((issue, index) => (
-                  <li key={`${issue.comparedFile}-${issue.key}-${issue.field}-${index}`}>
-                    <span className="badge">{issueTypeLabel(issue.type)}</span>
-                    <span>
-                      <strong>{issue.comparedFile}</strong> | chave: {issue.key} | campo: {issue.field}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {!filteredIssues.length && <p className="muted">Nenhuma divergência para os filtros selecionados.</p>}
-            </div>
+            )}
+
+            {!previewIssues.length && <p className="muted">Nenhuma divergência para os filtros selecionados.</p>}
+            {filteredIssues.length > RESULT_PAGE_SIZE && (
+              <p className="muted">Mostrando {previewIssues.length} de {filteredIssues.length} divergências.</p>
+            )}
           </>
         )}
       </section>
-
-      <section className="card data-compare-copilot">
-        <h2>3) Análise com GitHub Copilot</h2>
-        <p className="muted">
-          Execute a analise com Copilot para identificar valores do arquivo base ausentes nos arquivos comparados.
-        </p>
-
-        <textarea
-          value={copilotPrompt}
-          readOnly
-          rows={12}
-          placeholder="Após comparar os arquivos, o prompt para Copilot aparecerá aqui."
-        />
-
-        <div className="results__actions">
-          <button
-            type="button"
-            className="button-primary"
-            onClick={handleExecuteCopilotPrompt}
-            disabled={!copilotPrompt.trim() || isAnalyzingCopilot}
-          >
-            {isAnalyzingCopilot ? 'Analisando com Copilot...' : 'Executar análise Copilot'}
-          </button>
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={handleCopyCopilotPrompt}
-            disabled={!copilotPrompt.trim()}
-          >
-            Copiar prompt para Copilot
-          </button>
-          {executedPrompt && <span className="success">Análise executada com sucesso.</span>}
-          {!executedPrompt && copiedPrompt && <span className="success">Prompt copiado.</span>}
-        </div>
-
-        {copilotAnalysisError && <p className="error">{copilotAnalysisError}</p>}
-
-        {copilotAnalysis && (
-          <div className="results" style={{ marginTop: '0.85rem' }}>
-            <div className="results__header">
-              <strong>Diagnóstico do Copilot</strong>
-            </div>
-            <p style={{ marginTop: '0.2rem' }}>{copilotAnalysis.resumoGeral || 'Sem resumo retornado.'}</p>
-
-            {!!copilotAnalysis.arquivos.length && (
-              <div className="data-compare-ai-cards">
-                {copilotAnalysis.arquivos.map((item) => (
-                  <article key={item.comparedFile} className="data-compare-ai-card">
-                    <h4>{item.comparedFile}</h4>
-                    <div className="data-compare-ai-metrics">
-                      <span><strong>Ausentes:</strong> {item.missingCount}</span>
-                      <span><strong>Valor ausente:</strong> R$ {formatBrl(item.missingValueTotal)}</span>
-                    </div>
-                    <p>{item.diagnosis || 'Sem diagnóstico para este arquivo.'}</p>
-                    {!!item.topMissingKeys.length && (
-                      <p className="muted">
-                        <strong>Chaves críticas:</strong> {item.topMissingKeys.join(', ')}
-                      </p>
-                    )}
-                    {!!item.recommendations.length && (
-                      <ul>
-                        {item.recommendations.map((action, index) => (
-                          <li key={`${item.comparedFile}-rec-${index}`}>{action}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
-
-            {!!copilotAnalysis.alertas.length && (
-              <>
-                <strong>Alertas</strong>
-                <ul>
-                  {copilotAnalysis.alertas.map((alerta, index) => (
-                    <li key={`alerta-${index}`}>{alerta}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-
-            {!!copilotAnalysis.planoAcao.length && (
-              <>
-                <strong>Plano de ação</strong>
-                <ol>
-                  {copilotAnalysis.planoAcao.map((step, index) => (
-                    <li key={`plano-${index}`}>{step}</li>
-                  ))}
-                </ol>
-              </>
-            )}
-          </div>
-        )}
-      </section>
-
-      {isExecutePromptModalOpen && (
-        <div
-          className="data-compare-modal-overlay"
-          role="presentation"
-          onClick={handleCancelExecuteCopilotPrompt}
-        >
-          <section
-            className="data-compare-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="data-compare-execute-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3 id="data-compare-execute-modal-title">Executar prompt no GitHub Copilot?</h3>
-            <p className="muted">
-              O Copilot vai analisar as ausencias do arquivo base nos arquivos comparados e montar o diagnostico em tela.
-            </p>
-            <div className="results__actions">
-              <button type="button" className="button-secondary" onClick={handleCancelExecuteCopilotPrompt}>
-                Cancelar
-              </button>
-              <button type="button" className="button-primary" onClick={handleConfirmExecuteCopilotPrompt}>
-                Executar
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
     </div>
   )
 }

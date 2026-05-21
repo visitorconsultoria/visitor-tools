@@ -1,5 +1,6 @@
 export type AllowedMenu =
   | 'process'
+  | 'data-compare'
   | 'xml-excel'
   | 'excel-csv-sqlite'
   | 'resume-ranking'

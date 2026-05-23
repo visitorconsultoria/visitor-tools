@@ -469,6 +469,7 @@ function compareDatasets(
   keyMappings: MappingRule[],
   valueMappings: MappingRule[],
   valueTolerance: number,
+  considerZeroValues: boolean,
 ): ComparisonResult {
   const issues: ComparisonIssue[] = []
 
@@ -519,6 +520,7 @@ function compareDatasets(
       const baseNumeric = parseNumericValue(baseValue)
       const targetNumeric = parseNumericValue(targetValue)
 
+      if (!considerZeroValues && (baseNumeric === 0 || targetNumeric === 0)) return
       if (baseNumeric !== null && targetNumeric !== null) {
         if (isWithinTolerance(baseNumeric, targetNumeric, valueTolerance)) return
 
@@ -661,6 +663,7 @@ export default function DataComparisonTool() {
   const [suggestionMode, setSuggestionMode] = useState<'keys' | 'keys-and-values'>('keys-and-values')
   const [resultPage, setResultPage] = useState(1)
   const [valueTolerance, setValueTolerance] = useState(0.01)
+  const [considerZeroValues, setConsiderZeroValues] = useState(true)
 
   const [mappings, setMappings] = useState<MappingRule[]>([
     { id: 1, type: 'key', baseField: '', targetField: '' },
@@ -857,7 +860,14 @@ export default function DataComparisonTool() {
         throw new Error(details.join(' | '))
       }
 
-      const nextResult = compareDatasets(baseDataset, targetDataset, keyMappings, valueMappings, valueTolerance)
+      const nextResult = compareDatasets(
+        baseDataset,
+        targetDataset,
+        keyMappings,
+        valueMappings,
+        valueTolerance,
+        considerZeroValues,
+      )
       setResult(nextResult)
       setTypeFilter('all')
       setKeyFilter('')
@@ -1025,6 +1035,22 @@ export default function DataComparisonTool() {
           />
         </label>
 
+        <label
+          style={{
+            marginTop: '0.6rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            fontSize: '0.9rem',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={considerZeroValues}
+            onChange={(event) => setConsiderZeroValues(event.target.checked)}
+          />
+          Considerar campos com valor 0 na comparação
+        </label>
         {error && <p className="error">{error}</p>}
         {success && <p className="success">{success}</p>}
       </section>

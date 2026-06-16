@@ -47,6 +47,7 @@ function getSupabaseConfig() {
     customerSystemsTable: process.env.SUPABASE_CUSTOMER_SYSTEMS_TABLE || 'customer_hub_systems',
     customerProcessesTable: process.env.SUPABASE_CUSTOMER_PROCESSES_TABLE || 'customer_hub_processes',
     customerActivitiesTable: process.env.SUPABASE_CUSTOMER_ACTIVITIES_TABLE || 'customer_hub_activities',
+    customerStatusReportHistoryTable: process.env.SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE || 'customer_hub_status_report_history',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
     rubricaRulesTable: process.env.SUPABASE_RUBRICA_RULES_TABLE || 'rubrica_validation_rules',
@@ -93,6 +94,7 @@ function getSupabaseClient() {
     customerSystemsTable: config.customerSystemsTable,
     customerProcessesTable: config.customerProcessesTable,
     customerActivitiesTable: config.customerActivitiesTable,
+    customerStatusReportHistoryTable: config.customerStatusReportHistoryTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
     rubricaRulesTable: config.rubricaRulesTable,
@@ -922,6 +924,7 @@ const CUSTOMER_CONTACT_TYPES = ['comercial', 'servicos', 'tecnico', 'usuario', '
 const CUSTOMER_ACCESS_TYPES = ['vpn', 'servidores', 'protheus', 'outros']
 const CUSTOMER_PROCESS_PERIODICITIES = ['diario', 'semanal', 'quinzenal', 'mensal', 'semestral', 'anual', 'sazonal']
 const CUSTOMER_PROCESS_CRITICALITIES = ['baixa', 'media', 'alta']
+const STATUS_REPORT_PHASES = ['pending', 'typed', 'sent']
 
 function parseCustomerHubIdInput(value, label) {
   const id = Number(String(value ?? '').trim())
@@ -969,7 +972,7 @@ function normalizeCustomerClientRow(row) {
     segmento: String(row.segmento ?? ''),
     cidade: String(row.cidade ?? ''),
     status: normalizeCustomerClientStatus(row.status),
-    parceiro: String(row.parceiro ?? ''),
+    organizations: String(row.organizations ?? ''),
     dataInicio: row.data_inicio ? String(row.data_inicio) : '',
     fonte: normalizeCustomerClientFonte(row.fonte),
   }
@@ -1050,14 +1053,57 @@ function normalizeCustomerActivityRow(row) {
   }
 }
 
+function normalizeStatusReportPhase(value) {
+  const phase = String(value || '').trim().toLowerCase()
+  return STATUS_REPORT_PHASES.includes(phase) ? phase : 'pending'
+}
+
+function normalizeStatusReportHistoryTicket(ticket) {
+  const data = ticket && typeof ticket === 'object' && !Array.isArray(ticket)
+    ? ticket
+    : {}
+
+  return {
+    ticketKey: String(data.ticketKey ?? '').trim(),
+    ticketId: String(data.ticketId ?? '').trim(),
+    protocol: String(data.protocol ?? '').trim(),
+    subject: String(data.subject ?? '').trim(),
+    organizationName: String(data.organizationName ?? '').trim(),
+    sourceStatus: String(data.sourceStatus ?? '').trim(),
+    sourceSituation: String(data.sourceSituation ?? '').trim(),
+    reportStatus: String(data.reportStatus ?? '').trim(),
+    reportPhase: normalizeStatusReportPhase(data.reportPhase),
+  }
+}
+
+function normalizeCustomerStatusReportHistoryRow(row) {
+  const ticketsRaw = Array.isArray(row.tickets_json) ? row.tickets_json : []
+  const tickets = ticketsRaw
+    .map(normalizeStatusReportHistoryTicket)
+    .filter((ticket) => ticket.ticketKey || ticket.protocol || ticket.ticketId || ticket.subject)
+
+  return {
+    id: Number(row.id ?? 0),
+    clientId: Number(row.cliente_id ?? 0),
+    createdByUsername: String(row.created_by_username ?? ''),
+    createdByDisplayName: String(row.created_by_display_name ?? ''),
+    sentAt: String(row.sent_at ?? row.created_at ?? ''),
+    totalTickets: Number(row.total_tickets ?? tickets.length),
+    tickets,
+  }
+}
+
 function parseCustomerClientPayload(payload) {
+  const payloadAsObject = payload && typeof payload === 'object' ? payload : {}
+  const organizations = normalizeOrganizationIds(payloadAsObject.organizations ?? payloadAsObject.partnerOrganizations)
+
   return {
     nome: String(payload.nome ?? '').trim(),
     cnpj: String(payload.cnpj ?? '').trim(),
     segmento: String(payload.segmento ?? '').trim(),
     cidade: String(payload.cidade ?? '').trim(),
     status: normalizeCustomerClientStatus(payload.status),
-    parceiro: String(payload.parceiro ?? '').trim(),
+    organizations: organizations.join(','),
     data_inicio: normalizeDateInput(String(payload.dataInicio ?? '')) || null,
     fonte: normalizeCustomerClientFonte(payload.fonte),
   }
@@ -1171,11 +1217,36 @@ function validateCustomerActivityPayload(parsed) {
   }
 }
 
+function parseCustomerStatusReportHistoryPayload(payload) {
+  const source = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? payload
+    : {}
+  const sentAtRaw = String(source.sentAt ?? '').trim()
+
+  const ticketsInput = Array.isArray(source.tickets) ? source.tickets : []
+  const tickets = ticketsInput
+    .map(normalizeStatusReportHistoryTicket)
+    .filter((ticket) => ticket.ticketKey || ticket.protocol || ticket.ticketId || ticket.subject)
+
+  return {
+    cliente_id: parseCustomerHubIdInput(source.clientId, 'cliente'),
+    sent_at: sentAtRaw || new Date().toISOString(),
+    tickets_json: tickets,
+    total_tickets: tickets.length,
+  }
+}
+
+function validateCustomerStatusReportHistoryPayload(parsed) {
+  if (!Array.isArray(parsed.tickets_json) || parsed.tickets_json.length === 0) {
+    throw new Error('Informe ao menos um ticket enviado para gravar o historico.')
+  }
+}
+
 async function listCustomerClients() {
   const { client, customerClientsTable } = getSupabaseClient()
   const { data: rows, error } = await client
     .from(customerClientsTable)
-    .select('id, nome, cnpj, segmento, cidade, status, parceiro, data_inicio, fonte, created_at')
+    .select('id, nome, cnpj, segmento, cidade, status, organizations, data_inicio, fonte, created_at')
     .order('nome', { ascending: true })
 
   if (error) throw new Error(error.message)
@@ -1190,7 +1261,7 @@ async function createCustomerClient(payload) {
   const { data: row, error } = await client
     .from(customerClientsTable)
     .insert(parsed)
-    .select('id, nome, cnpj, segmento, cidade, status, parceiro, data_inicio, fonte')
+    .select('id, nome, cnpj, segmento, cidade, status, organizations, data_inicio, fonte')
     .single()
 
   if (error) throw new Error(error.message)
@@ -1206,7 +1277,7 @@ async function updateCustomerClient(id, payload) {
     .from(customerClientsTable)
     .update(parsed)
     .eq('id', id)
-    .select('id, nome, cnpj, segmento, cidade, status, parceiro, data_inicio, fonte')
+    .select('id, nome, cnpj, segmento, cidade, status, organizations, data_inicio, fonte')
     .single()
 
   if (error) throw new Error(error.message)
@@ -1556,6 +1627,49 @@ async function deleteCustomerActivity(id) {
   if (error) throw new Error(error.message)
 }
 
+async function listCustomerStatusReportHistory(clientId, limit = 10) {
+  const { client, customerStatusReportHistoryTable } = getSupabaseClient()
+  const safeLimit = Number.isFinite(Number(limit)) && Number(limit) > 0
+    ? Math.min(50, Math.floor(Number(limit)))
+    : 10
+
+  const { data: rows, error } = await client
+    .from(customerStatusReportHistoryTable)
+    .select('id, cliente_id, created_by_username, created_by_display_name, sent_at, total_tickets, tickets_json, created_at')
+    .eq('cliente_id', clientId)
+    .order('sent_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(safeLimit)
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCustomerStatusReportHistoryRow)
+}
+
+async function createCustomerStatusReportHistory(payload, scope) {
+  if (!scope?.username) {
+    throw new Error('Usuario de sessao nao informado.')
+  }
+
+  const parsed = parseCustomerStatusReportHistoryPayload(payload)
+  validateCustomerStatusReportHistoryPayload(parsed)
+
+  const insertPayload = {
+    ...parsed,
+    created_by_username: scope.username,
+    created_by_display_name: String(scope.displayName || '').trim(),
+  }
+
+  const { client, customerStatusReportHistoryTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(customerStatusReportHistoryTable)
+    .insert(insertPayload)
+    .select('id, cliente_id, created_by_username, created_by_display_name, sent_at, total_tickets, tickets_json, created_at')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCustomerStatusReportHistoryRow(row)
+}
+
 async function getCustomerHubBootstrap(scope) {
   const [clientes, contatos, acessos, sistemas, processos, atividades] = await Promise.all([
     listCustomerClients(),
@@ -1581,6 +1695,311 @@ async function getCustomerHubBootstrap(scope) {
     processos,
     atividades,
   }
+}
+
+const TOMTICKET_OPEN_SITUATIONS = '0,1,2,3,6,7,8,9,10,11'
+const STATUS_REPORT_TICKETS_CACHE_TTL_MS = 30_000
+const statusReportTicketsCache = new Map()
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function normalizeTomTicketComparableText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+function parseLinkedTomTicketOrganizationIds(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return []
+
+  const normalized = raw
+    .replace(/\r?\n/g, ',')
+    .replace(/[;|]/g, ',')
+
+  const ids = normalized
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const bracketMatch = item.match(/\[([^\]]+)\]/)
+      return bracketMatch?.[1]?.trim() || item
+    })
+
+  return Array.from(new Set(ids))
+}
+
+function normalizeCustomerStatusReportTicket(ticket) {
+  const extractString = (value) => {
+    if (value == null) return ''
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      const objectValue = value
+      const candidate = objectValue.name ?? objectValue.label ?? objectValue.description ?? objectValue.title ?? objectValue.id
+      return String(candidate ?? '').trim()
+    }
+    return String(value).trim()
+  }
+
+  const readNested = (value, path) => {
+    let current = value
+    for (const segment of path) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined
+      current = current[segment]
+    }
+    return current
+  }
+
+  const pickFirst = (...values) => {
+    for (const value of values) {
+      const parsed = extractString(value)
+      if (parsed) return parsed
+    }
+    return ''
+  }
+
+  const customer = ticket.customer && typeof ticket.customer === 'object' ? ticket.customer : null
+  const organization = ticket.organization && typeof ticket.organization === 'object' ? ticket.organization : null
+
+  return {
+    id: pickFirst(ticket.id, ticket.ticket_id, ticket.ticketId, ticket.id_ticket, ticket.idTicket, ticket.ticket_hash, ticket.hash, readNested(ticket, ['ticket', 'id']), readNested(ticket, ['data', 'id'])),
+    organizationId: pickFirst(organization?.id, ticket.organization_id, ticket.id_organization, ticket.organizationId, ticket.org_id),
+    protocol: pickFirst(ticket.protocol, ticket.ticket_protocol, ticket.number, ticket.protocolo),
+    subject: pickFirst(ticket.subject, ticket.title, ticket.assunto),
+    department: pickFirst(ticket.department_name, ticket.department, ticket.queue_name, ticket.group_name),
+    client: pickFirst(customer?.name, ticket.customer_name, ticket.client_name, ticket.requester_name, ticket.user_name),
+    status: pickFirst(ticket.status_name, ticket.status, ticket.status_label),
+    situation: pickFirst(ticket.situation_name, ticket.situation, ticket.state_name),
+    organizationName: pickFirst(organization?.name, ticket.organization_name, ticket.org_name, ticket.company_name),
+    createdAt: pickFirst(ticket.creation_date, ticket.created_at, ticket.created, ticket.created_date, ticket.opened_at, ticket.date_create),
+    updatedAt: pickFirst(ticket.updated_at, ticket.updated, ticket.last_update, ticket.date_update),
+  }
+}
+
+function ticketMatchesCustomer(ticket, customerName) {
+  const needle = normalizeTomTicketComparableText(customerName)
+  if (!needle) return false
+
+  const haystack = normalizeTomTicketComparableText([
+    ticket.client,
+    ticket.organizationName,
+    ticket.subject,
+    ticket.department,
+    ticket.status,
+    ticket.situation,
+  ].filter(Boolean).join(' '))
+
+  if (!haystack) return false
+  if (haystack.includes(needle) || needle.includes(haystack)) return true
+
+  const tokens = needle.split(/\s+/).filter((token) => token.length >= 3)
+  return tokens.some((token) => haystack.includes(token))
+}
+
+function isTomTicketFinalized(ticket) {
+  const rawSituation = String(ticket.situation ?? '').trim()
+  if (rawSituation === '5') {
+    return true
+  }
+
+  const normalizedSituation = normalizeTomTicketComparableText(ticket.situation)
+  return normalizedSituation === 'finalizado'
+}
+
+function parseTomTicketDate(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed
+}
+
+function isExcludedFromStatusReport(ticket) {
+  const marker = 'sustentacao continuada'
+  const haystack = normalizeTomTicketComparableText([
+    ticket.subject,
+    ticket.department,
+    ticket.client,
+    ticket.organizationName,
+    ticket.status,
+    ticket.situation,
+  ].filter(Boolean).join(' '))
+
+  return haystack.includes(marker)
+}
+
+function getStatusReportTicketMatchKey(ticket) {
+  return [
+    String(ticket.id || '').trim(),
+    String(ticket.protocol || '').trim(),
+    String(ticket.subject || '').trim().toLowerCase(),
+    String(ticket.organizationId || '').trim(),
+  ].join('|')
+}
+
+async function listOpenTicketHubTicketsForUsername(username, situationFilter = TOMTICKET_OPEN_SITUATIONS, organizationIds = null) {
+  const userAccess = await getTicketHubUserAccessByUsername(username)
+  if (!TOMTICKET_API_TOKEN) {
+    throw new Error('Token TomTicket não configurado no servidor.')
+  }
+
+  const requestedOrganizationIds = Array.isArray(organizationIds)
+    ? normalizeOrganizationIds(organizationIds)
+    : []
+  const userOrganizationIds = normalizeOrganizationIds(userAccess.organizations)
+  const allowedOrganizationIds = new Set(userOrganizationIds)
+  const scopedOrganizationIds = requestedOrganizationIds.length
+    ? (userAccess.isVisitor
+      ? requestedOrganizationIds
+      : requestedOrganizationIds.filter((organizationId) => allowedOrganizationIds.has(organizationId)))
+    : userOrganizationIds
+
+  const cacheOrganizations = requestedOrganizationIds.length
+    ? [...scopedOrganizationIds].sort((a, b) => String(a).localeCompare(String(b)))
+    : (userAccess.isVisitor
+      ? ['*visitor*']
+      : [...userOrganizationIds].sort((a, b) => String(a).localeCompare(String(b))))
+  const cacheKey = JSON.stringify({
+    username,
+    organizations: cacheOrganizations,
+    situationFilter: String(situationFilter ?? ''),
+  })
+  const cachedEntry = statusReportTicketsCache.get(cacheKey)
+  if (cachedEntry && (Date.now() - Number(cachedEntry.createdAt ?? 0)) < STATUS_REPORT_TICKETS_CACHE_TTL_MS) {
+    return cachedEntry.tickets
+  }
+
+  const maxTomTicketPagesRaw = Number(process.env.TOMTICKET_STATUS_REPORT_MAX_PAGES || '1000')
+  const maxTomTicketPages = Number.isFinite(maxTomTicketPagesRaw) && maxTomTicketPagesRaw > 0
+    ? Math.floor(maxTomTicketPagesRaw)
+    : 1000
+  const headers = {
+    'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+    'Content-Type': 'application/json',
+  }
+
+  const fetchTomTicketList = async (organizationId = '', page = 1, sit = situationFilter) => {
+    const url = new URL(`${TOMTICKET_API_BASE_URL}/ticket/list`)
+    url.searchParams.set('page', String(page))
+    if (organizationId) {
+      url.searchParams.set('organization_id', organizationId)
+    }
+    const finalUrl = sit ? `${url.toString()}&situation=${sit}` : url.toString()
+
+    const maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const response = await fetch(finalUrl, { method: 'GET', headers })
+
+      if (response.status === 429) {
+        if (attempt === maxAttempts) {
+          throw new Error('TomTicket atingiu limite de requisições (429). Tente novamente em alguns segundos.')
+        }
+
+        const retryAfterRaw = Number(response.headers.get('retry-after') || '')
+        const retryAfterMs = Number.isFinite(retryAfterRaw) && retryAfterRaw > 0
+          ? retryAfterRaw * 1000
+          : attempt * 900
+        await waitMs(retryAfterMs)
+        continue
+      }
+
+      if (!response.ok) {
+        const detail = await response.text()
+        throw new Error(detail || `Erro ${response.status} na API TomTicket.`)
+      }
+
+      return response.json()
+    }
+
+    throw new Error('Falha ao consultar chamados no TomTicket.')
+  }
+
+  const fetchTomTicketListAllPages = async (organizationId = '', sit = situationFilter) => {
+    const mapByKey = new Map()
+    let repeatedPagesWithoutNewItems = 0
+
+    for (let page = 1; page <= maxTomTicketPages; page += 1) {
+      let data
+      try {
+        data = await fetchTomTicketList(organizationId, page, sit)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error ?? '')
+        if (/page not found/i.test(detail) || /"errorcode"\s*:\s*404/i.test(detail)) {
+          break
+        }
+        throw error
+      }
+
+      const items = extractTomTicketTickets(data)
+      if (!items.length) break
+
+      let addedInPage = 0
+      for (const item of items) {
+        const key = JSON.stringify(item)
+        if (!mapByKey.has(key)) {
+          mapByKey.set(key, item)
+          addedInPage += 1
+        }
+      }
+
+      if (addedInPage === 0) {
+        repeatedPagesWithoutNewItems += 1
+      } else {
+        repeatedPagesWithoutNewItems = 0
+      }
+
+      if (repeatedPagesWithoutNewItems >= 2) break
+    }
+
+    return Array.from(mapByKey.values())
+  }
+
+  let tickets = []
+  try {
+    if (!requestedOrganizationIds.length && userAccess.isVisitor) {
+      tickets = await fetchTomTicketListAllPages('', situationFilter)
+    } else if (!scopedOrganizationIds.length) {
+      tickets = []
+    } else {
+      const mapByKey = new Map()
+      for (const organizationId of scopedOrganizationIds) {
+        try {
+          const items = await fetchTomTicketListAllPages(organizationId, situationFilter)
+          for (const item of items) {
+            const key = JSON.stringify(item)
+            if (!mapByKey.has(key)) {
+              mapByKey.set(key, item)
+            }
+          }
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error ?? '')
+          if (/organization not found/i.test(detail)) {
+            continue
+          }
+          throw error
+        }
+      }
+      tickets = Array.from(mapByKey.values())
+    }
+  } catch (error) {
+    if (cachedEntry?.tickets) {
+      return cachedEntry.tickets
+    }
+    throw error
+  }
+
+  const normalizedTickets = tickets.map(normalizeCustomerStatusReportTicket)
+  statusReportTicketsCache.set(cacheKey, {
+    createdAt: Date.now(),
+    tickets: normalizedTickets,
+  })
+
+  return normalizedTickets
 }
 
 const SYSTEM_PROMPT = `Voce e um especialista em recrutamento e selecao de RH. Analise o curriculo fornecido em relacao a descricao da vaga e retorne SOMENTE um objeto JSON valido, sem texto adicional, com exatamente esta estrutura:
@@ -2070,6 +2489,185 @@ app.get('/api/customer-hub/bootstrap', async (req, res) => {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     const status = /sessao nao informado/i.test(detail) ? 403 : 500
     return res.status(status).json({ error: `Falha ao carregar Central de Clientes: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/organizations', async (req, res) => {
+  try {
+    const scope = getSessionUserFromRequest(req)
+    const organizations = await listTicketHubOrganizationsForScope(scope)
+    return res.json({ organizations })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /sessao nao informado/i.test(detail) ? 403 : /acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao carregar organizacoes: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/status-report', async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    res.set('Pragma', 'no-cache')
+    res.set('Expires', '0')
+
+    const scope = getSessionUserFromRequest(req)
+    const clientIdRaw = Array.isArray(req.query.clientId) ? req.query.clientId[0] : req.query.clientId
+    const organizationIdsRaw = Array.isArray(req.query.organizationIds) ? req.query.organizationIds.join(',') : req.query.organizationIds
+    const { client, customerClientsTable } = getSupabaseClient()
+    let clientData = null
+
+    const queryOrganizationIds = parseLinkedTomTicketOrganizationIds(organizationIdsRaw)
+    let linkedOrganizationIds = queryOrganizationIds
+
+    if (clientIdRaw != null && String(clientIdRaw).trim()) {
+      const clientId = parseCustomerHubIdInput(clientIdRaw, 'cliente')
+
+      const { data: clientRow, error: clientError } = await client
+        .from(customerClientsTable)
+        .select('id, nome, cnpj, segmento, cidade, status, organizations, data_inicio, fonte, created_at')
+        .eq('id', clientId)
+        .maybeSingle()
+
+      if (clientError) throw new Error(clientError.message)
+      if (!clientRow) {
+        return res.status(404).json({ error: 'Cliente não encontrado.' })
+      }
+
+      clientData = normalizeCustomerClientRow(clientRow)
+      if (!linkedOrganizationIds.length) {
+        linkedOrganizationIds = parseLinkedTomTicketOrganizationIds(clientData.organizations)
+      }
+    }
+
+    const userAccess = await getTicketHubUserAccessByUsername(scope.username)
+    const allowedOrganizationIds = new Set(normalizeOrganizationIds(userAccess.organizations))
+    const matchedOrganizationIds = userAccess.isVisitor
+      ? linkedOrganizationIds
+      : linkedOrganizationIds.filter((organizationId) => allowedOrganizationIds.has(organizationId))
+
+    if (!matchedOrganizationIds.length) {
+      return res.json({
+        client: clientData,
+        tickets: [],
+        totalTickets: 0,
+        dashboard: {
+          periodDays: 15,
+          openedLast15Days: 0,
+          finalizedLast15Days: 0,
+          openedPrevious15Days: 0,
+          finalizedPrevious15Days: 0,
+        },
+      })
+    }
+
+    const tickets = await listOpenTicketHubTicketsForUsername(
+      scope.username,
+      TOMTICKET_OPEN_SITUATIONS,
+      matchedOrganizationIds,
+    )
+    const nonFinalizedTickets = tickets
+      .filter((ticket) => !isTomTicketFinalized(ticket))
+      .filter((ticket) => !isExcludedFromStatusReport(ticket))
+
+    const matchedTickets = Array.from(new Map(
+      nonFinalizedTickets.map((ticket) => [getStatusReportTicketMatchKey(ticket), ticket]),
+    ).values())
+
+    const ticketsFor15dWindow = await listOpenTicketHubTicketsForUsername(
+      scope.username,
+      '',
+      matchedOrganizationIds,
+    )
+    const now = Date.now()
+    const fifteenDaysInMs = 15 * 24 * 60 * 60 * 1000
+    const periodStartMs = now - fifteenDaysInMs
+    const previousPeriodStartMs = now - (fifteenDaysInMs * 2)
+
+    const openedLast15Days = ticketsFor15dWindow.filter((ticket) => {
+      const createdAt = parseTomTicketDate(ticket.createdAt)
+      if (!createdAt) return false
+      return createdAt.getTime() >= periodStartMs
+    }).length
+
+    const openedPrevious15Days = ticketsFor15dWindow.filter((ticket) => {
+      const createdAt = parseTomTicketDate(ticket.createdAt)
+      if (!createdAt) return false
+      const createdAtMs = createdAt.getTime()
+      return createdAtMs >= previousPeriodStartMs && createdAtMs < periodStartMs
+    }).length
+
+    const finalizedLast15Days = ticketsFor15dWindow.filter((ticket) => {
+      if (!isTomTicketFinalized(ticket)) return false
+
+      const updatedAt = parseTomTicketDate(ticket.updatedAt)
+      const createdAt = parseTomTicketDate(ticket.createdAt)
+      const referenceDate = updatedAt || createdAt
+      if (!referenceDate) return false
+      return referenceDate.getTime() >= periodStartMs
+    }).length
+
+    const finalizedPrevious15Days = ticketsFor15dWindow.filter((ticket) => {
+      if (!isTomTicketFinalized(ticket)) return false
+
+      const updatedAt = parseTomTicketDate(ticket.updatedAt)
+      const createdAt = parseTomTicketDate(ticket.createdAt)
+      const referenceDate = updatedAt || createdAt
+      if (!referenceDate) return false
+
+      const referenceDateMs = referenceDate.getTime()
+      return referenceDateMs >= previousPeriodStartMs && referenceDateMs < periodStartMs
+    }).length
+
+    return res.json({
+      client: clientData,
+      tickets: matchedTickets,
+      totalTickets: matchedTickets.length,
+      dashboard: {
+        periodDays: 15,
+        openedLast15Days,
+        finalizedLast15Days,
+        openedPrevious15Days,
+        finalizedPrevious15Days,
+      },
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /sessao nao informado/i.test(detail) ? 403 : /acesso negado/i.test(detail) ? 403 : 500
+    return res.status(status).json({ error: `Falha ao carregar status report: ${detail}` })
+  }
+})
+
+app.get('/api/customer-hub/status-report/history', async (req, res) => {
+  try {
+    const scope = getSessionUserFromRequest(req)
+    const clientIdRaw = Array.isArray(req.query.clientId) ? req.query.clientId[0] : req.query.clientId
+    const clientId = parseCustomerHubIdInput(clientIdRaw, 'cliente')
+    const limitRaw = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit
+    const limit = Number(String(limitRaw ?? '').trim() || '10')
+
+    const items = await listCustomerStatusReportHistory(clientId, limit)
+    return res.json({
+      clientId,
+      items,
+      total: items.length,
+      requestedBy: scope.username,
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /sessao nao informado/i.test(detail) ? 403 : 400
+    return res.status(status).json({ error: `Falha ao carregar historico do status report: ${detail}` })
+  }
+})
+
+app.post('/api/customer-hub/status-report/history', async (req, res) => {
+  try {
+    const scope = getSessionUserFromRequest(req)
+    const item = await createCustomerStatusReportHistory(req.body || {}, scope)
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    const status = /sessao nao informado/i.test(detail) ? 403 : 400
+    return res.status(status).json({ error: `Falha ao gravar historico do status report: ${detail}` })
   }
 })
 
@@ -2616,6 +3214,50 @@ function extractTomTicketOrganizations(payload) {
   return Array.from(mapById.values())
 }
 
+async function listTicketHubOrganizationsForScope(scope) {
+  if (!TOMTICKET_API_TOKEN) {
+    return []
+  }
+
+  let userAccess
+  try {
+    userAccess = await getTicketHubUserAccessByUsername(scope.username)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error ?? '')
+    if (/acesso negado|nao encontrado|sessao/i.test(detail)) {
+      return []
+    }
+    throw error
+  }
+
+  const response = await fetch(`${TOMTICKET_API_BASE_URL}/organization/list`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${TOMTICKET_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(detail || `Erro ${response.status} na API TomTicket (organizations).`)
+  }
+
+  const data = await response.json()
+  const organizations = extractTomTicketOrganizations(data)
+
+  if (userAccess.isVisitor) {
+    return organizations
+  }
+
+  const allowedOrganizations = new Set(normalizeOrganizationIds(userAccess.organizations))
+  if (!allowedOrganizations.size) {
+    return []
+  }
+
+  return organizations.filter((item) => allowedOrganizations.has(String(item.id)))
+}
+
 app.get('/api/ticket-hub/organizations', async (_req, res) => {
   if (!TOMTICKET_API_TOKEN) {
     return res.status(500).json({ error: 'Token TomTicket não configurado no servidor.' })
@@ -2649,6 +3291,18 @@ function normalizeOrganizationIds(organizations) {
     ? organizations.map((item) => String(item ?? '').trim()).filter(Boolean)
     : []
   return Array.from(new Set(normalized))
+}
+
+function extractTicketDetailOrganizationIds(detailData) {
+  const ids = [
+    detailData?.customer?.organization?.id,
+    detailData?.organization?.id,
+    detailData?.organization_id,
+    detailData?.id_organization,
+    detailData?.org_id,
+  ]
+
+  return normalizeOrganizationIds(ids)
 }
 
 function extractTomTicketTickets(payload) {
@@ -3292,14 +3946,11 @@ async function handleTicketHubTicketDetail(req, res) {
     }
 
     if (!userAccess.isVisitor) {
-      const orgId = String(
-        detailData?.customer?.organization?.id
-        ?? detailData?.organization?.id
-        ?? detailData?.organization_id
-        ?? '',
-      ).trim()
+      const allowedOrganizationIds = new Set(normalizeOrganizationIds(userAccess.organizations))
+      const ticketOrganizationIds = extractTicketDetailOrganizationIds(detailData)
+      const hasAllowedOrganization = ticketOrganizationIds.some((organizationId) => allowedOrganizationIds.has(organizationId))
 
-      if (orgId && !userAccess.organizations.includes(orgId)) {
+      if (ticketOrganizationIds.length > 0 && !hasAllowedOrganization) {
         return res.status(403).json({ error: 'Acesso negado para este chamado.' })
       }
     }
@@ -3360,14 +4011,11 @@ app.post('/api/ticket-hub/tickets/reply/operator', async (req, res) => {
     const detailData = detailPayload?.data && typeof detailPayload.data === 'object' ? detailPayload.data : detailPayload
 
     if (!userAccess.isVisitor) {
-      const orgId = String(
-        detailData?.customer?.organization?.id
-        ?? detailData?.organization?.id
-        ?? detailData?.organization_id
-        ?? '',
-      ).trim()
+      const allowedOrganizationIds = new Set(normalizeOrganizationIds(userAccess.organizations))
+      const ticketOrganizationIds = extractTicketDetailOrganizationIds(detailData)
+      const hasAllowedOrganization = ticketOrganizationIds.some((organizationId) => allowedOrganizationIds.has(organizationId))
 
-      if (orgId && !userAccess.organizations.includes(orgId)) {
+      if (ticketOrganizationIds.length > 0 && !hasAllowedOrganization) {
         return res.status(403).json({ error: 'Acesso negado para responder este chamado.' })
       }
     }

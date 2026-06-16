@@ -1,8 +1,10 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { jsPDF } from 'jspdf'
 import { apiUrl } from '../lib/api'
+import visitorLogo from '../assets/vistor_logo_verde2.png'
 
-export type CustomerHubPage = 'dashboard' | 'clientes' | 'contatos' | 'acessos' | 'sistemas' | 'processos' | 'historico'
+export type CustomerHubPage = 'dashboard' | 'clientes' | 'status-report' | 'contatos' | 'acessos' | 'sistemas' | 'processos' | 'historico'
 
 type ClienteStatus = 'Ativo' | 'Inativo' | 'Em Implantacao'
 type ClienteFonte = 'interno' | 'totvs' | 'outros'
@@ -44,7 +46,7 @@ type Cliente = {
   segmento: string
   cidade: string
   status: ClienteStatus
-  parceiro: string
+  organizations: string
   dataInicio: string
   fonte: ClienteFonte
 }
@@ -114,6 +116,129 @@ type Atividade = {
   observacoes: string
 }
 
+type StatusReportTicket = {
+  id: string
+  protocol: string
+  subject: string
+  department: string
+  client: string
+  status: string
+  situation: string
+  organizationName: string
+  createdAt: string
+  updatedAt: string
+}
+
+type StatusReportTicketAttachment = {
+  name: string
+  url: string
+}
+
+type StatusReportTicketReply = {
+  id: string
+  sender: string
+  senderType: string
+  date: string
+  message: string
+}
+
+type StatusReportTicketDetail = {
+  id: string
+  protocol: string
+  subject: string
+  customerName: string
+  organizationName: string
+  departmentName: string
+  categoryName: string
+  operatorName: string
+  status: string
+  priority: string
+  createdAt: string
+  updatedAt: string
+  firstReplyAt: string
+  endAt: string
+  message: string
+  attachments: StatusReportTicketAttachment[]
+  replies: StatusReportTicketReply[]
+}
+
+type StatusReportPhase = 'pending' | 'typed' | 'sent'
+
+type StatusReportResponse = {
+  client: Cliente | null
+  tickets: StatusReportTicket[]
+  dashboard?: {
+    periodDays?: number
+    openedLast15Days?: number
+    finalizedLast15Days?: number
+    openedPrevious15Days?: number
+    finalizedPrevious15Days?: number
+  }
+}
+
+type StatusReportHistoryTicket = {
+  ticketKey: string
+  ticketId: string
+  protocol: string
+  subject: string
+  organizationName: string
+  sourceStatus: string
+  sourceSituation: string
+  reportStatus: string
+  reportPhase: StatusReportPhase
+}
+
+type StatusReportHistoryEntry = {
+  id: string
+  clientId: string
+  createdByUsername: string
+  createdByDisplayName: string
+  sentAt: string
+  totalTickets: number
+  tickets: StatusReportHistoryTicket[]
+}
+
+type StatusReportHistoryResponse = {
+  items: StatusReportHistoryEntry[]
+}
+
+type StatusReportPdfTicket = {
+  protocol: string
+  subject: string
+  organizationName: string
+  sourceStatus: string
+  sourceSituation: string
+  reportStatus: string
+  reportPhase: StatusReportPhase
+  updatedAt: string
+}
+
+type StatusReportPdfPayload = {
+  clientName: string
+  clientCnpj: string
+  sentAt: string
+  generatedBy: string
+  tickets: StatusReportPdfTicket[]
+  comparison?: {
+    periodDays: number
+    openedCurrent: number
+    openedPrevious: number
+    finalizedCurrent: number
+    finalizedPrevious: number
+    reportCurrentTotal: number
+    reportPreviousTotal: number
+    reportAdded: number
+    reportKept: number
+    reportRemoved: number
+    previousReportSentAt?: string
+  }
+}
+
+type CustomerHubOrganization = {
+  id: string
+  name: string
+}
+
 type ModalState<T> = { open: boolean; data: Partial<T> }
 
 function emptyModal<T>(): ModalState<T> {
@@ -137,6 +262,162 @@ function formatCnpj(value: string, padTo14 = false): string {
   return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`
 }
 
+function formatReportDateTime(value: string): string {
+  const input = String(value || '').trim()
+  if (!input) return '—'
+
+  const parsed = new Date(input)
+  if (Number.isNaN(parsed.getTime())) return input
+
+  return parsed.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+function stripHtmlToText(value: string): string {
+  const html = String(value || '').trim()
+  if (!html) return ''
+  if (typeof DOMParser === 'undefined') return html
+
+  const parser = new DOMParser()
+  const parsed = parser.parseFromString(html, 'text/html')
+  return String(parsed.body.textContent || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+let visitorLogoDataUrlPromise: Promise<string | null> | null = null
+
+function toSafePdfFilename(input: string): string {
+  return String(input || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+async function loadImageAsDataUrl(src: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = image.width
+        canvas.height = image.height
+        const context = canvas.getContext('2d')
+        if (!context) {
+          resolve(null)
+          return
+        }
+
+        context.drawImage(image, 0, 0)
+        resolve(canvas.toDataURL('image/png'))
+      } catch {
+        resolve(null)
+      }
+    }
+    image.onerror = () => resolve(null)
+    image.src = src
+  })
+}
+
+async function getVisitorLogoDataUrl(): Promise<string | null> {
+  if (!visitorLogoDataUrlPromise) {
+    visitorLogoDataUrlPromise = loadImageAsDataUrl(visitorLogo)
+  }
+  return visitorLogoDataUrlPromise
+}
+
+function normalizeStatusReportTicketDetail(payload: Record<string, unknown>): StatusReportTicketDetail {
+  const asRecord = (value: unknown): Record<string, unknown> => (
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {}
+  )
+
+  const readText = (...values: unknown[]): string => {
+    for (const value of values) {
+      const text = String(value ?? '').trim()
+      if (text) return text
+    }
+    return ''
+  }
+
+  const customer = asRecord(payload.customer)
+  const customerOrganization = asRecord(customer.organization)
+  const department = asRecord(payload.department)
+  const category = asRecord(payload.category)
+  const operator = asRecord(payload.operator)
+  const situation = asRecord(payload.situation)
+
+  const priorityMap: Record<string, string> = {
+    '1': 'Baixa',
+    '2': 'Normal',
+    '3': 'Alta',
+    '4': 'Urgente',
+  }
+
+  const priorityRaw = readText(payload.priority)
+  const priority = priorityMap[priorityRaw] ?? priorityRaw
+
+  const attachments = Array.isArray(payload.attachments)
+    ? payload.attachments
+      .map((item) => {
+        const attachment = asRecord(item)
+        return {
+          name: readText(attachment.name, attachment.filename),
+          url: readText(attachment.url, attachment.link),
+        }
+      })
+      .filter((item) => item.name || item.url)
+    : []
+
+  const replies = Array.isArray(payload.replies)
+    ? payload.replies
+      .map((item) => {
+        const reply = asRecord(item)
+        return {
+          id: readText(reply.id),
+          sender: readText(reply.sender),
+          senderType: readText(reply.sender_type),
+          date: readText(reply.date),
+          message: stripHtmlToText(readText(reply.message)),
+        }
+      })
+      .filter((item) => item.sender || item.message || item.date)
+    : []
+
+  return {
+    id: readText(payload.id),
+    protocol: readText(payload.protocol),
+    subject: readText(payload.subject),
+    customerName: readText(customer.name),
+    organizationName: readText(customerOrganization.name, payload.organization_name),
+    departmentName: readText(department.name),
+    categoryName: readText(category.name),
+    operatorName: readText(operator.name),
+    status: readText(situation.description, payload.status),
+    priority,
+    createdAt: readText(payload.creation_date),
+    updatedAt: readText(payload.updated_at, payload.update_date),
+    firstReplyAt: readText(payload.first_reply_date),
+    endAt: readText(payload.end_date),
+    message: stripHtmlToText(readText(payload.message)),
+    attachments,
+    replies,
+  }
+}
+
 // Convert API rows (numeric IDs) to frontend strings
 function mapCliente(r: Record<string, unknown>): Cliente {
   return {
@@ -146,7 +427,7 @@ function mapCliente(r: Record<string, unknown>): Cliente {
     segmento: String(r.segmento ?? ''),
     cidade: String(r.cidade ?? ''),
     status: (r.status as ClienteStatus) ?? 'Ativo',
-    parceiro: String(r.parceiro ?? ''),
+    organizations: String(r.organizations ?? ''),
     dataInicio: String(r.dataInicio ?? ''),
     fonte: (r.fonte as ClienteFonte) ?? 'interno',
   }
@@ -227,7 +508,17 @@ function mapAtividade(r: Record<string, unknown>): Atividade {
   }
 }
 
-export default function CustomerHubTool({ subPage, currentUsername, currentDisplayName }: { subPage: CustomerHubPage; currentUsername: string; currentDisplayName: string }) {
+export default function CustomerHubTool({
+  subPage,
+  currentUsername,
+  currentDisplayName,
+  onOpenStatusReport,
+}: {
+  subPage: CustomerHubPage
+  currentUsername: string
+  currentDisplayName: string
+  onOpenStatusReport?: (clientId: string) => void
+}) {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [contatos, setContatos] = useState<Contato[]>([])
   const [acessos, setAcessos] = useState<Acesso[]>([])
@@ -252,6 +543,12 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
     setSistemaModal(emptyModal())
     setProcessoModal(emptyModal())
     setAtividadeModal(emptyModal())
+    setStatusReportTicketModal(emptyModal())
+    setStatusReportTicketDetailModalOpen(false)
+    setStatusReportTicketDetailSource(null)
+    setStatusReportTicketDetail(null)
+    setStatusReportTicketDetailError(null)
+    setStatusReportTicketDetailLoading(false)
   }
 
   const [filterClienteId, setFilterClienteId] = useState('')
@@ -261,6 +558,37 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
   const [sistemaSearch, setSistemaSearch] = useState('')
   const [processoSearch, setProcessoSearch] = useState('')
   const [atividadeSearch, setAtividadeSearch] = useState('')
+  const [statusReportClientId, setStatusReportClientId] = useState('')
+  const [statusReportTickets, setStatusReportTickets] = useState<StatusReportTicket[]>([])
+  const [statusReportTicketStatuses, setStatusReportTicketStatuses] = useState<Record<string, string>>({})
+  const [statusReportTicketPhases, setStatusReportTicketPhases] = useState<Record<string, StatusReportPhase>>({})
+  const [statusReportTicketModal, setStatusReportTicketModal] = useState<ModalState<{ ticketKey: string; status: string }>>(emptyModal())
+  const [statusReportTicketDetailModalOpen, setStatusReportTicketDetailModalOpen] = useState(false)
+  const [statusReportTicketDetailSource, setStatusReportTicketDetailSource] = useState<StatusReportTicket | null>(null)
+  const [statusReportTicketDetail, setStatusReportTicketDetail] = useState<StatusReportTicketDetail | null>(null)
+  const [statusReportTicketDetailLoading, setStatusReportTicketDetailLoading] = useState(false)
+  const [statusReportTicketDetailError, setStatusReportTicketDetailError] = useState<string | null>(null)
+  const [statusReportClient, setStatusReportClient] = useState<Cliente | null>(null)
+  const [statusReportLoading, setStatusReportLoading] = useState(false)
+  const [statusReportError, setStatusReportError] = useState<string | null>(null)
+  const [statusReportPeriodDashboard, setStatusReportPeriodDashboard] = useState({
+    periodDays: 15,
+    openedLast15Days: 0,
+    finalizedLast15Days: 0,
+    openedPrevious15Days: 0,
+    finalizedPrevious15Days: 0,
+  })
+  const [statusReportHistory, setStatusReportHistory] = useState<StatusReportHistoryEntry[]>([])
+  const [statusReportHistoryLoading, setStatusReportHistoryLoading] = useState(false)
+  const [statusReportHistoryError, setStatusReportHistoryError] = useState<string | null>(null)
+  const [statusReportSubmitting, setStatusReportSubmitting] = useState(false)
+  const [statusReportPdfExporting, setStatusReportPdfExporting] = useState(false)
+  const [statusReportRefreshToken, setStatusReportRefreshToken] = useState(0)
+  const [customerHubOrganizations, setCustomerHubOrganizations] = useState<CustomerHubOrganization[]>([])
+  const [customerHubOrganizationsLoading, setCustomerHubOrganizationsLoading] = useState(false)
+  const [customerHubOrganizationsError, setCustomerHubOrganizationsError] = useState<string | null>(null)
+  const [organizationDropdownOpen, setOrganizationDropdownOpen] = useState(false)
+  const organizationDropdownRef = useRef<HTMLDivElement | null>(null)
 
   const requestHeaders = useMemo<Record<string, string>>(() => {
     const headers: Record<string, string> = {}
@@ -300,6 +628,43 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
   }, [requestHeaders])
 
   useEffect(() => {
+    let cancelled = false
+
+    const loadOrganizations = async () => {
+      setCustomerHubOrganizationsLoading(true)
+      setCustomerHubOrganizationsError(null)
+
+      try {
+        const response = await fetch(apiUrl('/api/customer-hub/organizations'), {
+          headers: requestHeaders,
+          cache: 'no-store',
+        })
+        const body = await response.json() as { organizations?: CustomerHubOrganization[]; error?: string }
+
+        if (!response.ok) {
+          throw new Error(body?.error ?? 'Erro ao carregar organizações da central de chamados.')
+        }
+
+        if (cancelled) return
+        setCustomerHubOrganizations(Array.isArray(body.organizations) ? body.organizations : [])
+      } catch (err) {
+        if (cancelled) return
+        setCustomerHubOrganizations([])
+        setCustomerHubOrganizationsError(err instanceof Error ? err.message : 'Erro ao carregar organizações da central de chamados.')
+      } finally {
+        if (!cancelled) {
+          setCustomerHubOrganizationsLoading(false)
+        }
+      }
+    }
+
+    void loadOrganizations()
+    return () => {
+      cancelled = true
+    }
+  }, [requestHeaders])
+
+  useEffect(() => {
     const hasOpenModal = (
       clienteModal.open
       || contatoModal.open
@@ -307,6 +672,8 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
       || sistemaModal.open
       || processoModal.open
       || atividadeModal.open
+      || statusReportTicketModal.open
+      || statusReportTicketDetailModalOpen
     )
 
     if (!hasOpenModal) return
@@ -319,10 +686,73 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
 
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [clienteModal.open, contatoModal.open, acessoModal.open, sistemaModal.open, processoModal.open, atividadeModal.open])
+  }, [clienteModal.open, contatoModal.open, acessoModal.open, sistemaModal.open, processoModal.open, atividadeModal.open, statusReportTicketModal.open, statusReportTicketDetailModalOpen])
+
+  useEffect(() => {
+    if (!clienteModal.open) {
+      setOrganizationDropdownOpen(false)
+    }
+  }, [clienteModal.open])
+
+  useEffect(() => {
+    if (!organizationDropdownOpen) return
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (organizationDropdownRef.current?.contains(target)) return
+      setOrganizationDropdownOpen(false)
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [organizationDropdownOpen])
 
   const getClienteNome = (id: string) => clientes.find((c) => c.id === id)?.nome ?? '-'
   const getContatoNome = (id: string) => contatos.find((c) => c.id === id)?.nome ?? '-'
+
+  const getPartnerOrganizationIds = (value: string): string[] => {
+    const raw = String(value ?? '').trim()
+    if (!raw) return []
+
+    const normalized = raw
+      .replace(/\r?\n/g, ',')
+      .replace(/[;|]/g, ',')
+
+    const ids = normalized
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const bracketMatch = item.match(/\[([^\]]+)\]/)
+        return bracketMatch?.[1]?.trim() || item
+      })
+
+    return Array.from(new Set(ids))
+  }
+
+  const organizationNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    customerHubOrganizations.forEach((organization) => {
+      map.set(String(organization.id), String(organization.name))
+    })
+    return map
+  }, [customerHubOrganizations])
+
+  const availableOrganizationIds = useMemo(() => new Set(customerHubOrganizations.map((organization) => String(organization.id))), [customerHubOrganizations])
+
+  const normalizeSelectedOrganizationIds = (value: string): string[] => {
+    const ids = getPartnerOrganizationIds(value)
+    return ids.filter((id) => availableOrganizationIds.has(id))
+  }
+
+  const formatPartnerOrganizationsLabel = (value: string): string => {
+    const ids = normalizeSelectedOrganizationIds(value)
+    if (!ids.length) return '—'
+
+    const names = ids.map((id) => organizationNameById.get(id) ?? `ID ${id}`)
+    return names.join(', ')
+  }
 
   const stats = useMemo(() => ({
     totalClientes: clientes.length,
@@ -334,6 +764,633 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
     totalSistemas: sistemas.length,
     totalAtividades: atividades.length,
   }), [clientes, contatos, acessos, sistemas, atividades])
+
+  const selectedStatusReportClient = useMemo(
+    () => statusReportClient ?? clientes.find((cliente) => cliente.id === statusReportClientId) ?? null,
+    [clientes, statusReportClient, statusReportClientId],
+  )
+
+  const getStatusReportTicketKey = (ticket: StatusReportTicket) => (
+    `${ticket.id || ''}|${ticket.protocol || ''}|${ticket.subject || ''}`
+  )
+
+  const getStatusReportTicketPhase = (ticketKey: string): StatusReportPhase => {
+    const explicitPhase = statusReportTicketPhases[ticketKey]
+    if (explicitPhase) return explicitPhase
+
+    const hasTypedStatus = Boolean(statusReportTicketStatuses[ticketKey]?.trim())
+    return hasTypedStatus ? 'typed' : 'pending'
+  }
+
+  const getStatusReportPhaseLabel = (phase: StatusReportPhase): string => {
+    if (phase === 'sent') return 'Enviado'
+    if (phase === 'typed') return 'Digitado'
+    return 'Pendente'
+  }
+
+  const getStatusReportPhaseClassName = (phase: StatusReportPhase): string => {
+    if (phase === 'sent') return 'sent'
+    if (phase === 'typed') return 'completed'
+    return 'pending'
+  }
+
+  const lastReportedStatusByTicketRef = useMemo(() => {
+    const map = new Map<string, string>()
+
+    for (const historyEntry of statusReportHistory) {
+      for (const historyTicket of historyEntry.tickets ?? []) {
+        const reportStatus = String(historyTicket.reportStatus || '').trim()
+        if (!reportStatus) continue
+
+        const refs = [
+          String(historyTicket.ticketKey || '').trim(),
+          String(historyTicket.ticketId || '').trim(),
+          String(historyTicket.protocol || '').trim(),
+        ].filter(Boolean)
+
+        for (const ref of refs) {
+          if (!map.has(ref)) {
+            map.set(ref, reportStatus)
+          }
+        }
+      }
+    }
+
+    return map
+  }, [statusReportHistory])
+
+  const openStatusReportTicketModal = (ticket: StatusReportTicket) => {
+    const ticketKey = getStatusReportTicketKey(ticket)
+    const currentStatus = String(statusReportTicketStatuses[ticketKey] || '').trim()
+    const fallbackStatus = (
+      lastReportedStatusByTicketRef.get(ticketKey)
+      || lastReportedStatusByTicketRef.get(String(ticket.id || '').trim())
+      || lastReportedStatusByTicketRef.get(String(ticket.protocol || '').trim())
+      || ''
+    )
+
+    setStatusReportTicketModal({
+      open: true,
+      data: {
+        ticketKey,
+        status: currentStatus || fallbackStatus,
+      },
+    })
+  }
+
+  const saveStatusReportTicketStatus = () => {
+    const ticketKey = String(statusReportTicketModal.data.ticketKey ?? '').trim()
+    if (!ticketKey) return
+
+    const statusValue = String(statusReportTicketModal.data.status ?? '').trim()
+    setStatusReportTicketStatuses((prev) => {
+      if (!statusValue) {
+        if (!Object.prototype.hasOwnProperty.call(prev, ticketKey)) return prev
+        const next = { ...prev }
+        delete next[ticketKey]
+        return next
+      }
+
+      return {
+        ...prev,
+        [ticketKey]: statusValue,
+      }
+    })
+
+    setStatusReportTicketPhases((prev) => {
+      const currentPhase = prev[ticketKey]
+      if (!statusValue) {
+        if (currentPhase === 'pending' || !currentPhase) return prev
+        return {
+          ...prev,
+          [ticketKey]: 'pending',
+        }
+      }
+
+      if (currentPhase === 'sent') return prev
+      return {
+        ...prev,
+        [ticketKey]: 'typed',
+      }
+    })
+
+    setStatusReportTicketModal(emptyModal())
+  }
+
+  const closeStatusReportTicketDetailModal = () => {
+    setStatusReportTicketDetailModalOpen(false)
+    setStatusReportTicketDetailSource(null)
+    setStatusReportTicketDetail(null)
+    setStatusReportTicketDetailError(null)
+    setStatusReportTicketDetailLoading(false)
+  }
+
+  const openStatusReportTicketDetailModal = async (ticket: StatusReportTicket) => {
+    const ticketId = String(ticket.id || '').trim()
+    setStatusReportTicketDetailSource(ticket)
+    setStatusReportTicketDetailModalOpen(true)
+    setStatusReportTicketDetail(null)
+    setStatusReportTicketDetailError(null)
+
+    if (!ticketId) {
+      setStatusReportTicketDetailError('Este chamado não possui ID válido para consulta de detalhes.')
+      return
+    }
+
+    setStatusReportTicketDetailLoading(true)
+
+    try {
+      const params = new URLSearchParams({ ticket_id: ticketId })
+      const response = await fetch(apiUrl(`/api/ticket-hub/tickets/detail?${params.toString()}`), {
+        headers: requestHeaders,
+      })
+
+      const bodyText = await response.text()
+      const body = (bodyText ? JSON.parse(bodyText) : null) as { detail?: Record<string, unknown>; error?: string } | null
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? 'Não foi possível carregar o detalhe do chamado.')
+      }
+
+      if (!body?.detail || typeof body.detail !== 'object') {
+        throw new Error('Resposta inválida ao buscar detalhe do chamado.')
+      }
+
+      setStatusReportTicketDetail(normalizeStatusReportTicketDetail(body.detail))
+    } catch (err) {
+      setStatusReportTicketDetailError(err instanceof Error ? err.message : 'Não foi possível carregar o detalhe do chamado.')
+    } finally {
+      setStatusReportTicketDetailLoading(false)
+    }
+  }
+
+  const setStatusReportTicketPhase = (ticket: StatusReportTicket, phase: StatusReportPhase) => {
+    const ticketKey = getStatusReportTicketKey(ticket)
+
+    setStatusReportTicketPhases((prev) => {
+      if (prev[ticketKey] === phase) return prev
+      return {
+        ...prev,
+        [ticketKey]: phase,
+      }
+    })
+  }
+
+  const statusReportSentTicketItems = useMemo(() => {
+    return statusReportTickets
+      .map((ticket) => {
+        const ticketKey = getStatusReportTicketKey(ticket)
+        const phase = getStatusReportTicketPhase(ticketKey)
+        return {
+          ticket,
+          ticketKey,
+          phase,
+        }
+      })
+      .filter((item) => item.phase === 'sent')
+  }, [statusReportTicketPhases, statusReportTicketStatuses, statusReportTickets])
+
+  const statusReportOrderedHistory = useMemo(() => {
+    return [...statusReportHistory].sort((a, b) => {
+      const timeA = new Date(a.sentAt || '').getTime()
+      const timeB = new Date(b.sentAt || '').getTime()
+      return timeB - timeA
+    })
+  }, [statusReportHistory])
+
+  const statusReportLatestHistory = useMemo(() => statusReportOrderedHistory[0] ?? null, [statusReportOrderedHistory])
+  const statusReportPreviousHistory = useMemo(() => statusReportOrderedHistory[1] ?? null, [statusReportOrderedHistory])
+
+  const statusReportComparison = useMemo(() => {
+    const currentSet = new Set((statusReportLatestHistory?.tickets ?? []).map((ticket) => ticket.ticketKey))
+    const previousSet = new Set((statusReportPreviousHistory?.tickets ?? []).map((ticket) => ticket.ticketKey))
+
+    const added = Array.from(currentSet).filter((key) => !previousSet.has(key))
+    const kept = Array.from(currentSet).filter((key) => previousSet.has(key))
+    const removed = Array.from(previousSet).filter((key) => !currentSet.has(key))
+
+    return {
+      currentTotal: currentSet.size,
+      previousTotal: previousSet.size,
+      added: added.length,
+      kept: kept.length,
+      removed: removed.length,
+    }
+  }, [statusReportLatestHistory, statusReportPreviousHistory])
+
+  const statusReportFortnightChartRows = useMemo(() => {
+    const rows = [
+      {
+        id: 'opened',
+        label: 'Abertos',
+        current: Number(statusReportPeriodDashboard.openedLast15Days ?? 0),
+        previous: Number(statusReportPeriodDashboard.openedPrevious15Days ?? 0),
+        currentColor: '#2563eb',
+        previousColor: '#93c5fd',
+      },
+      {
+        id: 'finalized',
+        label: 'Finalizados',
+        current: Number(statusReportPeriodDashboard.finalizedLast15Days ?? 0),
+        previous: Number(statusReportPeriodDashboard.finalizedPrevious15Days ?? 0),
+        currentColor: '#0f766e',
+        previousColor: '#99f6e4',
+      },
+    ]
+
+    const maxValue = Math.max(1, ...rows.flatMap((row) => [row.current, row.previous]))
+    return rows.map((row) => ({
+      ...row,
+      currentPercent: Math.max(6, Math.round((row.current / maxValue) * 100)),
+      previousPercent: Math.max(6, Math.round((row.previous / maxValue) * 100)),
+      delta: row.current - row.previous,
+    }))
+  }, [statusReportPeriodDashboard])
+
+  const handleSendStatusReport = async () => {
+    if (!statusReportClientId) {
+      alert('Selecione um cliente para enviar o status report.')
+      return
+    }
+
+    if (!statusReportSentTicketItems.length) {
+      alert('Marque ao menos um ticket como enviado antes de gravar o historico.')
+      return
+    }
+
+    setStatusReportSubmitting(true)
+    setStatusReportHistoryError(null)
+
+    try {
+      const generatedBy = currentDisplayName.trim() || currentUsername.trim() || 'Usuário'
+      const payload = {
+        clientId: statusReportClientId,
+        sentAt: new Date().toISOString(),
+        tickets: statusReportSentTicketItems.map(({ ticket, ticketKey, phase }) => ({
+          ticketKey,
+          ticketId: ticket.id,
+          protocol: ticket.protocol,
+          subject: ticket.subject,
+          organizationName: ticket.organizationName,
+          sourceStatus: ticket.status,
+          sourceSituation: ticket.situation,
+          reportStatus: statusReportTicketStatuses[ticketKey] ?? '',
+          reportPhase: phase,
+        })),
+      }
+
+      const response = await fetch(apiUrl('/api/customer-hub/status-report/history'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...requestHeaders },
+        body: JSON.stringify(payload),
+      })
+      const bodyText = await response.text()
+      const body = (bodyText ? JSON.parse(bodyText) : null) as { item?: StatusReportHistoryEntry; error?: string } | null
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? 'Erro ao gravar historico do status report.')
+      }
+
+      if (body?.item) {
+        setStatusReportHistory((prev) => [body.item as StatusReportHistoryEntry, ...prev])
+      }
+
+      const pdfTickets: StatusReportPdfTicket[] = statusReportSentTicketItems.map(({ ticket, ticketKey, phase }) => ({
+        protocol: String(ticket.protocol || ticket.id || '').trim(),
+        subject: String(ticket.subject || '').trim(),
+        organizationName: String(ticket.organizationName || '').trim(),
+        sourceStatus: String(ticket.status || '').trim(),
+        sourceSituation: String(ticket.situation || '').trim(),
+        reportStatus: String(statusReportTicketStatuses[ticketKey] || '').trim(),
+        reportPhase: phase,
+        updatedAt: String(ticket.updatedAt || ticket.createdAt || payload.sentAt).trim(),
+      }))
+
+      const currentReportTicketKeys = new Set(statusReportSentTicketItems.map((item) => item.ticketKey))
+      const previousReportTicketKeys = new Set((statusReportLatestHistory?.tickets ?? []).map((ticket) => ticket.ticketKey))
+      const reportAdded = Array.from(currentReportTicketKeys).filter((key) => !previousReportTicketKeys.has(key)).length
+      const reportKept = Array.from(currentReportTicketKeys).filter((key) => previousReportTicketKeys.has(key)).length
+      const reportRemoved = Array.from(previousReportTicketKeys).filter((key) => !currentReportTicketKeys.has(key)).length
+
+      const exportPayload: StatusReportPdfPayload = {
+        clientName: selectedStatusReportClient?.nome || 'Cliente',
+        clientCnpj: selectedStatusReportClient?.cnpj || '',
+        sentAt: payload.sentAt,
+        generatedBy,
+        tickets: pdfTickets,
+        comparison: {
+          periodDays: Number(statusReportPeriodDashboard.periodDays ?? 15),
+          openedCurrent: Number(statusReportPeriodDashboard.openedLast15Days ?? 0),
+          openedPrevious: Number(statusReportPeriodDashboard.openedPrevious15Days ?? 0),
+          finalizedCurrent: Number(statusReportPeriodDashboard.finalizedLast15Days ?? 0),
+          finalizedPrevious: Number(statusReportPeriodDashboard.finalizedPrevious15Days ?? 0),
+          reportCurrentTotal: currentReportTicketKeys.size,
+          reportPreviousTotal: previousReportTicketKeys.size,
+          reportAdded,
+          reportKept,
+          reportRemoved,
+          previousReportSentAt: statusReportLatestHistory?.sentAt,
+        },
+      }
+
+      setStatusReportPdfExporting(true)
+      try {
+        await generateStatusReportPdf(exportPayload)
+      } catch (pdfError) {
+        console.error(pdfError)
+        alert('Status report gravado, mas nao foi possivel gerar o PDF.')
+      } finally {
+        setStatusReportPdfExporting(false)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao gravar historico do status report.'
+      setStatusReportHistoryError(message)
+      alert(message)
+    } finally {
+      setStatusReportSubmitting(false)
+    }
+  }
+
+  const generateStatusReportPdf = async (report: StatusReportPdfPayload) => {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+    const margin = 38
+    const contentWidth = pageWidth - margin * 2
+    const lineHeightFactor = 1.35
+    let y = margin
+
+    const drawHeader = async (firstPage: boolean) => {
+      const headerHeight = firstPage ? 106 : 84
+      doc.setFillColor(231, 242, 238)
+      doc.roundedRect(margin, y, contentWidth, headerHeight, 12, 12, 'F')
+
+      const logoDataUrl = await getVisitorLogoDataUrl()
+      if (logoDataUrl) {
+        const logoHeight = firstPage ? 52 : 42
+        const logoProps = doc.getImageProperties(logoDataUrl)
+        const logoRatio = logoProps.width / logoProps.height
+        const logoWidth = logoHeight * logoRatio
+        const logoX = margin + 14
+        const logoY = y + (headerHeight - logoHeight) / 2
+        doc.addImage(logoDataUrl, 'PNG', logoX, logoY, logoWidth, logoHeight)
+      }
+
+      doc.setTextColor(20, 66, 57)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(firstPage ? 19 : 15)
+      doc.text('Status Report', pageWidth - margin - 14, y + (firstPage ? 34 : 29), { align: 'right' })
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+      doc.setTextColor(43, 91, 82)
+      doc.text(`Cliente: ${report.clientName || '—'}`, pageWidth - margin - 14, y + (firstPage ? 54 : 47), { align: 'right' })
+      doc.text(`Enviado em: ${formatReportDateTime(report.sentAt)}`, pageWidth - margin - 14, y + (firstPage ? 70 : 62), { align: 'right' })
+
+      if (firstPage) {
+        const cnpjLabel = report.clientCnpj ? formatCnpj(report.clientCnpj, true) : '—'
+        doc.text(`CNPJ: ${cnpjLabel}`, pageWidth - margin - 14, y + 86, { align: 'right' })
+      }
+
+      y += headerHeight + 16
+    }
+
+    const ensureSpace = async (required: number) => {
+      if (y + required <= pageHeight - margin - 34) return
+      doc.addPage()
+      y = margin
+      await drawHeader(false)
+    }
+
+    const drawWrappedText = (
+      text: string,
+      x: number,
+      yPos: number,
+      width: number,
+      size = 10,
+      style: 'normal' | 'bold' = 'normal',
+      color: [number, number, number] = [37, 52, 50],
+    ) => {
+      doc.setFont('helvetica', style)
+      doc.setFontSize(size)
+      doc.setTextColor(color[0], color[1], color[2])
+      const lines = doc.splitTextToSize(text || '—', width)
+      doc.text(lines, x, yPos, { lineHeightFactor })
+      return lines.length * size * lineHeightFactor
+    }
+
+    await drawHeader(true)
+
+    await ensureSpace(70)
+    doc.setFillColor(245, 248, 247)
+    doc.roundedRect(margin, y, contentWidth, 62, 10, 10, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(29, 74, 65)
+    doc.text('Resumo executivo', margin + 14, y + 22)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(57, 80, 74)
+    doc.text(`Total de tickets enviados: ${report.tickets.length}`, margin + 14, y + 40)
+    doc.text(`Responsável: ${report.generatedBy || '—'}`, margin + 210, y + 40)
+    y += 80
+
+    if (report.comparison) {
+      const comparison = report.comparison
+      const blockHeight = 214
+      await ensureSpace(blockHeight)
+
+      const periodLabel = comparison.periodDays > 0 ? `${comparison.periodDays} dias` : '15 dias'
+      const maxBase = Math.max(1, comparison.openedCurrent, comparison.openedPrevious, comparison.finalizedCurrent, comparison.finalizedPrevious)
+
+      const drawMetricRow = (
+        yPos: number,
+        label: string,
+        current: number,
+        previous: number,
+        currentColor: [number, number, number],
+        previousColor: [number, number, number],
+      ) => {
+        const barMaxWidth = 210
+        const currentWidth = Math.max(8, Math.round((Math.max(0, current) / maxBase) * barMaxWidth))
+        const previousWidth = Math.max(8, Math.round((Math.max(0, previous) / maxBase) * barMaxWidth))
+        const delta = current - previous
+        const barStartX = margin + 128
+        const rightX = margin + contentWidth - 14
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(37, 62, 56)
+        doc.text(label, margin + 14, yPos)
+        doc.text(`Δ ${delta >= 0 ? '+' : ''}${delta}`, rightX, yPos, { align: 'right' })
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.setTextColor(81, 101, 96)
+        doc.text(`Quinzena atual: ${current}`, margin + 14, yPos + 16)
+        doc.text(`Quinzena anterior: ${previous}`, margin + 14, yPos + 38)
+
+        const currentBarY = yPos + 10
+        const previousBarY = yPos + 32
+
+        doc.setFillColor(232, 238, 236)
+        doc.roundedRect(barStartX, currentBarY, barMaxWidth, 8, 4, 4, 'F')
+        doc.roundedRect(barStartX, previousBarY, barMaxWidth, 8, 4, 4, 'F')
+
+        doc.setFillColor(currentColor[0], currentColor[1], currentColor[2])
+        doc.roundedRect(barStartX, currentBarY, currentWidth, 8, 4, 4, 'F')
+        doc.setFillColor(previousColor[0], previousColor[1], previousColor[2])
+        doc.roundedRect(barStartX, previousBarY, previousWidth, 8, 4, 4, 'F')
+      }
+
+      doc.setFillColor(243, 248, 246)
+      doc.roundedRect(margin, y, contentWidth, blockHeight - 14, 10, 10, 'F')
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.setTextColor(24, 71, 62)
+      doc.text('Dashboard Comparativo', margin + 14, y + 22)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(72, 92, 87)
+      doc.text(`Período: ${periodLabel}`, margin + 14, y + 38)
+      doc.text(
+        `Report anterior: ${comparison.previousReportSentAt ? formatReportDateTime(comparison.previousReportSentAt) : '—'} | Total anterior: ${comparison.reportPreviousTotal}`,
+        margin + 14,
+        y + 52,
+      )
+      doc.text(
+        `Enviados (atual): ${comparison.reportCurrentTotal} | Novos: ${comparison.reportAdded} | Mantidos: ${comparison.reportKept} | Removidos: ${comparison.reportRemoved}`,
+        margin + 14,
+        y + 66,
+      )
+
+      drawMetricRow(y + 92, 'Abertos', comparison.openedCurrent, comparison.openedPrevious, [37, 99, 235], [147, 197, 253])
+      drawMetricRow(y + 146, 'Finalizados', comparison.finalizedCurrent, comparison.finalizedPrevious, [15, 118, 110], [153, 246, 228])
+
+      y += blockHeight
+    }
+
+    await ensureSpace(30)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(18, 66, 58)
+    doc.text('Tickets reportados', margin, y)
+    y += 18
+
+    for (const [index, ticket] of report.tickets.entries()) {
+      const reportStatusText = ticket.reportStatus || 'Sem status informado'
+      const ticketStatusText = ticket.sourceStatus || ticket.sourceSituation || '—'
+      const sourceSituationText = ticket.sourceSituation || '—'
+      const updatedAtText = formatReportDateTime(ticket.updatedAt)
+
+      const subjectLines = doc.splitTextToSize(ticket.subject || 'Sem assunto', contentWidth - 28)
+      const reportStatusLines = doc.splitTextToSize(`Status report: ${reportStatusText}`, contentWidth - 28)
+      const cardHeight = Math.max(94, 56 + (subjectLines.length + reportStatusLines.length) * 12)
+
+      await ensureSpace(cardHeight + 10)
+
+      doc.setFillColor(255, 255, 255)
+      doc.setDrawColor(217, 228, 224)
+      doc.roundedRect(margin, y, contentWidth, cardHeight, 10, 10, 'FD')
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.setTextColor(20, 66, 57)
+      doc.text(`${index + 1}. Ticket ${ticket.protocol || '—'}`, margin + 12, y + 19)
+      doc.text(`Status: ${ticketStatusText}`, pageWidth - margin - 12, y + 19, { align: 'right' })
+
+      let cardY = y + 36
+      const subjectHeight = drawWrappedText(ticket.subject || 'Sem assunto', margin + 12, cardY, contentWidth - 24, 10, 'bold', [41, 64, 59])
+      cardY += subjectHeight + 5
+      const reportStatusHeight = drawWrappedText(`Status report: ${reportStatusText}`, margin + 12, cardY, contentWidth - 24, 10, 'normal', [47, 63, 60])
+      cardY += reportStatusHeight + 5
+      drawWrappedText(`Situação: ${sourceSituationText}`, margin + 12, cardY, contentWidth - 24, 9, 'normal', [77, 93, 90])
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(96, 114, 110)
+      doc.text(`Atualização: ${updatedAtText}`, pageWidth - margin - 12, y + cardHeight - 12, { align: 'right' })
+
+      y += cardHeight + 10
+    }
+
+    const pages = doc.getNumberOfPages()
+    for (let page = 1; page <= pages; page += 1) {
+      doc.setPage(page)
+      doc.setDrawColor(225, 235, 232)
+      doc.line(margin, pageHeight - 28, pageWidth - margin, pageHeight - 28)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(98, 112, 109)
+      doc.text('Visitor Consultoria - Status Report', margin, pageHeight - 14)
+      doc.text(`Página ${page} de ${pages}`, pageWidth - margin, pageHeight - 14, { align: 'right' })
+    }
+
+    const safeClient = toSafePdfFilename(report.clientName || 'cliente') || 'cliente'
+    const datePart = String(report.sentAt || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+    doc.save(`status-report-${safeClient}-${datePart}.pdf`)
+  }
+
+  const handleDownloadHistoryStatusReportPdf = async (entry: StatusReportHistoryEntry) => {
+    if (!selectedStatusReportClient) {
+      alert('Selecione um cliente para exportar o PDF do historico.')
+      return
+    }
+
+    const exportPayload: StatusReportPdfPayload = {
+      clientName: selectedStatusReportClient.nome,
+      clientCnpj: selectedStatusReportClient.cnpj,
+      sentAt: entry.sentAt,
+      generatedBy: entry.createdByDisplayName || entry.createdByUsername || 'Usuário',
+      tickets: (entry.tickets || []).map((ticket) => ({
+        protocol: String(ticket.protocol || ticket.ticketId || '').trim(),
+        subject: String(ticket.subject || '').trim(),
+        organizationName: String(ticket.organizationName || '').trim(),
+        sourceStatus: String(ticket.sourceStatus || '').trim(),
+        sourceSituation: String(ticket.sourceSituation || '').trim(),
+        reportStatus: String(ticket.reportStatus || '').trim(),
+        reportPhase: ticket.reportPhase,
+        updatedAt: String(entry.sentAt || '').trim(),
+      })),
+      comparison: {
+        periodDays: Number(statusReportPeriodDashboard.periodDays ?? 15),
+        openedCurrent: Number(statusReportPeriodDashboard.openedLast15Days ?? 0),
+        openedPrevious: Number(statusReportPeriodDashboard.openedPrevious15Days ?? 0),
+        finalizedCurrent: Number(statusReportPeriodDashboard.finalizedLast15Days ?? 0),
+        finalizedPrevious: Number(statusReportPeriodDashboard.finalizedPrevious15Days ?? 0),
+        reportCurrentTotal: Number(statusReportComparison.currentTotal ?? 0),
+        reportPreviousTotal: Number(statusReportComparison.previousTotal ?? 0),
+        reportAdded: Number(statusReportComparison.added ?? 0),
+        reportKept: Number(statusReportComparison.kept ?? 0),
+        reportRemoved: Number(statusReportComparison.removed ?? 0),
+        previousReportSentAt: statusReportPreviousHistory?.sentAt,
+      },
+    }
+
+    setStatusReportPdfExporting(true)
+    try {
+      await generateStatusReportPdf(exportPayload)
+    } catch (pdfError) {
+      console.error(pdfError)
+      alert('Nao foi possivel gerar o PDF do historico selecionado.')
+    } finally {
+      setStatusReportPdfExporting(false)
+    }
+  }
+
+  const handleOpenStatusReport = (clienteId: string) => {
+    setStatusReportClientId(clienteId)
+    setStatusReportClient(null)
+    setStatusReportTickets([])
+    setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+    setStatusReportTicketStatuses({})
+    setStatusReportTicketPhases({})
+    setStatusReportTicketModal(emptyModal())
+    closeStatusReportTicketDetailModal()
+    setStatusReportError(null)
+    onOpenStatusReport?.(clienteId)
+  }
 
   // CRUD — Clientes
   const handleSaveCliente = async () => {
@@ -350,9 +1407,10 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
     const payload = {
       ...d,
       cnpj: normalizeCnpjDigits(String(d.cnpj ?? '')),
+      organizations: normalizeSelectedOrganizationIds(String(d.organizations ?? '')),
     }
     try {
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...requestHeaders }, body: JSON.stringify(payload) })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
       const saved = mapCliente(body.item as Record<string, unknown>)
@@ -554,6 +1612,154 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
     }
   }
 
+  useEffect(() => {
+    if (subPage !== 'status-report') return
+
+    if (!statusReportClientId && filterClienteId) {
+      setStatusReportClientId(filterClienteId)
+    }
+  }, [filterClienteId, statusReportClientId, subPage])
+
+  useEffect(() => {
+    if (subPage !== 'status-report') return
+
+    if (!statusReportClientId) {
+      setStatusReportClient(null)
+      setStatusReportTickets([])
+      closeStatusReportTicketDetailModal()
+      setStatusReportError(null)
+      setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+      setStatusReportLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    const loadStatusReport = async () => {
+      setStatusReportLoading(true)
+      setStatusReportError(null)
+
+      try {
+        const selectedClient = clientes.find((cliente) => cliente.id === statusReportClientId) ?? null
+        const organizationIds = getPartnerOrganizationIds(String(selectedClient?.organizations ?? ''))
+
+        if (!organizationIds.length) {
+          if (!cancelled) {
+            setStatusReportClient(selectedClient)
+            setStatusReportTickets([])
+            setStatusReportError(null)
+            setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+          }
+          return
+        }
+
+        const response = await fetch(apiUrl(`/api/customer-hub/status-report?organizationIds=${encodeURIComponent(organizationIds.join(','))}`), {
+          headers: requestHeaders,
+          cache: 'no-store',
+        })
+
+        if (response.status === 304) {
+          if (!cancelled) {
+            setStatusReportError(null)
+          }
+          return
+        }
+
+        const bodyText = await response.text()
+        const body = (bodyText ? JSON.parse(bodyText) : null) as (StatusReportResponse & { error?: string }) | null
+
+        if (!response.ok) {
+          throw new Error(body?.error ?? 'Erro ao carregar o status report.')
+        }
+
+        if (cancelled) return
+
+        setStatusReportClient(body?.client ?? selectedClient)
+        setStatusReportTickets(Array.isArray(body?.tickets) ? body.tickets : [])
+        setStatusReportPeriodDashboard({
+          periodDays: Number(body?.dashboard?.periodDays ?? 15),
+          openedLast15Days: Number(body?.dashboard?.openedLast15Days ?? 0),
+          finalizedLast15Days: Number(body?.dashboard?.finalizedLast15Days ?? 0),
+          openedPrevious15Days: Number(body?.dashboard?.openedPrevious15Days ?? 0),
+          finalizedPrevious15Days: Number(body?.dashboard?.finalizedPrevious15Days ?? 0),
+        })
+      } catch (err) {
+        if (!cancelled) {
+          setStatusReportClient(null)
+          setStatusReportTickets([])
+          setStatusReportError(err instanceof Error ? err.message : 'Erro ao carregar o status report.')
+          setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+        }
+      } finally {
+        if (!cancelled) {
+          setStatusReportLoading(false)
+        }
+      }
+    }
+
+    void loadStatusReport()
+
+    return () => {
+      cancelled = true
+    }
+  }, [clientes, requestHeaders, statusReportClientId, statusReportRefreshToken, subPage])
+
+  useEffect(() => {
+    if (subPage !== 'status-report') return
+
+    if (!statusReportClientId) {
+      setStatusReportHistory([])
+      setStatusReportHistoryError(null)
+      setStatusReportHistoryLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    const loadHistory = async () => {
+      setStatusReportHistoryLoading(true)
+      setStatusReportHistoryError(null)
+
+      try {
+        const response = await fetch(apiUrl(`/api/customer-hub/status-report/history?clientId=${encodeURIComponent(statusReportClientId)}&limit=12`), {
+          headers: requestHeaders,
+          cache: 'no-store',
+        })
+        const bodyText = await response.text()
+        const body = (bodyText ? JSON.parse(bodyText) : null) as (StatusReportHistoryResponse & { error?: string }) | null
+
+        if (!response.ok) {
+          throw new Error(body?.error ?? 'Erro ao carregar historico do status report.')
+        }
+
+        if (cancelled) return
+        setStatusReportHistory(Array.isArray(body?.items) ? body.items : [])
+      } catch (err) {
+        if (cancelled) return
+        setStatusReportHistory([])
+        setStatusReportHistoryError(err instanceof Error ? err.message : 'Erro ao carregar historico do status report.')
+      } finally {
+        if (!cancelled) {
+          setStatusReportHistoryLoading(false)
+        }
+      }
+    }
+
+    void loadHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [requestHeaders, statusReportClientId, subPage, statusReportRefreshToken])
+
+  useEffect(() => {
+    if (subPage !== 'status-report') return
+    setStatusReportTicketStatuses({})
+    setStatusReportTicketPhases({})
+    setStatusReportTicketModal(emptyModal())
+    setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+  }, [statusReportClientId, subPage])
+
   const filteredClientes = clientes.filter((c) => {
     const term = clienteSearch.trim().toLowerCase()
     if (!term) return true
@@ -565,6 +1771,7 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
       c.cidade,
       CLIENTE_FONTE_LABEL[c.fonte] ?? c.fonte,
       CLIENTE_STATUS_LABEL[c.status] ?? c.status,
+      formatPartnerOrganizationsLabel(c.organizations),
     ]
       .join(' ')
       .toLowerCase()
@@ -600,7 +1807,7 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
     const haystack = [
       getClienteNome(a.clienteId),
       ACESSO_TIPO_LABEL[a.tipo],
-      a.nome,
+      formatPartnerOrganizationsLabel(clientes.find((cliente) => cliente.id === a.clienteId)?.organizations ?? ''),
       a.endereco,
       a.usuario,
       a.senha,
@@ -681,6 +1888,27 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
     const isEdit = Boolean(d.id)
     const cnpjDigits = normalizeCnpjDigits(String(d.cnpj ?? ''))
     const hasCnpjError = cnpjDigits.length > 0 && cnpjDigits.length !== 14
+    const selectedOrganizationIds = normalizeSelectedOrganizationIds(String(d.organizations ?? ''))
+    const selectedOrganizationNames = selectedOrganizationIds
+      .map((id) => organizationNameById.get(id) ?? `ID ${id}`)
+      .filter(Boolean)
+
+    const togglePartnerOrganization = (organizationId: string, enabled: boolean) => {
+      setClienteModal((m) => ({
+        ...m,
+        data: {
+          ...m.data,
+          organizations: (() => {
+            const currentIds = getPartnerOrganizationIds(String(m.data.organizations ?? ''))
+            const filteredCurrentIds = currentIds.filter((id) => availableOrganizationIds.has(id))
+            const nextIds = enabled
+              ? Array.from(new Set([...filteredCurrentIds, organizationId]))
+              : filteredCurrentIds.filter((id) => id !== organizationId)
+            return nextIds.join(',')
+          })(),
+        },
+      }))
+    }
 
     return (
       createPortal(
@@ -726,13 +1954,59 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
                 </select>
               </label>
               <label>
-                Parceiro
+                Fonte
                 <select value={d.fonte ?? 'interno'} onChange={(e) => setClienteModal((m) => ({ ...m, data: { ...m.data, fonte: e.target.value as ClienteFonte } }))}>
                   <option value="interno">Interno</option>
                   <option value="totvs">Totvs</option>
                   <option value="outros">Outros</option>
                 </select>
               </label>
+              <div className="estimativas-form__full ch-org-select-field">
+                <span>Organizações vinculadas (Central de Chamados)</span>
+                {customerHubOrganizationsLoading ? (
+                  <span className="muted">Carregando organizações disponíveis...</span>
+                ) : customerHubOrganizations.length === 0 ? (
+                  <span className="muted">Nenhuma organização disponível para o seu usuário.</span>
+                ) : (
+                  <div className="ch-org-select" ref={organizationDropdownRef}>
+                    <button
+                      type="button"
+                      className="ch-org-select__trigger"
+                      onClick={() => setOrganizationDropdownOpen((prev) => !prev)}
+                      aria-expanded={organizationDropdownOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <span>
+                        {selectedOrganizationIds.length > 0
+                          ? selectedOrganizationNames.length <= 2
+                            ? selectedOrganizationNames.join(', ')
+                            : `${selectedOrganizationNames.slice(0, 2).join(', ')} +${selectedOrganizationNames.length - 2}`
+                          : 'Selecione as organizações'}
+                      </span>
+                      <span className="ch-org-select__caret" aria-hidden="true">▾</span>
+                    </button>
+                    {organizationDropdownOpen && (
+                      <div className="ch-org-select__dropdown" role="listbox" aria-label="Organizações disponíveis">
+                        {customerHubOrganizations.map((organization) => {
+                          const orgId = String(organization.id)
+                          const checked = selectedOrganizationIds.includes(orgId)
+                          return (
+                            <label key={orgId} className="ch-org-select__item checkbox">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => togglePartnerOrganization(orgId, event.target.checked)}
+                              />
+                              {organization.name}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {customerHubOrganizationsError && <span className="ch-field-error">{customerHubOrganizationsError}</span>}
+              </div>
               <div className="estimativas-actions estimativas-form__full">
                 <button type="submit" className="button-primary" disabled={hasCnpjError}>{isEdit ? 'Salvar' : 'Cadastrar'}</button>
               </div>
@@ -863,7 +2137,7 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
             <h2>Dashboard</h2>
             <p className="muted">Visão geral da gestão de clientes</p>
           </div>
-          <button type="button" className="button-primary" onClick={() => setClienteModal({ open: true, data: { status: 'Ativo', fonte: 'interno' } })}>
+          <button type="button" className="button-primary" onClick={() => setClienteModal({ open: true, data: { status: 'Ativo', fonte: 'interno', organizations: '' } })}>
             + Novo Cliente
           </button>
         </header>
@@ -983,7 +2257,7 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
               <h2>Clientes</h2>
               <p className="muted">Gerencie os clientes</p>
             </div>
-            <button type="button" className="button-primary" onClick={() => setClienteModal({ open: true, data: { status: 'Ativo', fonte: 'interno' } })}>
+            <button type="button" className="button-primary" onClick={() => setClienteModal({ open: true, data: { status: 'Ativo', fonte: 'interno', organizations: '' } })}>
               + Novo Cliente
             </button>
           </div>
@@ -996,7 +2270,7 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
                 type="search"
                 value={clienteSearch}
                 onChange={(e) => setClienteSearch(e.target.value)}
-                placeholder="Buscar por nome, CNPJ, segmento, cidade ou parceiro..."
+                placeholder="Buscar por nome, CNPJ, segmento, cidade, fonte ou organização..."
                 aria-label="Buscar cliente"
               />
             </label>
@@ -1010,7 +2284,7 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
                   <th>Segmento</th>
                   <th>Cidade / UF</th>
                   <th>Status</th>
-                  <th>Parceiro</th>
+                  <th>Fonte</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -1029,6 +2303,9 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
                     <td>{CLIENTE_FONTE_LABEL[c.fonte] ?? c.fonte}</td>
                     <td>
                       <div className="ch-row-actions ch-row-actions--icons">
+                        <button type="button" className="button-secondary" onClick={() => handleOpenStatusReport(c.id)} style={{ fontSize: '0.8rem', padding: '0.3rem 0.65rem' }}>
+                          Status Report
+                        </button>
                         <button type="button" className="ch-icon-action" aria-label="Editar cliente" title="Editar" onClick={() => setClienteModal({ open: true, data: { ...c } })}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
@@ -1045,6 +2322,390 @@ export default function CustomerHubTool({ subPage, currentUsername, currentDispl
               </tbody>
             </table>
           </div>
+        </section>
+      </div>
+    )
+  }
+
+  if (subPage === 'status-report') {
+    return (
+      <div className="customer-hub">
+        {statusReportTicketDetailModalOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={closeStatusReportTicketDetailModal}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <h3>Detalhes do chamado #{statusReportTicketDetail?.protocol || statusReportTicketDetailSource?.protocol || statusReportTicketDetailSource?.id || '—'}</h3>
+                <button type="button" className="button-secondary" onClick={closeStatusReportTicketDetailModal}>Fechar</button>
+              </div>
+
+              {statusReportTicketDetailLoading ? (
+                <p className="muted">Carregando detalhes...</p>
+              ) : statusReportTicketDetailError ? (
+                <p className="error">{statusReportTicketDetailError}</p>
+              ) : statusReportTicketDetail ? (
+                <div style={{ display: 'grid', gap: '0.9rem' }}>
+                  <div className="estimativas-stats">
+                    <span><strong>Assunto:</strong> {statusReportTicketDetail.subject || statusReportTicketDetailSource?.subject || '—'}</span>
+                    <span><strong>Status:</strong> {statusReportTicketDetail.status || statusReportTicketDetailSource?.situation || statusReportTicketDetailSource?.status || '—'}</span>
+                    <span><strong>Cliente:</strong> {statusReportTicketDetail.customerName || statusReportTicketDetailSource?.client || '—'}</span>
+                    <span><strong>Organização:</strong> {statusReportTicketDetail.organizationName || statusReportTicketDetailSource?.organizationName || '—'}</span>
+                    <span><strong>Departamento:</strong> {statusReportTicketDetail.departmentName || statusReportTicketDetailSource?.department || '—'}</span>
+                    <span><strong>Categoria:</strong> {statusReportTicketDetail.categoryName || '—'}</span>
+                    <span><strong>Responsável:</strong> {statusReportTicketDetail.operatorName || '—'}</span>
+                    <span><strong>Prioridade:</strong> {statusReportTicketDetail.priority || '—'}</span>
+                    <span><strong>Criado em:</strong> {formatReportDateTime(statusReportTicketDetail.createdAt || statusReportTicketDetailSource?.createdAt || '')}</span>
+                    <span><strong>Atualizado em:</strong> {formatReportDateTime(statusReportTicketDetail.updatedAt || statusReportTicketDetailSource?.updatedAt || '')}</span>
+                    <span><strong>Primeira resposta:</strong> {formatReportDateTime(statusReportTicketDetail.firstReplyAt)}</span>
+                    <span><strong>Finalizado em:</strong> {formatReportDateTime(statusReportTicketDetail.endAt)}</span>
+                  </div>
+
+                  <div>
+                    <h4 style={{ margin: '0 0 0.4rem' }}>Mensagem de abertura</h4>
+                    <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{statusReportTicketDetail.message || 'Sem mensagem registrada.'}</p>
+                  </div>
+
+                  <div>
+                    <h4 style={{ margin: '0 0 0.4rem' }}>Anexos</h4>
+                    {statusReportTicketDetail.attachments.length === 0 ? (
+                      <p className="muted" style={{ margin: 0 }}>Nenhum anexo.</p>
+                    ) : (
+                      <ul style={{ margin: 0, paddingLeft: '1.15rem' }}>
+                        {statusReportTicketDetail.attachments.map((attachment, index) => (
+                          <li key={`${attachment.url || attachment.name}-${index}`}>
+                            {attachment.url ? (
+                              <a href={attachment.url} target="_blank" rel="noreferrer">{attachment.name || 'Arquivo sem nome'}</a>
+                            ) : (
+                              <span>{attachment.name || 'Arquivo sem nome'}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 style={{ margin: '0 0 0.4rem' }}>Interações</h4>
+                    {statusReportTicketDetail.replies.length === 0 ? (
+                      <p className="muted" style={{ margin: 0 }}>Sem respostas registradas.</p>
+                    ) : (
+                      <div style={{ display: 'grid', gap: '0.7rem' }}>
+                        {statusReportTicketDetail.replies.map((reply) => (
+                          <article key={`${reply.id || reply.date}-${reply.sender}`} className="card" style={{ margin: 0, padding: '0.75rem 0.9rem' }}>
+                            <p style={{ margin: 0, fontWeight: 600 }}>
+                              {reply.sender || 'Atualização'}
+                              {' '}
+                              <span className="muted" style={{ fontWeight: 400 }}>({reply.senderType === 'A' ? 'Atendente' : 'Solicitante'})</span>
+                            </p>
+                            <p className="muted" style={{ margin: '0.2rem 0 0.5rem' }}>{formatReportDateTime(reply.date)}</p>
+                            <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{reply.message || 'Sem conteúdo textual.'}</p>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        {statusReportTicketModal.open && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setStatusReportTicketModal(emptyModal())}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <h3>Incluir status do chamado</h3>
+                <button type="button" className="button-secondary" onClick={() => setStatusReportTicketModal(emptyModal())}>Fechar</button>
+              </div>
+
+              <form className="estimativas-form" onSubmit={(event) => { event.preventDefault(); saveStatusReportTicketStatus() }}>
+                <label className="estimativas-form__full">
+                  Status para relatório
+                  <textarea
+                    rows={4}
+                    value={String(statusReportTicketModal.data.status ?? '')}
+                    onChange={(event) => setStatusReportTicketModal((prev) => ({
+                      ...prev,
+                      data: {
+                        ...prev.data,
+                        status: event.target.value,
+                      },
+                    }))}
+                    placeholder="Ex.: Aguardando retorno do cliente, Em validação, Bloqueado por homologação..."
+                  />
+                </label>
+
+                <div className="estimativas-actions">
+                  <button type="submit" className="button-primary">Salvar status</button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => {
+                      setStatusReportTicketModal((prev) => ({
+                        ...prev,
+                        data: {
+                          ...prev.data,
+                          status: '',
+                        },
+                      }))
+                    }}
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        <section className="card estimativas-layout">
+          <div className="estimativas-header-row">
+            <div>
+              <h2>Status Report</h2>
+              <p className="muted">Selecione um cliente para carregar os chamados abertos do TomTicket.</p>
+            </div>
+          </div>
+
+          <div className="estimativas-filters">
+            <label>
+              Cliente
+              <select
+                value={statusReportClientId}
+                onChange={(event) => setStatusReportClientId(event.target.value)}
+              >
+                <option value="">Selecione...</option>
+                {clientes.map((cliente) => (
+                  <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>
+                ))}
+              </select>
+            </label>
+            <div className="estimativas-actions" style={{ justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="button-primary"
+                onClick={() => { void handleSendStatusReport() }}
+                disabled={!statusReportClientId || statusReportSubmitting || statusReportPdfExporting || statusReportSentTicketItems.length === 0}
+              >
+                {statusReportSubmitting ? 'Gravando...' : statusReportPdfExporting ? 'Gerando PDF...' : `Enviar report (${statusReportSentTicketItems.length})`}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => setStatusReportRefreshToken((current) => current + 1)}
+                disabled={!statusReportClientId || statusReportLoading}
+              >
+                {statusReportLoading ? 'Carregando...' : 'Recarregar'}
+              </button>
+            </div>
+          </div>
+
+          {statusReportError && <p className="error">{statusReportError}</p>}
+          {statusReportHistoryError && <p className="error">{statusReportHistoryError}</p>}
+
+          {!selectedStatusReportClient ? (
+            <p className="muted">Escolha um cliente para iniciar o relatório.</p>
+          ) : (
+            <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+              <section className="card" style={{ margin: 0 }}>
+                <h2>{selectedStatusReportClient.nome}</h2>
+                <div className="estimativas-stats">
+                  <span><strong>CNPJ:</strong> {selectedStatusReportClient.cnpj || '—'}</span>
+                  <span><strong>Segmento:</strong> {selectedStatusReportClient.segmento || '—'}</span>
+                  <span><strong>Cidade:</strong> {selectedStatusReportClient.cidade || '—'}</span>
+                  <span><strong>Chamados abertos:</strong> {statusReportTickets.length}</span>
+                  <span><strong>Enviados (atual):</strong> {statusReportComparison.currentTotal}</span>
+                </div>
+
+                <div className="card" style={{ margin: '0.75rem 0 0', padding: '0.85rem 0.95rem' }}>
+                  <h3 style={{ margin: '0 0 0.55rem' }}>Dashboard comparativo</h3>
+                  <div className="estimativas-stats">
+                    <span><strong>Período:</strong> {statusReportPeriodDashboard.periodDays} dias</span>
+                    <span><strong>Abertos no período:</strong> {statusReportPeriodDashboard.openedLast15Days}</span>
+                    <span><strong>Abertos na quinzena anterior:</strong> {statusReportPeriodDashboard.openedPrevious15Days}</span>
+                    <span><strong>Finalizados no período:</strong> {statusReportPeriodDashboard.finalizedLast15Days}</span>
+                    <span><strong>Finalizados na quinzena anterior:</strong> {statusReportPeriodDashboard.finalizedPrevious15Days}</span>
+                    <span><strong>Report anterior:</strong> {statusReportPreviousHistory ? formatReportDateTime(statusReportPreviousHistory.sentAt) : '—'}</span>
+                    <span><strong>Total anterior:</strong> {statusReportComparison.previousTotal}</span>
+                    <span><strong>Novos:</strong> {statusReportComparison.added}</span>
+                    <span><strong>Mantidos:</strong> {statusReportComparison.kept}</span>
+                    <span><strong>Removidos:</strong> {statusReportComparison.removed}</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.85rem' }}>
+                    {statusReportFortnightChartRows.map((row) => (
+                      <div key={row.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.65rem 0.75rem', backgroundColor: '#f8fafc' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                          <strong>{row.label}</strong>
+                          <span className="muted" style={{ fontSize: '0.8rem' }}>
+                            Δ {row.delta >= 0 ? '+' : ''}{row.delta}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gap: '0.35rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
+                              <span>Quinzena atual</span>
+                              <strong>{row.current}</strong>
+                            </div>
+                            <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
+                              <div style={{ width: `${row.currentPercent}%`, height: '100%', background: row.currentColor }} />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
+                              <span>Quinzena anterior</span>
+                              <strong>{row.previous}</strong>
+                            </div>
+                            <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
+                              <div style={{ width: `${row.previousPercent}%`, height: '100%', background: row.previousColor }} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {statusReportHistoryLoading && <p className="muted" style={{ margin: '0.5rem 0 0' }}>Carregando histórico...</p>}
+                </div>
+
+                {!statusReportHistoryLoading && statusReportHistory.length > 0 && (
+                  <div className="card" style={{ margin: '0.75rem 0 0', padding: '0.85rem 0.95rem' }}>
+                    <h3 style={{ margin: '0 0 0.55rem' }}>Histórico de envios</h3>
+                    <div className="estimativas-table ch-table-theme" style={{ marginTop: 0 }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Enviado em</th>
+                            <th>Responsável</th>
+                            <th>Qtde tickets</th>
+                            <th>Tickets</th>
+                            <th>PDF</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statusReportHistory.slice(0, 6).map((entry) => {
+                            const protocols = entry.tickets
+                              .map((ticket) => ticket.protocol || ticket.ticketId)
+                              .filter(Boolean)
+                            return (
+                              <tr key={entry.id}>
+                                <td>{formatReportDateTime(entry.sentAt)}</td>
+                                <td>{entry.createdByDisplayName || entry.createdByUsername || '—'}</td>
+                                <td>{entry.totalTickets}</td>
+                                <td>{protocols.length ? protocols.join(', ') : '—'}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="button-secondary"
+                                    onClick={() => { void handleDownloadHistoryStatusReportPdf(entry) }}
+                                    disabled={statusReportPdfExporting}
+                                  >
+                                    {statusReportPdfExporting ? 'Gerando...' : 'Gerar PDF'}
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="estimativas-subgrid">
+                  <h3 style={{ marginTop: 0, marginBottom: '0.65rem' }}>Chamados abertos</h3>
+                  {statusReportLoading ? (
+                    <p className="muted">Carregando chamados...</p>
+                  ) : statusReportTickets.length === 0 ? (
+                    <p className="muted">Nenhum chamado aberto encontrado para este cliente.</p>
+                  ) : (
+                    <div className="estimativas-table ch-table-theme">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Ticket</th>
+                            <th>Assunto</th>
+                            <th>Status</th>
+                            <th>Situação</th>
+                            <th>Status report</th>
+                            <th>Atualização</th>
+                            <th>Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statusReportTickets.map((ticket) => {
+                            const ticketKey = getStatusReportTicketKey(ticket)
+                            const phase = getStatusReportTicketPhase(ticketKey)
+
+                            return (
+                              <tr key={`${ticket.id || ticket.protocol || ticket.subject}`}>
+                              <td>{ticket.protocol || ticket.id || '—'}</td>
+                              <td>{ticket.subject || '—'}</td>
+                              <td>{ticket.status || '—'}</td>
+                              <td>{ticket.situation || ticket.status || '—'}</td>
+                              <td>
+                                <span className={`estimativas-status estimativas-status--${getStatusReportPhaseClassName(phase)}`}>
+                                  {getStatusReportPhaseLabel(phase)}
+                                </span>
+                              </td>
+                              <td>{formatReportDateTime(ticket.updatedAt || ticket.createdAt)}</td>
+                              <td>
+                                <div className="ch-row-actions ch-row-actions--icons">
+                                  <button
+                                    type="button"
+                                    className="ch-icon-action"
+                                    title="Visualizar detalhes do chamado"
+                                    onClick={() => { void openStatusReportTicketDetailModal(ticket) }}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ch-icon-action"
+                                    title={statusReportTicketStatuses[ticketKey]?.trim() ? 'Editar status informado' : 'Digitar status informado'}
+                                    onClick={() => openStatusReportTicketModal(ticket)}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ch-icon-action"
+                                    title="Marcar como pendente"
+                                    onClick={() => setStatusReportTicketPhase(ticket, 'pending')}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l2.5 2.5"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ch-icon-action"
+                                    title="Marcar como digitado"
+                                    onClick={() => setStatusReportTicketPhase(ticket, 'typed')}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ch-icon-action"
+                                    title="Marcar como enviado"
+                                    onClick={() => setStatusReportTicketPhase(ticket, 'sent')}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                  </button>
+                                </div>
+                              </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          )}
         </section>
       </div>
     )

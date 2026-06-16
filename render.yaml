@@ -24,6 +24,8 @@ services:
         value: daily_activities
       - key: SUPABASE_USERS_TABLE
         value: app_users
+      - key: SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE
+        value: customer_hub_status_report_history
       - key: GITHUB_MODELS_TOKEN
         sync: false
       - key: GITHUB_MODELS_MODEL

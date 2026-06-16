@@ -5,7 +5,7 @@ create table if not exists public.customer_hub_clients (
   segmento text not null default '',
   cidade text not null default '',
   status text not null default 'Ativo' check (status in ('Ativo', 'Inativo', 'Em Implantacao')),
-  parceiro text not null default '',
+  organizations text not null default '',
   created_at timestamptz not null default now()
 );
 

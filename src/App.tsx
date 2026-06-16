@@ -1,21 +1,23 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
 import visitorLogo from './assets/vistor_logo_verde2.png'
 import { apiUrl } from './lib/api'
-import XmlToExcelTool from './components/XmlToExcelTool'
-import ExcelCsvToSqliteTool from './components/ExcelCsvToSqliteTool'
-import ResumeRankingTool from './components/ResumeRankingTool'
-import EstimativasTool from './components/EstimativasTool'
-import UserAccessTool from './components/UserAccessTool'
-import DailyActivityTool from './components/DailyActivityTool'
-import DigteDemandsTool from './components/DigteDemandsTool'
-import ChangePasswordTool from './components/ChangePasswordTool'
-import CustomerHubTool, { type CustomerHubPage } from './components/CustomerHubTool'
-import TicketHubTool from './components/TicketHubTool'
-import PropostaComercialTool from './components/PropostaComercialTool'
-import RubricasValidationTool from './components/RubricasValidationTool'
-import DataComparisonTool from './components/DataComparisonTool'
+import type { CustomerHubPage } from './components/CustomerHubTool'
 import { ALL_MENU_KEYS, getEffectiveMenus, type AllowedMenu } from './lib/menuConfig'
+
+const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
+const ExcelCsvToSqliteTool = lazy(() => import('./components/ExcelCsvToSqliteTool'))
+const ResumeRankingTool = lazy(() => import('./components/ResumeRankingTool'))
+const EstimativasTool = lazy(() => import('./components/EstimativasTool'))
+const UserAccessTool = lazy(() => import('./components/UserAccessTool'))
+const DailyActivityTool = lazy(() => import('./components/DailyActivityTool'))
+const DigteDemandsTool = lazy(() => import('./components/DigteDemandsTool'))
+const ChangePasswordTool = lazy(() => import('./components/ChangePasswordTool'))
+const CustomerHubTool = lazy(() => import('./components/CustomerHubTool'))
+const TicketHubTool = lazy(() => import('./components/TicketHubTool'))
+const PropostaComercialTool = lazy(() => import('./components/PropostaComercialTool'))
+const RubricasValidationTool = lazy(() => import('./components/RubricasValidationTool'))
+const DataComparisonTool = lazy(() => import('./components/DataComparisonTool'))
 
 type CsvData = {
   headers: string[]
@@ -52,6 +54,7 @@ const AUTH_STORAGE_KEY = 'vt_authenticated'
 const CUSTOMER_HUB_PAGES: Array<{ id: CustomerHubPage; label: string }> = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'clientes', label: 'Clientes' },
+  { id: 'status-report', label: 'Status Report' },
   { id: 'contatos', label: 'Contatos' },
   { id: 'acessos', label: 'Acessos' },
   { id: 'sistemas', label: 'Sistemas' },
@@ -367,6 +370,12 @@ function App() {
   const selectedXmlRoutine = useMemo(
     () => XML_EXCEL_ROUTINES.find((item) => item.id === xmlExcelRoutine) ?? XML_EXCEL_ROUTINES[0],
     [xmlExcelRoutine],
+  )
+
+  const toolFallback = (
+    <section className="card">
+      <p className="muted">Carregando ferramenta...</p>
+    </section>
   )
 
   const currentUserName = useMemo(() => {
@@ -889,42 +898,6 @@ function App() {
               <span>Central de Chamados</span>
             </button>
           )}
-          {canAccessPage('propostas', currentUser) && (
-            <button
-              type="button"
-              className={`sidebar__link ${currentPage === 'propostas' ? 'sidebar__link--active' : ''}`}
-              onClick={() => {
-                setCurrentPage('propostas')
-                setShowSourceMenu(false)
-              }}
-              aria-current={currentPage === 'propostas' ? 'page' : undefined}
-            >
-              <span className="sidebar__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <SidebarIcon name="propostas" />
-                </svg>
-              </span>
-              <span>Propostas Comerciais</span>
-            </button>
-          )}
-          {canAccessPage('rubricas-validacao', currentUser) && (
-            <button
-              type="button"
-              className={`sidebar__link ${currentPage === 'rubricas-validacao' ? 'sidebar__link--active' : ''}`}
-              onClick={() => {
-                setCurrentPage('rubricas-validacao')
-                setShowSourceMenu(false)
-              }}
-              aria-current={currentPage === 'rubricas-validacao' ? 'page' : undefined}
-            >
-              <span className="sidebar__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <SidebarIcon name="rubricas-validacao" />
-                </svg>
-              </span>
-              <span>Validação de Rubricas</span>
-            </button>
-          )}
           {canAccessPage('ticket-hub', currentUser) && currentPage === 'ticket-hub' && openSidebarSubmenu === 'ticket-hub' && (
             <div className="sidebar__subnav" aria-label="Central de Chamados">
               <button
@@ -969,6 +942,42 @@ function App() {
               </button>
               )}
             </div>
+          )}
+          {canAccessPage('propostas', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'propostas' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('propostas')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'propostas' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="propostas" />
+                </svg>
+              </span>
+              <span>Propostas Comerciais</span>
+            </button>
+          )}
+          {canAccessPage('rubricas-validacao', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'rubricas-validacao' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('rubricas-validacao')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'rubricas-validacao' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="rubricas-validacao" />
+                </svg>
+              </span>
+              <span>Validação de Rubricas</span>
+            </button>
           )}
           {canAccessPage('user-admin', currentUser) && (
             <button
@@ -1582,41 +1591,50 @@ function App() {
           </div>
         </section>
         </div>
-        ) : currentPage === 'data-compare' ? (
-          <DataComparisonTool />
-        ) : currentPage === 'excel-csv-sqlite' ? (
-          <ExcelCsvToSqliteTool />
-        ) : currentPage === 'resume-ranking' ? (
-          <ResumeRankingTool />
-        ) : currentPage === 'estimativas' ? (
-          <EstimativasTool />
-        ) : currentPage === 'daily-activities' ? (
-          <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} hasDigteDemandsAccess={currentUser?.allowedMenus.includes('digte-demands') ?? false} />
-        ) : currentPage === 'digte-demands' ? (
-          <DigteDemandsTool />
-        ) : currentPage === 'customer-hub' ? (
-          <CustomerHubTool
-            subPage={customerHubPage}
-            currentUsername={currentUser?.username || ''}
-            currentDisplayName={currentUser?.displayName || ''}
-          />
-        ) : currentPage === 'ticket-hub' ? (
-          <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
-        ) : currentPage === 'propostas' ? (
-          <PropostaComercialTool />
-        ) : currentPage === 'rubricas-validacao' ? (
-          <RubricasValidationTool />
-        ) : currentPage === 'user-admin' ? (
-          <UserAccessTool currentUsername={currentUser?.username || ''} />
-        ) : currentPage === 'change-password' ? (
-          <ChangePasswordTool currentUsername={currentUser?.username || ''} />
-        ) : xmlExcelRoutine === 's-5002' ? (
-          <XmlToExcelTool />
         ) : (
-          <section className="card">
-            <h2>{selectedXmlRoutine.label}</h2>
-            <p className="muted">Esta rotina estará disponível em breve.</p>
-          </section>
+          <Suspense fallback={toolFallback}>
+            {currentPage === 'data-compare' ? (
+              <DataComparisonTool />
+            ) : currentPage === 'excel-csv-sqlite' ? (
+              <ExcelCsvToSqliteTool />
+            ) : currentPage === 'resume-ranking' ? (
+              <ResumeRankingTool />
+            ) : currentPage === 'estimativas' ? (
+              <EstimativasTool />
+            ) : currentPage === 'daily-activities' ? (
+              <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} hasDigteDemandsAccess={currentUser?.allowedMenus.includes('digte-demands') ?? false} />
+            ) : currentPage === 'digte-demands' ? (
+              <DigteDemandsTool />
+            ) : currentPage === 'customer-hub' ? (
+              <CustomerHubTool
+                subPage={customerHubPage}
+                currentUsername={currentUser?.username || ''}
+                currentDisplayName={currentUser?.displayName || ''}
+                onOpenStatusReport={() => {
+                  setCurrentPage('customer-hub')
+                  setCustomerHubPage('status-report')
+                  setOpenSidebarSubmenu('customer-hub')
+                }}
+              />
+            ) : currentPage === 'ticket-hub' ? (
+              <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
+            ) : currentPage === 'propostas' ? (
+              <PropostaComercialTool />
+            ) : currentPage === 'rubricas-validacao' ? (
+              <RubricasValidationTool />
+            ) : currentPage === 'user-admin' ? (
+              <UserAccessTool currentUsername={currentUser?.username || ''} />
+            ) : currentPage === 'change-password' ? (
+              <ChangePasswordTool currentUsername={currentUser?.username || ''} />
+            ) : xmlExcelRoutine === 's-5002' ? (
+              <XmlToExcelTool />
+            ) : (
+              <section className="card">
+                <h2>{selectedXmlRoutine.label}</h2>
+                <p className="muted">Esta rotina estará disponível em breve.</p>
+              </section>
+            )}
+          </Suspense>
         )}
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import * as XLSX from 'xlsx'
 import { apiUrl } from '../lib/api'
 
 type DailyActivityRow = {
@@ -311,10 +312,9 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       }))
 
     try {
-      const { utils, writeFileXLSX } = await import('xlsx')
-      const workbook = utils.book_new()
+      const workbook = XLSX.utils.book_new()
 
-      const summarySheet = utils.aoa_to_sheet([
+      const summarySheet = XLSX.utils.aoa_to_sheet([
         ['Relatorio de apontamentos mensais'],
         ['Mes', toMonthLabel(monthFilter)],
         [],
@@ -327,13 +327,13 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
         ...detailRows.map((item) => [item.Data, item.Recurso, item.Atividade, item.Horas]),
       ])
 
-      const detailsSheet = utils.json_to_sheet(detailRows)
+      const detailsSheet = XLSX.utils.json_to_sheet(detailRows)
 
-      utils.book_append_sheet(workbook, summarySheet, 'Resumo')
-      utils.book_append_sheet(workbook, detailsSheet, 'Apontamentos')
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Resumo')
+      XLSX.utils.book_append_sheet(workbook, detailsSheet, 'Apontamentos')
 
       const safeMonth = monthFilter || 'periodo'
-      writeFileXLSX(workbook, `apontamentos-${safeMonth}.xlsx`)
+      XLSX.writeFile(workbook, `apontamentos-${safeMonth}.xlsx`)
       setSuccess('Planilha exportada com sucesso.')
     } catch (exportError) {
       setError(toFriendlyApiError(exportError, 'Nao foi possivel exportar a planilha.'))

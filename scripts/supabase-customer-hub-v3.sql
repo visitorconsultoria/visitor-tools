@@ -1,6 +1,12 @@
 -- Migration: Central de Clientes v3
 -- Adiciona a entidade de acessos por cliente
 
+alter table if exists public.customer_hub_clients
+  add column if not exists organizations text not null default '';
+
+alter table if exists public.customer_hub_clients
+  drop column if exists parceiro;
+
 create table if not exists public.customer_hub_accesses (
   id bigint generated always as identity primary key,
   cliente_id bigint not null references public.customer_hub_clients(id) on delete cascade,

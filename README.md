@@ -251,6 +251,23 @@ Para mais informações sobre a API do TomTicket, consulte:
 - Documentação: https://tomticket.tomticket.com/kb/chamados-api
 - Endpoint de organizações: `https://api.tomticket.com/v2.0/organization/list`
 
+### Histórico de Status Report (Central de Clientes)
+
+Persistência dos reports enviados com os números de tickets e comparação com o envio anterior.
+
+1. Crie a tabela de histórico no Supabase:
+- Script: [scripts/supabase-customer-status-report-history.sql](scripts/supabase-customer-status-report-history.sql)
+
+2. Configure o `.env` da API:
+
+```bash
+SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE=customer_hub_status_report_history
+```
+
+3. Endpoints:
+- `GET /api/customer-hub/status-report/history?clientId=<id>` - retorna histórico de envios do cliente
+- `POST /api/customer-hub/status-report/history` - grava um novo envio com os tickets marcados como enviados
+
 ## Excel/CSV para SQL (.sql)
 
 Nova rotina para converter arquivos `.csv`, `.xlsx` e `.xls` em script SQL com instrucoes de `INSERT`.

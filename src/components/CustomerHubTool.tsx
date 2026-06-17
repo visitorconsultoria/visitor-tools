@@ -167,6 +167,7 @@ type StatusReportPhase = 'pending' | 'typed' | 'sent'
 type StatusReportResponse = {
   client: Cliente | null
   tickets: StatusReportTicket[]
+  warning?: string
   dashboard?: {
     periodDays?: number
     openedLast15Days?: number
@@ -571,6 +572,7 @@ export default function CustomerHubTool({
   const [statusReportClient, setStatusReportClient] = useState<Cliente | null>(null)
   const [statusReportLoading, setStatusReportLoading] = useState(false)
   const [statusReportError, setStatusReportError] = useState<string | null>(null)
+  const [statusReportWarning, setStatusReportWarning] = useState<string | null>(null)
   const [statusReportPeriodDashboard, setStatusReportPeriodDashboard] = useState({
     periodDays: 15,
     openedLast15Days: 0,
@@ -1628,6 +1630,7 @@ export default function CustomerHubTool({
       setStatusReportTickets([])
       closeStatusReportTicketDetailModal()
       setStatusReportError(null)
+      setStatusReportWarning(null)
       setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
       setStatusReportLoading(false)
       return
@@ -1638,6 +1641,7 @@ export default function CustomerHubTool({
     const loadStatusReport = async () => {
       setStatusReportLoading(true)
       setStatusReportError(null)
+      setStatusReportWarning(null)
 
       try {
         const selectedClient = clientes.find((cliente) => cliente.id === statusReportClientId) ?? null
@@ -1648,6 +1652,7 @@ export default function CustomerHubTool({
             setStatusReportClient(selectedClient)
             setStatusReportTickets([])
             setStatusReportError(null)
+            setStatusReportWarning(null)
             setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
           }
           return
@@ -1676,6 +1681,7 @@ export default function CustomerHubTool({
 
         setStatusReportClient(body?.client ?? selectedClient)
         setStatusReportTickets(Array.isArray(body?.tickets) ? body.tickets : [])
+        setStatusReportWarning(String(body?.warning ?? '').trim() || null)
         setStatusReportPeriodDashboard({
           periodDays: Number(body?.dashboard?.periodDays ?? 15),
           openedLast15Days: Number(body?.dashboard?.openedLast15Days ?? 0),
@@ -1688,6 +1694,7 @@ export default function CustomerHubTool({
           setStatusReportClient(null)
           setStatusReportTickets([])
           setStatusReportError(err instanceof Error ? err.message : 'Erro ao carregar o status report.')
+          setStatusReportWarning(null)
           setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
         }
       } finally {
@@ -2501,6 +2508,7 @@ export default function CustomerHubTool({
           </div>
 
           {statusReportError && <p className="error">{statusReportError}</p>}
+          {statusReportWarning && <p className="muted">{statusReportWarning}</p>}
           {statusReportHistoryError && <p className="error">{statusReportHistoryError}</p>}
 
           {!selectedStatusReportClient ? (

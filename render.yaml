@@ -24,8 +24,14 @@ services:
         value: daily_activities
       - key: SUPABASE_USERS_TABLE
         value: app_users
+      - key: SUPABASE_TICKET_HUB_ACCESSES_TABLE
+        value: ticket_hub_accesses
       - key: SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE
         value: customer_hub_status_report_history
+      - key: TOMTICKET_API_TOKEN
+        sync: false
+      - key: TOMTICKET_API_BASE_URL
+        value: https://api.tomticket.com/v2.0
       - key: GITHUB_MODELS_TOKEN
         sync: false
       - key: GITHUB_MODELS_MODEL

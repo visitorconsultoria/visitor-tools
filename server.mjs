@@ -2510,6 +2510,14 @@ app.get('/api/customer-hub/status-report', async (req, res) => {
     res.set('Pragma', 'no-cache')
     res.set('Expires', '0')
 
+    const emptyDashboard = {
+      periodDays: 15,
+      openedLast15Days: 0,
+      finalizedLast15Days: 0,
+      openedPrevious15Days: 0,
+      finalizedPrevious15Days: 0,
+    }
+
     const scope = getSessionUserFromRequest(req)
     const clientIdRaw = Array.isArray(req.query.clientId) ? req.query.clientId[0] : req.query.clientId
     const organizationIdsRaw = Array.isArray(req.query.organizationIds) ? req.query.organizationIds.join(',') : req.query.organizationIds
@@ -2550,13 +2558,17 @@ app.get('/api/customer-hub/status-report', async (req, res) => {
         client: clientData,
         tickets: [],
         totalTickets: 0,
-        dashboard: {
-          periodDays: 15,
-          openedLast15Days: 0,
-          finalizedLast15Days: 0,
-          openedPrevious15Days: 0,
-          finalizedPrevious15Days: 0,
-        },
+        dashboard: emptyDashboard,
+      })
+    }
+
+    if (!TOMTICKET_API_TOKEN) {
+      return res.json({
+        client: clientData,
+        tickets: [],
+        totalTickets: 0,
+        dashboard: emptyDashboard,
+        warning: 'Token TomTicket não configurado no servidor.',
       })
     }
 

@@ -3162,8 +3162,16 @@ app.post('/api/data-comparison/analyze', async (req, res) => {
 
 // ---- Ticket Hub ----
 
-const TOMTICKET_API_TOKEN = process.env.TOMTICKET_API_TOKEN || ''
-const TOMTICKET_API_BASE_URL = (process.env.TOMTICKET_API_BASE_URL || 'https://api.tomticket.com/v2.0').replace(/\/+$/, '')
+const TOMTICKET_API_TOKEN = String(
+  process.env.TOMTICKET_API_TOKEN
+  || process.env.VITE_TOMTICKET_TOKEN
+  || '',
+).trim()
+const TOMTICKET_API_BASE_URL = String(
+  process.env.TOMTICKET_API_BASE_URL
+  || process.env.VITE_TOMTICKET_API_BASE
+  || 'https://api.tomticket.com/v2.0',
+).replace(/\/+$/, '')
 const TOMTICKET_DEFAULT_OPERATOR_ID = '07af7d3bb8d9636238663974e409e569'
 
 function extractTomTicketOrganizations(payload) {

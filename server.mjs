@@ -2510,12 +2510,22 @@ app.get('/api/customer-hub/status-report', async (req, res) => {
     res.set('Pragma', 'no-cache')
     res.set('Expires', '0')
 
+    const periodDaysRaw = Array.isArray(req.query.periodDays) ? req.query.periodDays[0] : req.query.periodDays
+    const parsedPeriodDays = Number.parseInt(String(periodDaysRaw ?? '').trim(), 10)
+    const periodDays = Number.isFinite(parsedPeriodDays)
+      ? Math.max(1, Math.min(90, parsedPeriodDays))
+      : 7
+
     const emptyDashboard = {
-      periodDays: 15,
+      periodDays,
       openedLast15Days: 0,
       finalizedLast15Days: 0,
       openedPrevious15Days: 0,
       finalizedPrevious15Days: 0,
+      openedCurrentTickets: [],
+      finalizedCurrentTickets: [],
+      openedPreviousTickets: [],
+      finalizedPreviousTickets: [],
     }
 
     const scope = getSessionUserFromRequest(req)
@@ -2590,25 +2600,37 @@ app.get('/api/customer-hub/status-report', async (req, res) => {
       '',
       matchedOrganizationIds,
     )
-    const now = Date.now()
-    const fifteenDaysInMs = 15 * 24 * 60 * 60 * 1000
-    const periodStartMs = now - fifteenDaysInMs
-    const previousPeriodStartMs = now - (fifteenDaysInMs * 2)
 
-    const openedLast15Days = ticketsFor15dWindow.filter((ticket) => {
+    const toDashboardTicketItem = (ticket) => ({
+      ticketId: String(ticket.id || '').trim(),
+      protocol: String(ticket.protocol || ticket.id || '').trim(),
+      subject: String(ticket.subject || '').trim(),
+      organizationName: String(ticket.organizationName || '').trim(),
+    })
+
+    const now = Date.now()
+    const periodDurationMs = periodDays * 24 * 60 * 60 * 1000
+    const periodStartMs = now - periodDurationMs
+    const previousPeriodStartMs = now - (periodDurationMs * 2)
+
+    const openedCurrentTickets = ticketsFor15dWindow.filter((ticket) => {
       const createdAt = parseTomTicketDate(ticket.createdAt)
       if (!createdAt) return false
       return createdAt.getTime() >= periodStartMs
-    }).length
+    })
 
-    const openedPrevious15Days = ticketsFor15dWindow.filter((ticket) => {
+    const openedLast15Days = openedCurrentTickets.length
+
+    const openedPreviousTickets = ticketsFor15dWindow.filter((ticket) => {
       const createdAt = parseTomTicketDate(ticket.createdAt)
       if (!createdAt) return false
       const createdAtMs = createdAt.getTime()
       return createdAtMs >= previousPeriodStartMs && createdAtMs < periodStartMs
-    }).length
+    })
 
-    const finalizedLast15Days = ticketsFor15dWindow.filter((ticket) => {
+    const openedPrevious15Days = openedPreviousTickets.length
+
+    const finalizedCurrentTickets = ticketsFor15dWindow.filter((ticket) => {
       if (!isTomTicketFinalized(ticket)) return false
 
       const updatedAt = parseTomTicketDate(ticket.updatedAt)
@@ -2616,9 +2638,11 @@ app.get('/api/customer-hub/status-report', async (req, res) => {
       const referenceDate = updatedAt || createdAt
       if (!referenceDate) return false
       return referenceDate.getTime() >= periodStartMs
-    }).length
+    })
 
-    const finalizedPrevious15Days = ticketsFor15dWindow.filter((ticket) => {
+    const finalizedLast15Days = finalizedCurrentTickets.length
+
+    const finalizedPreviousTickets = ticketsFor15dWindow.filter((ticket) => {
       if (!isTomTicketFinalized(ticket)) return false
 
       const updatedAt = parseTomTicketDate(ticket.updatedAt)
@@ -2628,18 +2652,24 @@ app.get('/api/customer-hub/status-report', async (req, res) => {
 
       const referenceDateMs = referenceDate.getTime()
       return referenceDateMs >= previousPeriodStartMs && referenceDateMs < periodStartMs
-    }).length
+    })
+
+    const finalizedPrevious15Days = finalizedPreviousTickets.length
 
     return res.json({
       client: clientData,
       tickets: matchedTickets,
       totalTickets: matchedTickets.length,
       dashboard: {
-        periodDays: 15,
+        periodDays,
         openedLast15Days,
         finalizedLast15Days,
         openedPrevious15Days,
         finalizedPrevious15Days,
+        openedCurrentTickets: openedCurrentTickets.map(toDashboardTicketItem),
+        finalizedCurrentTickets: finalizedCurrentTickets.map(toDashboardTicketItem),
+        openedPreviousTickets: openedPreviousTickets.map(toDashboardTicketItem),
+        finalizedPreviousTickets: finalizedPreviousTickets.map(toDashboardTicketItem),
       },
     })
   } catch (error) {

@@ -1024,15 +1024,70 @@ export default function DataComparisonTool() {
           </button>
         </div>
 
-        <label className="data-compare-field" style={{ marginTop: '0.75rem', maxWidth: '260px' }}>
+        <label className="data-compare-field" style={{ marginTop: '0.75rem', maxWidth: '440px' }}>
           Tolerância para campos de valor
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={valueTolerance}
-            onChange={(event) => setValueTolerance(Number(event.target.value) || 0)}
-          />
+          <div
+            style={{
+              marginTop: '0.25rem',
+              padding: '0.5rem',
+              border: '1px solid #d7e2dd',
+              borderRadius: '10px',
+              background: '#f8fbfa',
+              display: 'grid',
+              gap: '0.45rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <button
+                type="button"
+                className="button-secondary"
+                style={{ minWidth: '36px', padding: '0.35rem 0.55rem' }}
+                onClick={() => setValueTolerance((current) => Math.max(0, Number((current - 0.01).toFixed(2))))}
+                aria-label="Diminuir tolerância"
+              >
+                -
+              </button>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={valueTolerance}
+                onChange={(event) => setValueTolerance(Math.max(0, Number(event.target.value) || 0))}
+                style={{ width: '110px', textAlign: 'center', fontWeight: 700 }}
+              />
+              <button
+                type="button"
+                className="button-secondary"
+                style={{ minWidth: '36px', padding: '0.35rem 0.55rem' }}
+                onClick={() => setValueTolerance((current) => Number((current + 0.01).toFixed(2)))}
+                aria-label="Aumentar tolerância"
+              >
+                +
+              </button>
+              <span className="muted" style={{ fontSize: '0.78rem' }}>
+                Incremento de 0,01
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+              {[0, 0.01, 0.1].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className="button-secondary"
+                  style={{
+                    fontSize: '0.76rem',
+                    padding: '0.25rem 0.5rem',
+                    borderColor: valueTolerance === preset ? '#0f766e' : undefined,
+                    color: valueTolerance === preset ? '#0f766e' : undefined,
+                    backgroundColor: valueTolerance === preset ? '#ecfdf5' : undefined,
+                  }}
+                  onClick={() => setValueTolerance(preset)}
+                >
+                  {preset.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </button>
+              ))}
+            </div>
+          </div>
         </label>
 
         <label

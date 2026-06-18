@@ -2,7 +2,8 @@
 import { createPortal } from 'react-dom'
 import { jsPDF } from 'jspdf'
 import { apiUrl } from '../lib/api'
-import visitorLogo from '../assets/vistor_logo_verde2.png'
+
+const STATUS_REPORT_PDF_LOGO_SRC = '/logo.png'
 
 export type CustomerHubPage = 'dashboard' | 'clientes' | 'status-report' | 'contatos' | 'acessos' | 'sistemas' | 'processos' | 'historico'
 
@@ -174,7 +175,29 @@ type StatusReportResponse = {
     finalizedLast15Days?: number
     openedPrevious15Days?: number
     finalizedPrevious15Days?: number
+    openedCurrentTickets?: StatusReportTicketSummary[]
+    finalizedCurrentTickets?: StatusReportTicketSummary[]
+    openedPreviousTickets?: StatusReportTicketSummary[]
+    finalizedPreviousTickets?: StatusReportTicketSummary[]
   }
+}
+
+type StatusReportTicketSummary = {
+  ticketId: string
+  protocol: string
+  subject: string
+  organizationName: string
+}
+
+type StatusReportCardTooltipData = {
+  title: string
+  lines: string[]
+  overflow: number
+}
+
+type StatusReportCardTooltipState = StatusReportCardTooltipData & {
+  x: number
+  y: number
 }
 
 type StatusReportHistoryTicket = {
@@ -293,6 +316,32 @@ function stripHtmlToText(value: string): string {
     .trim()
 }
 
+function buildStatusReportTooltipData(title: string, tickets: Array<{ protocol?: string; subject?: string; organizationName?: string }>): StatusReportCardTooltipData {
+  const list = Array.isArray(tickets) ? tickets : []
+  if (!list.length) {
+    return {
+      title,
+      lines: ['Nenhum ticket neste indicador.'],
+      overflow: 0,
+    }
+  }
+
+  const maxLines = 20
+  const lines = list.slice(0, maxLines).map((ticket, index) => {
+    const protocol = String(ticket.protocol || '').trim() || 'Sem protocolo'
+    const subject = String(ticket.subject || '').trim() || 'Sem assunto'
+    const organization = String(ticket.organizationName || '').trim()
+    return `${index + 1}. ${protocol} - ${subject}${organization ? ` (${organization})` : ''}`
+  })
+
+  const overflow = list.length - maxLines
+  return {
+    title,
+    lines,
+    overflow: Math.max(0, overflow),
+  }
+}
+
 let visitorLogoDataUrlPromise: Promise<string | null> | null = null
 
 function toSafePdfFilename(input: string): string {
@@ -334,7 +383,7 @@ async function loadImageAsDataUrl(src: string): Promise<string | null> {
 
 async function getVisitorLogoDataUrl(): Promise<string | null> {
   if (!visitorLogoDataUrlPromise) {
-    visitorLogoDataUrlPromise = loadImageAsDataUrl(visitorLogo)
+    visitorLogoDataUrlPromise = loadImageAsDataUrl(STATUS_REPORT_PDF_LOGO_SRC)
   }
   return visitorLogoDataUrlPromise
 }
@@ -573,12 +622,19 @@ export default function CustomerHubTool({
   const [statusReportLoading, setStatusReportLoading] = useState(false)
   const [statusReportError, setStatusReportError] = useState<string | null>(null)
   const [statusReportWarning, setStatusReportWarning] = useState<string | null>(null)
+  const [statusReportComparisonPeriodDays, setStatusReportComparisonPeriodDays] = useState(7)
+  const [statusReportComparisonPeriodDaysApplied, setStatusReportComparisonPeriodDaysApplied] = useState(7)
+  const [statusReportCardTooltip, setStatusReportCardTooltip] = useState<StatusReportCardTooltipState | null>(null)
   const [statusReportPeriodDashboard, setStatusReportPeriodDashboard] = useState({
-    periodDays: 15,
+    periodDays: 7,
     openedLast15Days: 0,
     finalizedLast15Days: 0,
     openedPrevious15Days: 0,
     finalizedPrevious15Days: 0,
+    openedCurrentTickets: [] as StatusReportTicketSummary[],
+    finalizedCurrentTickets: [] as StatusReportTicketSummary[],
+    openedPreviousTickets: [] as StatusReportTicketSummary[],
+    finalizedPreviousTickets: [] as StatusReportTicketSummary[],
   })
   const [statusReportHistory, setStatusReportHistory] = useState<StatusReportHistoryEntry[]>([])
   const [statusReportHistoryLoading, setStatusReportHistoryLoading] = useState(false)
@@ -964,8 +1020,13 @@ export default function CustomerHubTool({
   const statusReportPreviousHistory = useMemo(() => statusReportOrderedHistory[1] ?? null, [statusReportOrderedHistory])
 
   const statusReportComparison = useMemo(() => {
-    const currentSet = new Set((statusReportLatestHistory?.tickets ?? []).map((ticket) => ticket.ticketKey))
-    const previousSet = new Set((statusReportPreviousHistory?.tickets ?? []).map((ticket) => ticket.ticketKey))
+    const currentTickets = statusReportLatestHistory?.tickets ?? []
+    const previousTickets = statusReportPreviousHistory?.tickets ?? []
+
+    const currentSet = new Set(currentTickets.map((ticket) => ticket.ticketKey))
+    const previousSet = new Set(previousTickets.map((ticket) => ticket.ticketKey))
+    const currentMap = new Map(currentTickets.map((ticket) => [ticket.ticketKey, ticket]))
+    const previousMap = new Map(previousTickets.map((ticket) => [ticket.ticketKey, ticket]))
 
     const added = Array.from(currentSet).filter((key) => !previousSet.has(key))
     const kept = Array.from(currentSet).filter((key) => previousSet.has(key))
@@ -977,6 +1038,16 @@ export default function CustomerHubTool({
       added: added.length,
       kept: kept.length,
       removed: removed.length,
+      previousTickets,
+      addedTickets: added
+        .map((key) => currentMap.get(key))
+        .filter((ticket): ticket is StatusReportHistoryTicket => Boolean(ticket)),
+      keptTickets: kept
+        .map((key) => currentMap.get(key))
+        .filter((ticket): ticket is StatusReportHistoryTicket => Boolean(ticket)),
+      removedTickets: removed
+        .map((key) => previousMap.get(key))
+        .filter((ticket): ticket is StatusReportHistoryTicket => Boolean(ticket)),
     }
   }, [statusReportLatestHistory, statusReportPreviousHistory])
 
@@ -1008,6 +1079,27 @@ export default function CustomerHubTool({
       delta: row.current - row.previous,
     }))
   }, [statusReportPeriodDashboard])
+
+  const openStatusReportCardTooltip = (
+    event: { clientX: number; clientY: number },
+    title: string,
+    tickets: Array<{ protocol?: string; subject?: string; organizationName?: string }>,
+  ) => {
+    const tooltipData = buildStatusReportTooltipData(title, tickets)
+    const maxWidth = 420
+    const safeX = Math.min(Math.max(16, event.clientX + 14), Math.max(16, window.innerWidth - maxWidth - 16))
+    const safeY = Math.min(Math.max(16, event.clientY + 14), Math.max(16, window.innerHeight - 220))
+
+    setStatusReportCardTooltip({
+      ...tooltipData,
+      x: safeX,
+      y: safeY,
+    })
+  }
+
+  const closeStatusReportCardTooltip = () => {
+    setStatusReportCardTooltip(null)
+  }
 
   const handleSendStatusReport = async () => {
     if (!statusReportClientId) {
@@ -1224,13 +1316,14 @@ export default function CustomerHubTool({
         doc.setFontSize(10)
         doc.setTextColor(37, 62, 56)
         doc.text(label, margin + 14, yPos)
-        doc.text(`Δ ${delta >= 0 ? '+' : ''}${delta}`, rightX, yPos, { align: 'right' })
+        const variation = delta > 0 ? `+ ${delta}` : delta < 0 ? `- ${Math.abs(delta)}` : '= 0'
+        doc.text(variation, rightX, yPos, { align: 'right' })
 
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(9)
         doc.setTextColor(81, 101, 96)
-        doc.text(`Quinzena atual: ${current}`, margin + 14, yPos + 16)
-        doc.text(`Quinzena anterior: ${previous}`, margin + 14, yPos + 38)
+        doc.text(`Período atual: ${current}`, margin + 14, yPos + 16)
+        doc.text(`Período anterior: ${previous}`, margin + 14, yPos + 38)
 
         const currentBarY = yPos + 10
         const previousBarY = yPos + 32
@@ -1385,7 +1478,17 @@ export default function CustomerHubTool({
     setStatusReportClientId(clienteId)
     setStatusReportClient(null)
     setStatusReportTickets([])
-    setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+    setStatusReportPeriodDashboard({
+      periodDays: statusReportComparisonPeriodDays,
+      openedLast15Days: 0,
+      finalizedLast15Days: 0,
+      openedPrevious15Days: 0,
+      finalizedPrevious15Days: 0,
+      openedCurrentTickets: [],
+      finalizedCurrentTickets: [],
+      openedPreviousTickets: [],
+      finalizedPreviousTickets: [],
+    })
     setStatusReportTicketStatuses({})
     setStatusReportTicketPhases({})
     setStatusReportTicketModal(emptyModal())
@@ -1623,6 +1726,16 @@ export default function CustomerHubTool({
   }, [filterClienteId, statusReportClientId, subPage])
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setStatusReportComparisonPeriodDaysApplied(statusReportComparisonPeriodDays)
+    }, 450)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [statusReportComparisonPeriodDays])
+
+  useEffect(() => {
     if (subPage !== 'status-report') return
 
     if (!statusReportClientId) {
@@ -1631,7 +1744,17 @@ export default function CustomerHubTool({
       closeStatusReportTicketDetailModal()
       setStatusReportError(null)
       setStatusReportWarning(null)
-      setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+      setStatusReportPeriodDashboard({
+        periodDays: statusReportComparisonPeriodDays,
+        openedLast15Days: 0,
+        finalizedLast15Days: 0,
+        openedPrevious15Days: 0,
+        finalizedPrevious15Days: 0,
+        openedCurrentTickets: [],
+        finalizedCurrentTickets: [],
+        openedPreviousTickets: [],
+        finalizedPreviousTickets: [],
+      })
       setStatusReportLoading(false)
       return
     }
@@ -1653,12 +1776,22 @@ export default function CustomerHubTool({
             setStatusReportTickets([])
             setStatusReportError(null)
             setStatusReportWarning(null)
-            setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+            setStatusReportPeriodDashboard({
+              periodDays: statusReportComparisonPeriodDays,
+              openedLast15Days: 0,
+              finalizedLast15Days: 0,
+              openedPrevious15Days: 0,
+              finalizedPrevious15Days: 0,
+              openedCurrentTickets: [],
+              finalizedCurrentTickets: [],
+              openedPreviousTickets: [],
+              finalizedPreviousTickets: [],
+            })
           }
           return
         }
 
-        const response = await fetch(apiUrl(`/api/customer-hub/status-report?organizationIds=${encodeURIComponent(organizationIds.join(','))}`), {
+        const response = await fetch(apiUrl(`/api/customer-hub/status-report?organizationIds=${encodeURIComponent(organizationIds.join(','))}&periodDays=${encodeURIComponent(String(statusReportComparisonPeriodDaysApplied))}`), {
           headers: requestHeaders,
           cache: 'no-store',
         })
@@ -1671,7 +1804,17 @@ export default function CustomerHubTool({
         }
 
         const bodyText = await response.text()
-        const body = (bodyText ? JSON.parse(bodyText) : null) as (StatusReportResponse & { error?: string }) | null
+        let body: (StatusReportResponse & { error?: string }) | null = null
+
+        if (bodyText) {
+          try {
+            body = JSON.parse(bodyText) as (StatusReportResponse & { error?: string }) | null
+          } catch {
+            if (!response.ok) {
+              throw new Error(bodyText || 'Erro ao carregar o status report.')
+            }
+          }
+        }
 
         if (!response.ok) {
           throw new Error(body?.error ?? 'Erro ao carregar o status report.')
@@ -1683,11 +1826,15 @@ export default function CustomerHubTool({
         setStatusReportTickets(Array.isArray(body?.tickets) ? body.tickets : [])
         setStatusReportWarning(String(body?.warning ?? '').trim() || null)
         setStatusReportPeriodDashboard({
-          periodDays: Number(body?.dashboard?.periodDays ?? 15),
+          periodDays: Number(body?.dashboard?.periodDays ?? 7),
           openedLast15Days: Number(body?.dashboard?.openedLast15Days ?? 0),
           finalizedLast15Days: Number(body?.dashboard?.finalizedLast15Days ?? 0),
           openedPrevious15Days: Number(body?.dashboard?.openedPrevious15Days ?? 0),
           finalizedPrevious15Days: Number(body?.dashboard?.finalizedPrevious15Days ?? 0),
+          openedCurrentTickets: Array.isArray(body?.dashboard?.openedCurrentTickets) ? body.dashboard.openedCurrentTickets : [],
+          finalizedCurrentTickets: Array.isArray(body?.dashboard?.finalizedCurrentTickets) ? body.dashboard.finalizedCurrentTickets : [],
+          openedPreviousTickets: Array.isArray(body?.dashboard?.openedPreviousTickets) ? body.dashboard.openedPreviousTickets : [],
+          finalizedPreviousTickets: Array.isArray(body?.dashboard?.finalizedPreviousTickets) ? body.dashboard.finalizedPreviousTickets : [],
         })
       } catch (err) {
         if (!cancelled) {
@@ -1695,7 +1842,17 @@ export default function CustomerHubTool({
           setStatusReportTickets([])
           setStatusReportError(err instanceof Error ? err.message : 'Erro ao carregar o status report.')
           setStatusReportWarning(null)
-          setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+          setStatusReportPeriodDashboard({
+            periodDays: statusReportComparisonPeriodDaysApplied,
+            openedLast15Days: 0,
+            finalizedLast15Days: 0,
+            openedPrevious15Days: 0,
+            finalizedPrevious15Days: 0,
+            openedCurrentTickets: [],
+            finalizedCurrentTickets: [],
+            openedPreviousTickets: [],
+            finalizedPreviousTickets: [],
+          })
         }
       } finally {
         if (!cancelled) {
@@ -1709,7 +1866,7 @@ export default function CustomerHubTool({
     return () => {
       cancelled = true
     }
-  }, [clientes, requestHeaders, statusReportClientId, statusReportRefreshToken, subPage])
+  }, [clientes, requestHeaders, statusReportClientId, statusReportComparisonPeriodDaysApplied, statusReportRefreshToken, subPage])
 
   useEffect(() => {
     if (subPage !== 'status-report') return
@@ -1764,7 +1921,17 @@ export default function CustomerHubTool({
     setStatusReportTicketStatuses({})
     setStatusReportTicketPhases({})
     setStatusReportTicketModal(emptyModal())
-    setStatusReportPeriodDashboard({ periodDays: 15, openedLast15Days: 0, finalizedLast15Days: 0, openedPrevious15Days: 0, finalizedPrevious15Days: 0 })
+    setStatusReportPeriodDashboard({
+      periodDays: statusReportComparisonPeriodDays,
+      openedLast15Days: 0,
+      finalizedLast15Days: 0,
+      openedPrevious15Days: 0,
+      finalizedPrevious15Days: 0,
+      openedCurrentTickets: [],
+      finalizedCurrentTickets: [],
+      openedPreviousTickets: [],
+      finalizedPreviousTickets: [],
+    })
   }, [statusReportClientId, subPage])
 
   const filteredClientes = clientes.filter((c) => {
@@ -2511,71 +2678,295 @@ export default function CustomerHubTool({
           {statusReportWarning && <p className="muted">{statusReportWarning}</p>}
           {statusReportHistoryError && <p className="error">{statusReportHistoryError}</p>}
 
+          {statusReportCardTooltip && typeof document !== 'undefined' && createPortal(
+            <div
+              style={{
+                position: 'fixed',
+                top: statusReportCardTooltip.y,
+                left: statusReportCardTooltip.x,
+                width: 'min(420px, calc(100vw - 32px))',
+                maxHeight: '320px',
+                overflow: 'auto',
+                zIndex: 1200,
+                border: '1px solid #d9e5df',
+                borderRadius: '12px',
+                background: '#ffffff',
+                boxShadow: '0 14px 30px rgba(15, 74, 64, 0.18)',
+                padding: '0.65rem 0.75rem',
+              }}
+            >
+              <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 700, color: '#0f4a40' }}>
+                {statusReportCardTooltip.title}
+              </p>
+              <div style={{ marginTop: '0.4rem', display: 'grid', gap: '0.2rem' }}>
+                {statusReportCardTooltip.lines.map((line, index) => (
+                  <p key={`${index}-${line.slice(0, 32)}`} style={{ margin: 0, fontSize: '0.78rem', color: '#334155', lineHeight: 1.35 }}>
+                    {line}
+                  </p>
+                ))}
+                {statusReportCardTooltip.overflow > 0 && (
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>
+                    ... +{statusReportCardTooltip.overflow} ticket(s)
+                  </p>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )}
+
           {!selectedStatusReportClient ? (
             <p className="muted">Escolha um cliente para iniciar o relatório.</p>
           ) : (
             <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
               <section className="card" style={{ margin: 0 }}>
                 <h2>{selectedStatusReportClient.nome}</h2>
-                <div className="estimativas-stats">
-                  <span><strong>CNPJ:</strong> {selectedStatusReportClient.cnpj || '—'}</span>
-                  <span><strong>Segmento:</strong> {selectedStatusReportClient.segmento || '—'}</span>
-                  <span><strong>Cidade:</strong> {selectedStatusReportClient.cidade || '—'}</span>
-                  <span><strong>Chamados abertos:</strong> {statusReportTickets.length}</span>
-                  <span><strong>Enviados (atual):</strong> {statusReportComparison.currentTotal}</span>
-                </div>
-
-                <div className="card" style={{ margin: '0.75rem 0 0', padding: '0.85rem 0.95rem' }}>
-                  <h3 style={{ margin: '0 0 0.55rem' }}>Dashboard comparativo</h3>
-                  <div className="estimativas-stats">
-                    <span><strong>Período:</strong> {statusReportPeriodDashboard.periodDays} dias</span>
-                    <span><strong>Abertos no período:</strong> {statusReportPeriodDashboard.openedLast15Days}</span>
-                    <span><strong>Abertos na quinzena anterior:</strong> {statusReportPeriodDashboard.openedPrevious15Days}</span>
-                    <span><strong>Finalizados no período:</strong> {statusReportPeriodDashboard.finalizedLast15Days}</span>
-                    <span><strong>Finalizados na quinzena anterior:</strong> {statusReportPeriodDashboard.finalizedPrevious15Days}</span>
-                    <span><strong>Report anterior:</strong> {statusReportPreviousHistory ? formatReportDateTime(statusReportPreviousHistory.sentAt) : '—'}</span>
-                    <span><strong>Total anterior:</strong> {statusReportComparison.previousTotal}</span>
-                    <span><strong>Novos:</strong> {statusReportComparison.added}</span>
-                    <span><strong>Mantidos:</strong> {statusReportComparison.kept}</span>
-                    <span><strong>Removidos:</strong> {statusReportComparison.removed}</span>
+                <div
+                  style={{
+                    marginTop: '0.65rem',
+                    border: '1px solid #d9e5df',
+                    borderRadius: '14px',
+                    background: 'linear-gradient(160deg, #f7fbf9 0%, #eef5f2 100%)',
+                    padding: '1rem',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))',
+                      gap: '0.6rem',
+                    }}
+                  >
+                    <div style={{ border: '1px solid #d2dfd8', borderRadius: '12px', background: '#fff', padding: '0.65rem 0.7rem' }}>
+                      <p className="muted" style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>CNPJ</p>
+                      <strong style={{ fontSize: '0.92rem' }}>{selectedStatusReportClient.cnpj || '—'}</strong>
+                    </div>
+                    <div style={{ border: '1px solid #d2dfd8', borderRadius: '12px', background: '#fff', padding: '0.65rem 0.7rem' }}>
+                      <p className="muted" style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Segmento</p>
+                      <strong style={{ fontSize: '0.92rem' }}>{selectedStatusReportClient.segmento || '—'}</strong>
+                    </div>
+                    <div style={{ border: '1px solid #d2dfd8', borderRadius: '12px', background: '#fff', padding: '0.65rem 0.7rem' }}>
+                      <p className="muted" style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Cidade</p>
+                      <strong style={{ fontSize: '0.92rem' }}>{selectedStatusReportClient.cidade || '—'}</strong>
+                    </div>
+                    <div style={{ border: '1px solid #cde0d7', borderRadius: '12px', background: '#ffffff', padding: '0.65rem 0.7rem' }}>
+                      <p className="muted" style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Chamados abertos</p>
+                      <strong style={{ fontSize: '1.25rem', color: '#0f5f54' }}>{statusReportTickets.length}</strong>
+                    </div>
+                    <div style={{ border: '1px solid #cde0d7', borderRadius: '12px', background: '#ffffff', padding: '0.65rem 0.7rem' }}>
+                      <p className="muted" style={{ margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Enviados no ciclo</p>
+                      <strong style={{ fontSize: '1.25rem', color: '#0f5f54' }}>{statusReportComparison.currentTotal}</strong>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.85rem' }}>
-                    {statusReportFortnightChartRows.map((row) => (
-                      <div key={row.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.65rem 0.75rem', backgroundColor: '#f8fafc' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                          <strong>{row.label}</strong>
-                          <span className="muted" style={{ fontSize: '0.8rem' }}>
-                            Δ {row.delta >= 0 ? '+' : ''}{row.delta}
-                          </span>
-                        </div>
+                  <div
+                    style={{
+                      marginTop: '0.8rem',
+                      border: '1px solid #d6e3dd',
+                      borderRadius: '12px',
+                      background: '#ffffff',
+                      padding: '0.85rem 0.9rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <div>
+                        <h3 style={{ margin: 0, color: '#0f4a40' }}>Dashboard comparativo</h3>
+                        <p className="muted" style={{ margin: '0.2rem 0 0' }}>
+                          Janela de {statusReportPeriodDashboard.periodDays} dias com comparação do período atual e anterior.
+                        </p>
+                      </div>
+                      <span style={{ fontSize: '0.82rem', color: '#3f5f58', background: '#edf5f2', border: '1px solid #d2e0db', borderRadius: '999px', padding: '0.2rem 0.55rem' }}>
+                        Report anterior: {statusReportPreviousHistory ? formatReportDateTime(statusReportPreviousHistory.sentAt) : '—'}
+                      </span>
+                    </div>
 
-                        <div style={{ display: 'grid', gap: '0.35rem' }}>
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
-                              <span>Quinzena atual</span>
-                              <strong>{row.current}</strong>
-                            </div>
-                            <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
-                              <div style={{ width: `${row.currentPercent}%`, height: '100%', background: row.currentColor }} />
-                            </div>
-                          </div>
-
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
-                              <span>Quinzena anterior</span>
-                              <strong>{row.previous}</strong>
-                            </div>
-                            <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
-                              <div style={{ width: `${row.previousPercent}%`, height: '100%', background: row.previousColor }} />
-                            </div>
-                          </div>
+                    <div
+                      style={{
+                        marginTop: '0.6rem',
+                        padding: '0.55rem 0.65rem',
+                        border: '1px solid #d7e2dd',
+                        borderRadius: '10px',
+                        background: '#f8fbfa',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '0.55rem',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div>
+                        <strong style={{ color: '#0f4a40', fontSize: '0.9rem' }}>Período de comparação (dias)</strong>
+                        <p className="muted" style={{ margin: '0.15rem 0 0', fontSize: '0.78rem' }}>Faixa permitida: 1 a 90</p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          style={{ minWidth: '34px', padding: '0.3rem 0.5rem' }}
+                          onClick={() => setStatusReportComparisonPeriodDays((current) => Math.max(1, current - 1))}
+                          aria-label="Diminuir período"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={90}
+                          value={statusReportComparisonPeriodDays}
+                          onChange={(event) => {
+                            const raw = Number.parseInt(event.target.value, 10)
+                            if (!Number.isFinite(raw)) {
+                              setStatusReportComparisonPeriodDays(7)
+                              return
+                            }
+                            setStatusReportComparisonPeriodDays(Math.max(1, Math.min(90, raw)))
+                          }}
+                          style={{ width: '82px', textAlign: 'center', fontWeight: 700 }}
+                        />
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          style={{ minWidth: '34px', padding: '0.3rem 0.5rem' }}
+                          onClick={() => setStatusReportComparisonPeriodDays((current) => Math.min(90, current + 1))}
+                          aria-label="Aumentar período"
+                        >
+                          +
+                        </button>
+                        <div style={{ display: 'flex', gap: '0.3rem' }}>
+                          {[7, 15, 30].map((days) => (
+                            <button
+                              key={days}
+                              type="button"
+                              className="button-secondary"
+                              style={{
+                                fontSize: '0.74rem',
+                                padding: '0.2rem 0.45rem',
+                                borderColor: statusReportComparisonPeriodDays === days ? '#0f766e' : undefined,
+                                color: statusReportComparisonPeriodDays === days ? '#0f766e' : undefined,
+                                backgroundColor: statusReportComparisonPeriodDays === days ? '#ecfdf5' : undefined,
+                              }}
+                              onClick={() => setStatusReportComparisonPeriodDays(days)}
+                            >
+                              {days}
+                            </button>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
 
-                  {statusReportHistoryLoading && <p className="muted" style={{ margin: '0.5rem 0 0' }}>Carregando histórico...</p>}
+                    <div
+                      style={{
+                        marginTop: '0.7rem',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                        gap: '0.55rem',
+                      }}
+                    >
+                      <div
+                        onMouseEnter={(event) => openStatusReportCardTooltip(event, 'Tickets abertos no período', statusReportPeriodDashboard.openedCurrentTickets)}
+                        onMouseMove={(event) => openStatusReportCardTooltip(event, 'Tickets abertos no período', statusReportPeriodDashboard.openedCurrentTickets)}
+                        onMouseLeave={closeStatusReportCardTooltip}
+                        style={{ background: '#f5fbff', border: '1px solid #dbeafe', borderRadius: '10px', padding: '0.55rem 0.6rem', cursor: 'help' }}
+                      >
+                        <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>Abertos no período</p>
+                        <strong style={{ color: '#1d4ed8', fontSize: '1.05rem' }}>{statusReportPeriodDashboard.openedLast15Days}</strong>
+                      </div>
+                      <div
+                        onMouseEnter={(event) => openStatusReportCardTooltip(event, 'Tickets finalizados no período', statusReportPeriodDashboard.finalizedCurrentTickets)}
+                        onMouseMove={(event) => openStatusReportCardTooltip(event, 'Tickets finalizados no período', statusReportPeriodDashboard.finalizedCurrentTickets)}
+                        onMouseLeave={closeStatusReportCardTooltip}
+                        style={{ background: '#ecfeff', border: '1px solid #c7f0f4', borderRadius: '10px', padding: '0.55rem 0.6rem', cursor: 'help' }}
+                      >
+                        <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>Finalizados no período</p>
+                        <strong style={{ color: '#0f766e', fontSize: '1.05rem' }}>{statusReportPeriodDashboard.finalizedLast15Days}</strong>
+                      </div>
+                      <div
+                        onMouseEnter={(event) => openStatusReportCardTooltip(event, 'Tickets do report anterior', statusReportComparison.previousTickets)}
+                        onMouseMove={(event) => openStatusReportCardTooltip(event, 'Tickets do report anterior', statusReportComparison.previousTickets)}
+                        onMouseLeave={closeStatusReportCardTooltip}
+                        style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.55rem 0.6rem', cursor: 'help' }}
+                      >
+                        <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>Total anterior</p>
+                        <strong style={{ color: '#334155', fontSize: '1.05rem' }}>{statusReportComparison.previousTotal}</strong>
+                      </div>
+                      <div
+                        onMouseEnter={(event) => openStatusReportCardTooltip(event, 'Tickets novos no report', statusReportComparison.addedTickets)}
+                        onMouseMove={(event) => openStatusReportCardTooltip(event, 'Tickets novos no report', statusReportComparison.addedTickets)}
+                        onMouseLeave={closeStatusReportCardTooltip}
+                        style={{ background: '#f0fdf4', border: '1px solid #d1fae5', borderRadius: '10px', padding: '0.55rem 0.6rem', cursor: 'help' }}
+                      >
+                        <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>Novos no report</p>
+                        <strong style={{ color: '#166534', fontSize: '1.05rem' }}>{statusReportComparison.added}</strong>
+                      </div>
+                      <div
+                        onMouseEnter={(event) => openStatusReportCardTooltip(event, 'Tickets mantidos no report', statusReportComparison.keptTickets)}
+                        onMouseMove={(event) => openStatusReportCardTooltip(event, 'Tickets mantidos no report', statusReportComparison.keptTickets)}
+                        onMouseLeave={closeStatusReportCardTooltip}
+                        style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '0.55rem 0.6rem', cursor: 'help' }}
+                      >
+                        <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>Mantidos</p>
+                        <strong style={{ color: '#92400e', fontSize: '1.05rem' }}>{statusReportComparison.kept}</strong>
+                      </div>
+                      <div
+                        onMouseEnter={(event) => openStatusReportCardTooltip(event, 'Tickets removidos do report', statusReportComparison.removedTickets)}
+                        onMouseMove={(event) => openStatusReportCardTooltip(event, 'Tickets removidos do report', statusReportComparison.removedTickets)}
+                        onMouseLeave={closeStatusReportCardTooltip}
+                        style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '10px', padding: '0.55rem 0.6rem', cursor: 'help' }}
+                      >
+                        <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>Removidos</p>
+                        <strong style={{ color: '#be123c', fontSize: '1.05rem' }}>{statusReportComparison.removed}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.85rem' }}>
+                      {statusReportFortnightChartRows.map((row) => (
+                        <div key={row.id} style={{ border: '1px solid #dce7e2', borderRadius: '12px', padding: '0.7rem 0.8rem', backgroundColor: '#fbfdfc' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                            <strong style={{ color: '#174c43' }}>{row.label}</strong>
+                            <span
+                              style={{
+                                fontSize: '0.82rem',
+                                fontWeight: 700,
+                                color: row.delta > 0 ? '#0f766e' : row.delta < 0 ? '#be123c' : '#64748b',
+                                background: row.delta > 0 ? '#ecfdf5' : row.delta < 0 ? '#fff1f2' : '#f1f5f9',
+                                border: row.delta > 0 ? '1px solid #a7f3d0' : row.delta < 0 ? '1px solid #fecdd3' : '1px solid #cbd5e1',
+                                borderRadius: '999px',
+                                padding: '0.2rem 0.5rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                              }}
+                            >
+                              {row.delta > 0 ? '↑' : row.delta < 0 ? '↓' : '→'} {row.delta >= 0 ? '+' : ''}{row.delta}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gap: '0.45rem' }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.22rem' }}>
+                                <span>Período atual</span>
+                                <strong>{row.current}</strong>
+                              </div>
+                              <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
+                                <div style={{ width: `${row.currentPercent}%`, height: '100%', background: row.currentColor }} />
+                              </div>
+                            </div>
+
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.22rem' }}>
+                                <span>Período anterior</span>
+                                <strong>{row.previous}</strong>
+                              </div>
+                              <div style={{ width: '100%', height: '10px', background: '#e5e7eb', borderRadius: '999px', overflow: 'hidden' }}>
+                                <div style={{ width: `${row.previousPercent}%`, height: '100%', background: row.previousColor }} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {statusReportHistoryLoading && <p className="muted" style={{ margin: '0.6rem 0 0' }}>Carregando histórico...</p>}
+                  </div>
                 </div>
 
                 {!statusReportHistoryLoading && statusReportHistory.length > 0 && (

@@ -974,13 +974,76 @@ export default function ExcelCsvToSqliteTool() {
           </label>
           <label>
             Ultimo R_E_C_N_O_ existente
-            <input
-              type="number"
-              min={0}
-              value={lastRecno}
-              onChange={(event) => setLastRecno(event.target.value)}
-              placeholder="0"
-            />
+            <div
+              style={{
+                marginTop: '0.25rem',
+                padding: '0.5rem',
+                border: '1px solid #d7e2dd',
+                borderRadius: '10px',
+                background: '#f8fbfa',
+                display: 'grid',
+                gap: '0.45rem',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  style={{ minWidth: '36px', padding: '0.35rem 0.55rem' }}
+                  onClick={() => {
+                    const current = Number.parseInt(String(lastRecno || '0'), 10)
+                    const safeCurrent = Number.isFinite(current) ? current : 0
+                    setLastRecno(String(Math.max(0, safeCurrent - 1)))
+                  }}
+                  aria-label="Diminuir recno"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min={0}
+                  value={lastRecno}
+                  onChange={(event) => setLastRecno(event.target.value)}
+                  placeholder="0"
+                  style={{ width: '110px', textAlign: 'center', fontWeight: 700 }}
+                />
+                <button
+                  type="button"
+                  className="button-secondary"
+                  style={{ minWidth: '36px', padding: '0.35rem 0.55rem' }}
+                  onClick={() => {
+                    const current = Number.parseInt(String(lastRecno || '0'), 10)
+                    const safeCurrent = Number.isFinite(current) ? current : 0
+                    setLastRecno(String(safeCurrent + 1))
+                  }}
+                  aria-label="Aumentar recno"
+                >
+                  +
+                </button>
+                <span className="muted" style={{ fontSize: '0.78rem' }}>
+                  Incremento de 1
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                {[0, 1000, 10000].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className="button-secondary"
+                    style={{
+                      fontSize: '0.76rem',
+                      padding: '0.25rem 0.5rem',
+                      borderColor: Number.parseInt(String(lastRecno || '0'), 10) === preset ? '#0f766e' : undefined,
+                      color: Number.parseInt(String(lastRecno || '0'), 10) === preset ? '#0f766e' : undefined,
+                      backgroundColor: Number.parseInt(String(lastRecno || '0'), 10) === preset ? '#ecfdf5' : undefined,
+                    }}
+                    onClick={() => setLastRecno(String(preset))}
+                  >
+                    {preset.toLocaleString('pt-BR')}
+                  </button>
+                ))}
+              </div>
+            </div>
           </label>
         </div>
         <p className="muted">

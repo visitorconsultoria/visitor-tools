@@ -37,6 +37,12 @@ function getCorsOrigin(originHeader) {
   return configuredCorsOrigins.includes(requestOrigin) ? requestOrigin : ''
 }
 
+function setNoCacheHeaders(res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  res.set('Pragma', 'no-cache')
+  res.set('Expires', '0')
+}
+
 function getSupabaseConfig() {
   return {
     url: process.env.SUPABASE_URL || '',
@@ -2514,9 +2520,7 @@ app.get('/api/customer-hub/organizations', async (req, res) => {
 
 app.get('/api/customer-hub/status-report', async (req, res) => {
   try {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
-    res.set('Pragma', 'no-cache')
-    res.set('Expires', '0')
+    setNoCacheHeaders(res)
 
     const periodDaysRaw = Array.isArray(req.query.periodDays) ? req.query.periodDays[0] : req.query.periodDays
     const parsedPeriodDays = Number.parseInt(String(periodDaysRaw ?? '').trim(), 10)
@@ -4203,6 +4207,7 @@ const RUBRICA_FILE_TO_CATALOG_KEY = [
 ]
 
 let rubricaDefaultsBootstrapPromise = null
+let rubricaDefaultsBootstrapCompleted = false
 
 function normalizeRubricaHeader(value) {
   return String(value || '')
@@ -4311,6 +4316,10 @@ async function getRubricaDefaultXlsxFiles() {
 }
 
 async function bootstrapRubricaDefaultDataIfNeeded() {
+  if (rubricaDefaultsBootstrapCompleted) {
+    return
+  }
+
   if (rubricaDefaultsBootstrapPromise) {
     return rubricaDefaultsBootstrapPromise
   }
@@ -4328,6 +4337,7 @@ async function bootstrapRubricaDefaultDataIfNeeded() {
     }
 
     if ((count || 0) > 0) {
+      rubricaDefaultsBootstrapCompleted = true
       return
     }
 
@@ -4387,8 +4397,29 @@ async function bootstrapRubricaDefaultDataIfNeeded() {
 
     if (totalImported > 0) {
       console.log(`[rubricas-default] Carga automatica concluida com ${totalImported} registro(s).`)
+      rubricaDefaultsBootstrapCompleted = true
+      return
     }
-  })()
+
+    const { count: finalCount, error: finalCountError } = await client
+      .from(rubricaItemsTable)
+      .select('id', { count: 'exact', head: true })
+
+    if (finalCountError) {
+      console.warn(`[rubricas-default] Nao foi possivel validar carga final: ${finalCountError.message}`)
+      return
+    }
+
+    if ((finalCount || 0) > 0) {
+      rubricaDefaultsBootstrapCompleted = true
+      console.log(`[rubricas-default] Tabela de itens ja possui ${finalCount} registro(s) apos bootstrap.`)
+      return
+    }
+
+    console.warn('[rubricas-default] Bootstrap concluido sem registros importados; nova tentativa sera feita no proximo acesso.')
+  })().finally(() => {
+    rubricaDefaultsBootstrapPromise = null
+  })
 
   return rubricaDefaultsBootstrapPromise
 }
@@ -4533,6 +4564,7 @@ async function deleteRubricaItem(id, catalog) {
 
 app.get('/api/rubricas/catalogs', async (_req, res) => {
   try {
+    setNoCacheHeaders(res)
     const items = await listRubricaCatalogs()
     return res.json({ items })
   } catch (error) {
@@ -4543,6 +4575,7 @@ app.get('/api/rubricas/catalogs', async (_req, res) => {
 
 app.get('/api/rubricas/catalogs/:catalogKey/items', async (req, res) => {
   try {
+    setNoCacheHeaders(res)
     const catalog = parseRubricaCatalogKey(req.params.catalogKey)
     const items = await listRubricaItems(catalog)
     return res.json({ items })

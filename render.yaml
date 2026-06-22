@@ -24,6 +24,10 @@ services:
         value: daily_activities
       - key: SUPABASE_USERS_TABLE
         value: app_users
+      - key: SUPABASE_RUBRICA_CATALOGS_TABLE
+        value: rubrica_reference_catalogs
+      - key: SUPABASE_RUBRICA_ITEMS_TABLE
+        value: rubrica_reference_items
       - key: SUPABASE_TICKET_HUB_ACCESSES_TABLE
         value: ticket_hub_accesses
       - key: SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE

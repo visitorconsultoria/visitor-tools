@@ -99,36 +99,51 @@ async function executeSetup() {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
+  let tablesReady = false
+
   try {
     console.log('📋 Executando SQL de criacao de tabelas e catalogo...')
     const { error: sqlError } = await client.rpc('exec', {
       sql: SQL_SCRIPT,
-    }).catch(() => {
-      return { error: null }
     })
 
     if (sqlError) {
-      console.log('⚠️  RPC exec nao disponivel. Executando via query...')
-
-      const { error: queryError } = await client
-        .from('information_schema.tables')
-        .select('*')
-        .limit(0)
-
-      if (!queryError) {
-        console.log('✅ Conexao com Supabase validada')
-      }
-
-      console.log('\n⚠️  Para criar as tabelas, copie este SQL no Supabase Editor:\n')
-      console.log('---START SQL---')
-      console.log(SQL_SCRIPT)
-      console.log('---END SQL---\n')
+      console.log(`⚠️  RPC exec retornou erro: ${sqlError.message}`)
     } else {
       console.log('✅ Tabelas criadas com sucesso!')
+      tablesReady = true
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    console.warn(`⚠️  Validacao SQL: ${detail}`)
+    console.warn(`⚠️  Nao foi possivel executar o SQL via RPC: ${detail}`)
+  }
+
+  if (!tablesReady) {
+    console.log('\n🔎 Validando se as tabelas ja existem no projeto...')
+
+    const [{ error: catalogsError }, { error: itemsError }] = await Promise.all([
+      client.from('rubrica_reference_catalogs').select('id').limit(1),
+      client.from('rubrica_reference_items').select('id').limit(1),
+    ])
+
+    if (!catalogsError && !itemsError) {
+      tablesReady = true
+      console.log('✅ Tabelas ja existentes e acessiveis no Supabase')
+    } else {
+      if (catalogsError) {
+        console.log(`⚠️  rubrica_reference_catalogs: ${catalogsError.message}`)
+      }
+
+      if (itemsError) {
+        console.log(`⚠️  rubrica_reference_items: ${itemsError.message}`)
+      }
+
+      console.log('\n⚠️  Para criar as tabelas, execute este SQL no Supabase SQL Editor:\n')
+      console.log('---START SQL---')
+      console.log(SQL_SCRIPT)
+      console.log('---END SQL---\n')
+      process.exit(1)
+    }
   }
 
   console.log('\n📦 Importando dados dos arquivos XLSX...')

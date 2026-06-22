@@ -3,7 +3,8 @@ import './App.css'
 import visitorLogo from './assets/vistor_logo_verde2.png'
 import { apiUrl } from './lib/api'
 import type { CustomerHubPage } from './components/CustomerHubTool'
-import { ALL_MENU_KEYS, getEffectiveMenus, type AllowedMenu } from './lib/menuConfig'
+import { ALL_MENU_KEYS, getEffectiveMenus } from './lib/menuConfig'
+import type { AllowedMenu } from './types'
 
 const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
 const ExcelCsvToSqliteTool = lazy(() => import('./components/ExcelCsvToSqliteTool'))
@@ -39,9 +40,19 @@ type XmlExcelRoutineOption = {
   available: boolean
 }
 
+type RubricaCatalogPageKey =
+  | 'rubrica-natureza'
+  | 'rubrica-inc-cp'
+  | 'rubrica-inc-fgts'
+  | 'rubrica-inc-pis'
+  | 'rubrica-inc-rpps'
+  | 'rubrica-inc-irrf'
+  | 'rubrica-dirf'
+  | 'rubrica-id-calculo'
+
 type MenuPage = 'home' | AllowedMenu
 
-type SidebarSubmenuSection = 'xml-excel' | 'customer-hub' | 'ticket-hub'
+type SidebarSubmenuSection = 'xml-excel' | 'customer-hub' | 'ticket-hub' | 'rubricas-basicos'
 
 type UserSession = {
   username: string
@@ -331,6 +342,7 @@ function App() {
   const [showOnlyNotFound, setShowOnlyNotFound] = useState(false)
   const [showSourceMenu, setShowSourceMenu] = useState(false)
   const [currentPage, setCurrentPage] = useState<MenuPage>('home')
+  const [selectedRubricaCatalogKey, setSelectedRubricaCatalogKey] = useState<RubricaCatalogPageKey>('rubrica-natureza')
   const [xmlExcelRoutine, setXmlExcelRoutine] = useState<XmlExcelRoutine>('s-5002')
   const [customerHubPage, setCustomerHubPage] = useState<CustomerHubPage>('dashboard')
   const [ticketHubPage, setTicketHubPage] = useState<'todos' | 'abertos' | 'admin'>('todos')
@@ -966,7 +978,9 @@ function App() {
               type="button"
               className={`sidebar__link ${currentPage === 'rubricas-validacao' ? 'sidebar__link--active' : ''}`}
               onClick={() => {
+                const shouldCollapse = currentPage === 'rubricas-validacao' && openSidebarSubmenu === 'rubricas-basicos'
                 setCurrentPage('rubricas-validacao')
+                setOpenSidebarSubmenu(shouldCollapse ? null : 'rubricas-basicos')
                 setShowSourceMenu(false)
               }}
               aria-current={currentPage === 'rubricas-validacao' ? 'page' : undefined}
@@ -978,6 +992,28 @@ function App() {
               </span>
               <span>Validação de Rubricas</span>
             </button>
+          )}
+          {canAccessPage('rubricas-validacao', currentUser) && currentPage === 'rubricas-validacao' && openSidebarSubmenu === 'rubricas-basicos' && (
+            <div className="sidebar__subnav" aria-label="Cadastros Basicos">
+              <button
+                type="button"
+                className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-natureza' ? 'sidebar__sublink--active' : ''}`}
+                onClick={() => {
+                  setSelectedRubricaCatalogKey('rubrica-natureza')
+                  setShowSourceMenu(false)
+                }}
+                aria-current={selectedRubricaCatalogKey === 'rubrica-natureza' ? 'page' : undefined}
+              >
+                Natureza de Rubricas
+              </button>
+              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-cp')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'page' : undefined}>Inc. CP</button>
+              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-fgts')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'page' : undefined}>Inc. FGTS</button>
+              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-pis')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'page' : undefined}>Inc. PIS</button>
+              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-rpps')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'page' : undefined}>Inc. RPPS</button>
+              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-irrf')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'page' : undefined}>Inc. IRRF</button>
+              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-dirf' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-dirf')} aria-current={selectedRubricaCatalogKey === 'rubrica-dirf' ? 'page' : undefined}>DIRF - Protheus</button>
+              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-id-calculo')} aria-current={selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'page' : undefined}>ID CÁLCULO - Protheus</button>
+            </div>
           )}
           {canAccessPage('user-admin', currentUser) && (
             <button
@@ -1051,7 +1087,16 @@ function App() {
                 : currentPage === 'propostas'
                   ? 'Propostas Comerciais'
                 : currentPage === 'rubricas-validacao'
-                  ? 'Validação de Rubricas'
+                  ? `Validação de Rubricas • ${
+                      selectedRubricaCatalogKey === 'rubrica-natureza' ? 'Natureza de Rubricas'
+                        : selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'Inc. CP'
+                        : selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'Inc. FGTS'
+                        : selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'Inc. PIS'
+                        : selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'Inc. RPPS'
+                        : selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'Inc. IRRF'
+                        : selectedRubricaCatalogKey === 'rubrica-dirf' ? 'DIRF Protheus'
+                        : 'ID CÁLCULO Protheus'
+                    }`
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
             </h1>
             <p className="app__subtitle">
@@ -1082,7 +1127,7 @@ function App() {
                 : currentPage === 'propostas'
                   ? 'Criação e gestão de propostas comerciais da Visitor Consultoria.'
                 : currentPage === 'rubricas-validacao'
-                  ? 'Valide arquivos CSV/Excel de rubricas com regras persistidas em banco.'
+                  ? 'Escolha um dos 8 cadastros básicos e mantenha sua base de rubricas com CRUD no Supabase.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -1201,7 +1246,11 @@ function App() {
                   <button
                     type="button"
                     className="button-secondary"
-                    onClick={() => setCurrentPage('rubricas-validacao')}
+                    onClick={() => {
+                      setCurrentPage('rubricas-validacao')
+                      setSelectedRubricaCatalogKey('rubrica-natureza')
+                      setOpenSidebarSubmenu('rubricas-basicos')
+                    }}
                   >
                     Abrir Validação de Rubricas
                   </button>
@@ -1358,11 +1407,15 @@ function App() {
               {canAccessPage('rubricas-validacao', currentUser) && (
                 <section className="card home-tool">
                   <h3>Validação de Rubricas</h3>
-                  <p>Aplique regras de conferência em arquivos CSV/Excel e gere relatório de divergências.</p>
+                  <p>Gerencie 8 catálogos de rubricas com CRUD completo e vigência.</p>
                   <button
                     type="button"
                     className="button-secondary"
-                    onClick={() => setCurrentPage('rubricas-validacao')}
+                    onClick={() => {
+                      setCurrentPage('rubricas-validacao')
+                      setSelectedRubricaCatalogKey('rubrica-natureza')
+                      setOpenSidebarSubmenu('rubricas-basicos')
+                    }}
                   >
                     Acessar
                   </button>
@@ -1621,7 +1674,7 @@ function App() {
             ) : currentPage === 'propostas' ? (
               <PropostaComercialTool />
             ) : currentPage === 'rubricas-validacao' ? (
-              <RubricasValidationTool />
+              <RubricasValidationTool catalogPageKey={selectedRubricaCatalogKey} />
             ) : currentPage === 'user-admin' ? (
               <UserAccessTool currentUsername={currentUser?.username || ''} />
             ) : currentPage === 'change-password' ? (
@@ -1643,3 +1696,4 @@ function App() {
 }
 
 export default App
+

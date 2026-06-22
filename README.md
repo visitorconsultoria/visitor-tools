@@ -251,6 +251,54 @@ Para mais informações sobre a API do TomTicket, consulte:
 - Documentação: https://tomticket.tomticket.com/kb/chamados-api
 - Endpoint de organizações: `https://api.tomticket.com/v2.0/organization/list`
 
+## Cadastros Basicos - Rubricas (Supabase)
+
+A rotina de `Cadastros Basicos - Rubricas` foi redesenhada para CRUD de tabelas de referencia (eSocial/Protheus) no Supabase.
+
+### Estrutura de dados
+
+Execute o script:
+
+- [scripts/supabase-rubrica-validation-rules.sql](scripts/supabase-rubrica-validation-rules.sql)
+
+Ele cria:
+
+- `rubrica_reference_catalogs`: catalogos (8 tabelas de rubricas)
+- `rubrica_reference_items`: registros com `codigo`, `descricao abreviada`, `descricao completa`, `inicio/fim de vigencia` e `reference_links`
+
+No catalogo `Tabela ID CALCULO - Protheus`, o campo `reference_links` aceita multiplos links.
+
+### Variaveis de ambiente
+
+```bash
+SUPABASE_RUBRICA_CATALOGS_TABLE=rubrica_reference_catalogs
+SUPABASE_RUBRICA_ITEMS_TABLE=rubrica_reference_items
+```
+
+### Endpoints da API
+
+- `GET /api/rubricas/catalogs`
+- `GET /api/rubricas/catalogs/:catalogKey/items`
+- `POST /api/rubricas/catalogs/:catalogKey/items`
+- `PUT /api/rubricas/catalogs/:catalogKey/items/:id`
+- `DELETE /api/rubricas/catalogs/:catalogKey/items/:id`
+
+### Carga default automatica via planilhas anexas
+
+Nao e necessario processo manual de importacao para os 8 cadastros basicos de rubricas.
+
+Comportamento atual:
+
+1. O backend procura automaticamente planilhas `.xlsx` em `scripts/rubricas-defaults` (ou `scripts` como fallback).
+2. No primeiro acesso aos endpoints de rubricas, se a tabela `rubrica_reference_items` estiver vazia, a carga inicial e executada automaticamente.
+3. Os dados sao deduplicados por codigo e gravados por catalogo.
+
+Importacao manual continua disponivel apenas para manutencao/recarga excepcional:
+
+```bash
+npm run import:rubricas -- --dir=scripts/rubricas-defaults
+```
+
 ### Histórico de Status Report (Central de Clientes)
 
 Persistência dos reports enviados com os números de tickets e comparação com o envio anterior.

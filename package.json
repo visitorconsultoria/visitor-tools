@@ -16,6 +16,8 @@
     "deploy": "gh-pages -d dist",
     "deploy:prod": "node scripts/deploy-prod.mjs",
     "import:customer-hub": "node scripts/import-customer-hub-xlsx.mjs",
+    "import:rubricas": "node scripts/import-rubricas-xlsx.mjs",
+    "setup:rubricas": "node scripts/setup-rubricas.mjs",
     "supabase:keepalive": "node scripts/supabase-keepalive.mjs",
     "supabase:keepalive:once": "node scripts/supabase-keepalive.mjs --once"
   },

@@ -1,12 +1,18 @@
 import express from 'express'
 import dotenv from 'dotenv'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { readdir } from 'node:fs/promises'
 import { createClient } from '@supabase/supabase-js'
+import XLSX from 'xlsx'
 import { ASSIGNABLE_MENU_KEYS, getEffectiveMenus, isVisitorUsername, normalizeMenuPermissions } from './src/lib/menuConfig.mjs'
 
 dotenv.config()
 
 const app = express()
 const port = Number(process.env.API_PORT || 8787)
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 function normalizeOriginValue(value) {
   const raw = String(value || '').trim()
@@ -50,7 +56,8 @@ function getSupabaseConfig() {
     customerStatusReportHistoryTable: process.env.SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE || 'customer_hub_status_report_history',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
-    rubricaRulesTable: process.env.SUPABASE_RUBRICA_RULES_TABLE || 'rubrica_validation_rules',
+    rubricaCatalogsTable: process.env.SUPABASE_RUBRICA_CATALOGS_TABLE || 'rubrica_reference_catalogs',
+    rubricaItemsTable: process.env.SUPABASE_RUBRICA_ITEMS_TABLE || 'rubrica_reference_items',
   }
 }
 
@@ -97,7 +104,8 @@ function getSupabaseClient() {
     customerStatusReportHistoryTable: config.customerStatusReportHistoryTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
-    rubricaRulesTable: config.rubricaRulesTable,
+    rubricaCatalogsTable: config.rubricaCatalogsTable,
+    rubricaItemsTable: config.rubricaItemsTable,
   }
 }
 
@@ -4117,178 +4125,465 @@ app.post('/api/ticket-hub/tickets/reply/operator', async (req, res) => {
   }
 })
 
-// ─── Validacao de Rubricas ───────────────────────────────────────────────────
+// ─── Cadastros Basicos > Validacao de Rubricas ───────────────────────────────
 
-const RUBRICA_RULE_SELECT = 'id, rule_name, trigger_column, trigger_value, expected_column, expected_value, expected_conditions, is_active, notes, created_at, updated_at'
+const RUBRICA_CATALOG_OPTIONS = Object.freeze([
+  { key: 'natureza-rubricas', label: 'Tabela de Natureza de Rubricas', allowMultipleLinks: false },
+  { key: 'inc-cp', label: 'Tabela Inc. CP', allowMultipleLinks: false },
+  { key: 'inc-fgts', label: 'Tabela Inc. FGTS', allowMultipleLinks: false },
+  { key: 'inc-pis', label: 'Tabela Inc. PIS', allowMultipleLinks: false },
+  { key: 'inc-rpps', label: 'Tabela Inc. RPPS', allowMultipleLinks: false },
+  { key: 'inc-irrf', label: 'Tabela Inc. IRRF', allowMultipleLinks: false },
+  { key: 'dirf-protheus', label: 'Tabela DIRF - Protheus', allowMultipleLinks: false },
+  { key: 'id-calculo-protheus', label: 'Tabela ID CALCULO - Protheus', allowMultipleLinks: true },
+])
 
-function normalizeRubricaExpectedConditions(raw, fallbackColumn = '', fallbackValue = '') {
-  const source = Array.isArray(raw)
-    ? raw
-    : (fallbackColumn && fallbackValue ? [{ column: fallbackColumn, value: fallbackValue }] : [])
+const RUBRICA_CATALOG_BY_KEY = new Map(RUBRICA_CATALOG_OPTIONS.map((item) => [item.key, item]))
 
-  const normalized = source
-    .map((item) => {
-      const record = item && typeof item === 'object' ? item : {}
-      return {
-        column: String(record.column ?? '').trim(),
-        value: String(record.value ?? '').trim(),
-      }
-    })
-    .filter((item) => item.column && item.value)
+const RUBRICA_ITEM_SELECT = 'id, catalog_key, code, short_description, full_description, valid_from, valid_to, reference_links, created_at, updated_at'
 
-  return normalized
+function parseRubricaCatalogKey(raw) {
+  const key = String(raw ?? '').trim()
+  const catalog = RUBRICA_CATALOG_BY_KEY.get(key)
+  if (!catalog) {
+    throw new Error('Cadastro de rubrica invalido.')
+  }
+  return catalog
 }
 
-function parseRubricaRuleIdInput(raw) {
+function parseRubricaItemIdInput(raw) {
   const id = Number(String(raw ?? '').trim())
   if (!Number.isInteger(id) || id <= 0) {
-    throw new Error('ID da regra invalido.')
+    throw new Error('ID do cadastro invalido.')
   }
   return id
 }
 
-function normalizeRubricaRuleRow(row) {
-  const expectedConditions = normalizeRubricaExpectedConditions(
-    row.expected_conditions,
-    row.expected_column,
-    row.expected_value,
-  )
+function normalizeRubricaDateInput(value) {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
 
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+
+  const br = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`
+
+  return trimmed
+}
+
+function normalizeRubricaLinks(raw) {
+  if (Array.isArray(raw)) {
+    return Array.from(new Set(raw.map((item) => String(item ?? '').trim()).filter(Boolean)))
+  }
+
+  if (typeof raw === 'string') {
+    return Array.from(
+      new Set(
+        raw
+          .split(/\r?\n|;/g)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    )
+  }
+
+  return []
+}
+
+const RUBRICA_FILE_TO_CATALOG_KEY = [
+  { match: /natureza/i, key: 'natureza-rubricas' },
+  { match: /inc\.?\s*cp/i, key: 'inc-cp' },
+  { match: /inc\.?\s*fgts/i, key: 'inc-fgts' },
+  { match: /inc\.?\s*pis/i, key: 'inc-pis' },
+  { match: /inc\.?\s*rpps/i, key: 'inc-rpps' },
+  { match: /inc\.?\s*irrf/i, key: 'inc-irrf' },
+  { match: /dirf/i, key: 'dirf-protheus' },
+  { match: /id\s*c[aá]lculo/i, key: 'id-calculo-protheus' },
+]
+
+let rubricaDefaultsBootstrapPromise = null
+
+function normalizeRubricaHeader(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function getFirstNonEmpty(...values) {
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function parseRubricaSpreadsheetDate(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+
+  const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`
+
+  const asDate = new Date(text)
+  if (!Number.isNaN(asDate.getTime())) {
+    return asDate.toISOString().slice(0, 10)
+  }
+
+  return null
+}
+
+function resolveRubricaCatalogKeyByFilename(fileName) {
+  const baseName = fileName.replace(/^\d+\.\s+/, '').trim()
+  const normalized = normalizeRubricaHeader(baseName)
+  const match = RUBRICA_FILE_TO_CATALOG_KEY.find((item) => item.match.test(normalized))
+  return match?.key || ''
+}
+
+function extractRubricaRowsFromWorkbook(filePath) {
+  const workbook = XLSX.readFile(filePath, { cellDates: false })
+  const firstSheetName = workbook.SheetNames[0]
+  const sheet = workbook.Sheets[firstSheetName]
+  if (!sheet) return []
+
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' })
+  if (!Array.isArray(matrix) || !matrix.length) return []
+
+  const headerRow = matrix[0].map((cell) => normalizeRubricaHeader(cell))
+  const byKeywords = (keywords) => {
+    for (let index = 0; index < headerRow.length; index += 1) {
+      const header = headerRow[index]
+      if (keywords.some((kw) => header.includes(kw))) return index
+    }
+    return -1
+  }
+
+  const idxCodigoNatureza = byKeywords(['codigo da natureza'])
+  const idxCodigo = byKeywords(['codigo'])
+  const idxDescAbrev = byKeywords(['descricao abreviada'])
+  const idxDescComp = byKeywords(['descricao completa'])
+  const idxInicio = byKeywords(['inicio da vigencia'])
+  const idxFim = byKeywords(['fim da vigencia'])
+  const idxLinks = byKeywords(['links de referencia', 'link de referencia', 'link referencia'])
+
+  return matrix
+    .slice(1)
+    .map((row) => {
+      const code = getFirstNonEmpty(row[idxCodigoNatureza], row[idxCodigo])
+      const shortDescription = getFirstNonEmpty(row[idxDescAbrev])
+      const fullDescription = getFirstNonEmpty(row[idxDescComp], shortDescription)
+      const validFrom = parseRubricaSpreadsheetDate(row[idxInicio])
+      const validTo = parseRubricaSpreadsheetDate(row[idxFim])
+      const rawLinks = getFirstNonEmpty(row[idxLinks])
+      const referenceLinks = rawLinks
+        ? Array.from(new Set(String(rawLinks).split(/\r?\n|;/g).map((item) => item.trim()).filter(Boolean)))
+        : []
+
+      return { code, shortDescription, fullDescription, validFrom, validTo, referenceLinks }
+    })
+    .filter((item) => item.code && item.shortDescription)
+}
+
+async function getRubricaDefaultXlsxFiles() {
+  const possibleDirs = [
+    path.resolve(__dirname, 'scripts', 'rubricas-defaults'),
+    path.resolve(__dirname, 'scripts'),
+  ]
+
+  for (const dirPath of possibleDirs) {
+    try {
+      const entries = await readdir(dirPath, { withFileTypes: true })
+      const files = entries
+        .filter((entry) => entry.isFile() && /\.xlsx$/i.test(entry.name))
+        .map((entry) => path.join(dirPath, entry.name))
+      if (files.length) return files
+    } catch {
+      // try the next possible directory
+    }
+  }
+
+  return []
+}
+
+async function bootstrapRubricaDefaultDataIfNeeded() {
+  if (rubricaDefaultsBootstrapPromise) {
+    return rubricaDefaultsBootstrapPromise
+  }
+
+  rubricaDefaultsBootstrapPromise = (async () => {
+    const { client, rubricaCatalogsTable, rubricaItemsTable } = getSupabaseClient()
+
+    const { count, error: countError } = await client
+      .from(rubricaItemsTable)
+      .select('id', { count: 'exact', head: true })
+
+    if (countError) {
+      console.warn(`[rubricas-default] Nao foi possivel verificar registros existentes: ${countError.message}`)
+      return
+    }
+
+    if ((count || 0) > 0) {
+      return
+    }
+
+    const { error: catalogSeedError } = await client
+      .from(rubricaCatalogsTable)
+      .upsert(
+        RUBRICA_CATALOG_OPTIONS.map((catalog) => ({
+          catalog_key: catalog.key,
+          catalog_label: catalog.label,
+          allow_multiple_links: catalog.allowMultipleLinks,
+        })),
+        { onConflict: 'catalog_key' },
+      )
+
+    if (catalogSeedError) {
+      console.warn(`[rubricas-default] Falha ao garantir catalogos: ${catalogSeedError.message}`)
+      return
+    }
+
+    const xlsxFiles = await getRubricaDefaultXlsxFiles()
+    if (!xlsxFiles.length) {
+      console.warn('[rubricas-default] Nenhuma planilha .xlsx encontrada para carga automatica.')
+      return
+    }
+
+    let totalImported = 0
+
+    for (const filePath of xlsxFiles) {
+      const fileName = path.basename(filePath)
+      const catalogKey = resolveRubricaCatalogKeyByFilename(fileName)
+      if (!catalogKey) continue
+
+      const rows = extractRubricaRowsFromWorkbook(filePath)
+      if (!rows.length) continue
+
+      const payload = rows.map((row) => ({
+        catalog_key: catalogKey,
+        code: row.code,
+        short_description: row.shortDescription,
+        full_description: row.fullDescription,
+        valid_from: row.validFrom,
+        valid_to: row.validTo,
+        reference_links: catalogKey === 'id-calculo-protheus' ? row.referenceLinks : row.referenceLinks.slice(0, 1),
+      }))
+
+      const deduped = Array.from(new Map(payload.map((item) => [item.code, item])).values())
+      if (!deduped.length) continue
+
+      const { error } = await client.from(rubricaItemsTable).upsert(deduped, { onConflict: 'catalog_key,code' })
+      if (error) {
+        console.warn(`[rubricas-default] Falha ao importar ${fileName}: ${error.message}`)
+        continue
+      }
+
+      totalImported += deduped.length
+    }
+
+    if (totalImported > 0) {
+      console.log(`[rubricas-default] Carga automatica concluida com ${totalImported} registro(s).`)
+    }
+  })()
+
+  return rubricaDefaultsBootstrapPromise
+}
+
+function normalizeRubricaCatalogRow(row) {
+  const key = String(row.catalog_key ?? row.key ?? '').trim()
+  const configured = RUBRICA_CATALOG_BY_KEY.get(key)
+  return {
+    key,
+    label: String(row.catalog_label ?? row.label ?? configured?.label ?? key),
+    allowMultipleLinks: row.allow_multiple_links === true || configured?.allowMultipleLinks === true,
+  }
+}
+
+function normalizeRubricaItemRow(row) {
   return {
     id: Number(row.id ?? 0),
-    ruleName: String(row.rule_name ?? ''),
-    triggerColumn: String(row.trigger_column ?? ''),
-    triggerValue: String(row.trigger_value ?? ''),
-    expectedColumn: String(expectedConditions[0]?.column ?? row.expected_column ?? ''),
-    expectedValue: String(expectedConditions[0]?.value ?? row.expected_value ?? ''),
-    expectedConditions,
-    isActive: Boolean(row.is_active),
-    notes: String(row.notes ?? ''),
+    catalogKey: String(row.catalog_key ?? ''),
+    code: String(row.code ?? ''),
+    shortDescription: String(row.short_description ?? ''),
+    fullDescription: String(row.full_description ?? ''),
+    validFrom: String(row.valid_from ?? ''),
+    validTo: String(row.valid_to ?? ''),
+    referenceLinks: normalizeRubricaLinks(row.reference_links),
     createdAt: String(row.created_at ?? ''),
     updatedAt: String(row.updated_at ?? ''),
   }
 }
 
-function parseRubricaRulePayload(payload) {
-  const expectedConditions = normalizeRubricaExpectedConditions(
-    payload.expectedConditions,
-    payload.expectedColumn,
-    payload.expectedValue,
-  )
-
+function parseRubricaItemPayload(payload, catalog) {
+  const links = normalizeRubricaLinks(payload.referenceLinks ?? payload.referenceLinksText)
   return {
-    rule_name: String(payload.ruleName ?? '').trim(),
-    trigger_column: String(payload.triggerColumn ?? '').trim(),
-    trigger_value: String(payload.triggerValue ?? '').trim(),
-    expected_column: String(expectedConditions[0]?.column ?? '').trim(),
-    expected_value: String(expectedConditions[0]?.value ?? '').trim(),
-    expected_conditions: expectedConditions,
-    is_active: payload.isActive !== false,
-    notes: String(payload.notes ?? '').trim(),
+    catalog_key: catalog.key,
+    code: String(payload.code ?? '').trim(),
+    short_description: String(payload.shortDescription ?? '').trim(),
+    full_description: String(payload.fullDescription ?? '').trim(),
+    valid_from: normalizeRubricaDateInput(payload.validFrom) || null,
+    valid_to: normalizeRubricaDateInput(payload.validTo) || null,
+    reference_links: catalog.allowMultipleLinks ? links : links.slice(0, 1),
     updated_at: new Date().toISOString(),
   }
 }
 
-function validateRubricaRulePayload(parsed) {
-  if (!parsed.rule_name) throw new Error('Nome da regra obrigatorio.')
-  if (!parsed.trigger_column) throw new Error('Coluna gatilho obrigatoria.')
-  if (!parsed.trigger_value) throw new Error('Valor gatilho obrigatorio.')
-  if (!Array.isArray(parsed.expected_conditions) || !parsed.expected_conditions.length) {
-    throw new Error('Informe ao menos um campo esperado para a regra.')
+function validateRubricaItemPayload(parsed) {
+  if (!parsed.code) {
+    throw new Error('Codigo obrigatorio.')
+  }
+
+  if (!parsed.short_description) {
+    throw new Error('Descricao abreviada obrigatoria.')
+  }
+
+  if (!parsed.full_description) {
+    throw new Error('Descricao completa obrigatoria.')
+  }
+
+  if (parsed.valid_from && parsed.valid_to && parsed.valid_to < parsed.valid_from) {
+    throw new Error('Fim da vigencia nao pode ser menor que o inicio da vigencia.')
   }
 }
 
-async function listRubricaRules() {
-  const { client, rubricaRulesTable } = getSupabaseClient()
+async function listRubricaCatalogs() {
+  await bootstrapRubricaDefaultDataIfNeeded()
+
+  const { client, rubricaCatalogsTable } = getSupabaseClient()
   const { data: rows, error } = await client
-    .from(rubricaRulesTable)
-    .select(RUBRICA_RULE_SELECT)
-    .order('id', { ascending: false })
+    .from(rubricaCatalogsTable)
+    .select('catalog_key, catalog_label, allow_multiple_links')
+    .order('id', { ascending: true })
 
   if (error) throw new Error(error.message)
-  return (rows || []).map(normalizeRubricaRuleRow)
+
+  const fromDb = Array.isArray(rows) ? rows.map(normalizeRubricaCatalogRow) : []
+  const finalCatalogs = fromDb.length
+    ? fromDb
+    : RUBRICA_CATALOG_OPTIONS.map((item) => ({
+      key: item.key,
+      label: item.label,
+      allowMultipleLinks: item.allowMultipleLinks,
+    }))
+
+  return finalCatalogs.filter((item) => RUBRICA_CATALOG_BY_KEY.has(item.key))
 }
 
-async function createRubricaRule(payload) {
-  const parsed = parseRubricaRulePayload(payload)
-  validateRubricaRulePayload(parsed)
+async function listRubricaItems(catalog) {
+  await bootstrapRubricaDefaultDataIfNeeded()
 
-  const { client, rubricaRulesTable } = getSupabaseClient()
+  const { client, rubricaItemsTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(rubricaItemsTable)
+    .select(RUBRICA_ITEM_SELECT)
+    .eq('catalog_key', catalog.key)
+    .order('code', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeRubricaItemRow)
+}
+
+async function createRubricaItem(catalog, payload) {
+  const parsed = parseRubricaItemPayload(payload, catalog)
+  validateRubricaItemPayload(parsed)
+
+  const { client, rubricaItemsTable } = getSupabaseClient()
   const { data: row, error } = await client
-    .from(rubricaRulesTable)
+    .from(rubricaItemsTable)
     .insert({ ...parsed, created_at: new Date().toISOString() })
-    .select(RUBRICA_RULE_SELECT)
+    .select(RUBRICA_ITEM_SELECT)
     .single()
 
   if (error) throw new Error(error.message)
-  return normalizeRubricaRuleRow(row)
+  return normalizeRubricaItemRow(row)
 }
 
-async function updateRubricaRule(id, payload) {
-  const parsed = parseRubricaRulePayload(payload)
-  validateRubricaRulePayload(parsed)
+async function updateRubricaItem(id, catalog, payload) {
+  const parsed = parseRubricaItemPayload(payload, catalog)
+  validateRubricaItemPayload(parsed)
 
-  const { client, rubricaRulesTable } = getSupabaseClient()
+  const { client, rubricaItemsTable } = getSupabaseClient()
   const { data: row, error } = await client
-    .from(rubricaRulesTable)
+    .from(rubricaItemsTable)
     .update(parsed)
     .eq('id', id)
-    .select(RUBRICA_RULE_SELECT)
+    .eq('catalog_key', catalog.key)
+    .select(RUBRICA_ITEM_SELECT)
     .single()
 
   if (error) throw new Error(error.message)
-  return normalizeRubricaRuleRow(row)
+  return normalizeRubricaItemRow(row)
 }
 
-async function deleteRubricaRule(id) {
-  const { client, rubricaRulesTable } = getSupabaseClient()
+async function deleteRubricaItem(id, catalog) {
+  const { client, rubricaItemsTable } = getSupabaseClient()
   const { error } = await client
-    .from(rubricaRulesTable)
+    .from(rubricaItemsTable)
     .delete()
     .eq('id', id)
+    .eq('catalog_key', catalog.key)
 
   if (error) throw new Error(error.message)
 }
 
-app.get('/api/rubrica-rules', async (_req, res) => {
+app.get('/api/rubricas/catalogs', async (_req, res) => {
   try {
-    const items = await listRubricaRules()
+    const items = await listRubricaCatalogs()
     return res.json({ items })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(500).json({ error: `Falha ao buscar regras de rubricas: ${detail}` })
+    return res.status(500).json({ error: `Falha ao buscar cadastros de rubricas: ${detail}` })
   }
 })
 
-app.post('/api/rubrica-rules', async (req, res) => {
+app.get('/api/rubricas/catalogs/:catalogKey/items', async (req, res) => {
   try {
-    const item = await createRubricaRule(req.body || {})
+    const catalog = parseRubricaCatalogKey(req.params.catalogKey)
+    const items = await listRubricaItems(catalog)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao buscar registros do cadastro: ${detail}` })
+  }
+})
+
+app.post('/api/rubricas/catalogs/:catalogKey/items', async (req, res) => {
+  try {
+    const catalog = parseRubricaCatalogKey(req.params.catalogKey)
+    const item = await createRubricaItem(catalog, req.body || {})
     return res.status(201).json({ ok: true, item })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(400).json({ error: `Falha ao criar regra de rubrica: ${detail}` })
+    return res.status(400).json({ error: `Falha ao criar registro de rubrica: ${detail}` })
   }
 })
 
-app.put('/api/rubrica-rules/:id', async (req, res) => {
+app.put('/api/rubricas/catalogs/:catalogKey/items/:id', async (req, res) => {
   try {
-    const id = parseRubricaRuleIdInput(req.params.id)
-    const item = await updateRubricaRule(id, req.body || {})
+    const catalog = parseRubricaCatalogKey(req.params.catalogKey)
+    const id = parseRubricaItemIdInput(req.params.id)
+    const item = await updateRubricaItem(id, catalog, req.body || {})
     return res.json({ ok: true, item })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(400).json({ error: `Falha ao atualizar regra de rubrica: ${detail}` })
+    return res.status(400).json({ error: `Falha ao atualizar registro de rubrica: ${detail}` })
   }
 })
 
-app.delete('/api/rubrica-rules/:id', async (req, res) => {
+app.delete('/api/rubricas/catalogs/:catalogKey/items/:id', async (req, res) => {
   try {
-    const id = parseRubricaRuleIdInput(req.params.id)
-    await deleteRubricaRule(id)
+    const catalog = parseRubricaCatalogKey(req.params.catalogKey)
+    const id = parseRubricaItemIdInput(req.params.id)
+    await deleteRubricaItem(id, catalog)
     return res.json({ ok: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
-    return res.status(500).json({ error: `Falha ao excluir regra de rubrica: ${detail}` })
+    return res.status(500).json({ error: `Falha ao excluir registro de rubrica: ${detail}` })
   }
 })
 

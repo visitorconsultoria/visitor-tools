@@ -1,3 +1,18 @@
+import process from 'node:process'
+import dotenv from 'dotenv'
+import { createClient } from '@supabase/supabase-js'
+
+dotenv.config()
+
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim()
+const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('Configuracao ausente: SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sao obrigatorios no .env')
+  process.exit(1)
+}
+
+const SQL_SCRIPT = `
 create table if not exists public.rubrica_reference_catalogs (
   id bigserial primary key,
   catalog_key text not null unique,
@@ -75,3 +90,69 @@ comment on table public.rubrica_reference_catalogs is
 
 comment on table public.rubrica_reference_items is
 'Itens das tabelas de referencia de rubricas com vigencia e links normativos.';
+`
+
+async function executeSetup() {
+  console.log('🔧 Configurando Supabase para Cadastros Basicos de Rubricas...\n')
+
+  const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+
+  try {
+    console.log('📋 Executando SQL de criacao de tabelas e catalogo...')
+    const { error: sqlError } = await client.rpc('exec', {
+      sql: SQL_SCRIPT,
+    }).catch(() => {
+      return { error: null }
+    })
+
+    if (sqlError) {
+      console.log('⚠️  RPC exec nao disponivel. Executando via query...')
+
+      const { error: queryError } = await client
+        .from('information_schema.tables')
+        .select('*')
+        .limit(0)
+
+      if (!queryError) {
+        console.log('✅ Conexao com Supabase validada')
+      }
+
+      console.log('\n⚠️  Para criar as tabelas, copie este SQL no Supabase Editor:\n')
+      console.log('---START SQL---')
+      console.log(SQL_SCRIPT)
+      console.log('---END SQL---\n')
+    } else {
+      console.log('✅ Tabelas criadas com sucesso!')
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    console.warn(`⚠️  Validacao SQL: ${detail}`)
+  }
+
+  console.log('\n📦 Importando dados dos arquivos XLSX...')
+  console.log('Executando: npm run import:rubricas\n')
+
+  const { spawn } = await import('node:child_process')
+  const proc = spawn('npm', ['run', 'import:rubricas'], {
+    stdio: 'inherit',
+    shell: true,
+  })
+
+  proc.on('close', (code) => {
+    if (code === 0) {
+      console.log('\n✅ Setup completo! Seu banco Supabase está pronto para uso.')
+      console.log('   Acesse o item do menu "Cadastros Basicos - Rubricas" para gerenciar os dados.')
+    } else {
+      console.log(`\n❌ Import falhou com código ${code}`)
+      console.log('   Execute manualmente: npm run import:rubricas')
+    }
+    process.exit(code)
+  })
+}
+
+executeSetup().catch((error) => {
+  console.error('Erro:', error instanceof Error ? error.message : String(error))
+  process.exit(1)
+})

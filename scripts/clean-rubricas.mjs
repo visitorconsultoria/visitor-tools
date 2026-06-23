@@ -23,7 +23,7 @@ try {
   const { error } = await client
     .from(ITEMS_TABLE)
     .delete()
-    .neq('catalog_key', '')
+    .gt('id', 0)
 
   if (error) {
     console.warn(`⚠️ ${error.message}`)

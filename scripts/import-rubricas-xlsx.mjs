@@ -158,26 +158,34 @@ async function run() {
       continue
     }
 
-    const { error: catalogError } = await client
+    const { data: catalogRow, error: catalogError } = await client
       .from(CATALOGS_TABLE)
-      .select('catalog_key')
+      .select('id, catalog_key, allow_multiple_links')
       .eq('catalog_key', catalogKey)
       .single()
 
     if (catalogError) {
       console.warn(`Catalogo ${catalogKey} deve existir antes do import: ${catalogError.message}`)
+      continue
+    }
+
+    const catalogId = Number(catalogRow?.id ?? 0)
+    if (!catalogId) {
+      console.warn(`Catalogo ${catalogKey} sem ID valido. Arquivo ignorado: ${fileName}`)
+      continue
     }
 
     const { error: deleteError } = await client
       .from(ITEMS_TABLE)
       .delete()
-      .eq('catalog_key', catalogKey)
+      .eq('catalog_id', catalogId)
 
     if (deleteError) {
       throw new Error(`Falha ao limpar itens existentes de ${fileName}: ${deleteError.message}`)
     }
 
     const payload = rows.map((row) => ({
+      catalog_id: catalogId,
       catalog_key: catalogKey,
       code: row.code,
       short_description: row.shortDescription,

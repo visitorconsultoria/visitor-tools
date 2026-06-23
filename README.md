@@ -263,8 +263,8 @@ Execute o script:
 
 Ele cria:
 
-- `rubrica_reference_catalogs`: catalogos (8 tabelas de rubricas)
-- `rubrica_reference_items`: registros com `codigo`, `descricao abreviada`, `descricao completa`, `inicio/fim de vigencia` e `reference_links`
+- `rubrica_reference_catalogs`: cabecalho dos catalogos (8 tabelas de rubricas)
+- `rubrica_reference_items`: itens vinculados por `catalog_id` (relacao 1:N), com `codigo`, `descricao abreviada`, `descricao completa`, `inicio/fim de vigencia` e `reference_links`
 
 No catalogo `Tabela ID CALCULO - Protheus`, o campo `reference_links` aceita multiplos links.
 

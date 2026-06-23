@@ -4144,7 +4144,8 @@ const RUBRICA_CATALOG_OPTIONS = Object.freeze([
 
 const RUBRICA_CATALOG_BY_KEY = new Map(RUBRICA_CATALOG_OPTIONS.map((item) => [item.key, item]))
 
-const RUBRICA_ITEM_SELECT = 'id, catalog_key, code, short_description, full_description, valid_from, valid_to, reference_links, created_at, updated_at'
+const RUBRICA_CATALOG_SELECT = 'id, catalog_key, catalog_label, allow_multiple_links'
+const RUBRICA_ITEM_SELECT = 'id, catalog_id, code, short_description, full_description, valid_from, valid_to, reference_links, created_at, updated_at'
 
 function parseRubricaCatalogKey(raw) {
   const key = String(raw ?? '').trim()
@@ -4153,6 +4154,50 @@ function parseRubricaCatalogKey(raw) {
     throw new Error('Cadastro de rubrica invalido.')
   }
   return catalog
+}
+
+function normalizeRubricaCatalogDbRow(row) {
+  const key = String(row?.catalog_key ?? '').trim()
+  const configured = RUBRICA_CATALOG_BY_KEY.get(key)
+  return {
+    id: Number(row?.id ?? 0),
+    key,
+    label: String(row?.catalog_label ?? configured?.label ?? key),
+    allowMultipleLinks: row?.allow_multiple_links === true || configured?.allowMultipleLinks === true,
+  }
+}
+
+async function getRubricaCatalogFromDb(catalogKey) {
+  const { client, rubricaCatalogsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaCatalogsTable)
+    .select(RUBRICA_CATALOG_SELECT)
+    .eq('catalog_key', catalogKey)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+
+  if (!row) {
+    const fallback = RUBRICA_CATALOG_BY_KEY.get(catalogKey)
+    if (!fallback) {
+      throw new Error('Cadastro de rubrica invalido.')
+    }
+
+    const { data: inserted, error: insertError } = await client
+      .from(rubricaCatalogsTable)
+      .insert({
+        catalog_key: fallback.key,
+        catalog_label: fallback.label,
+        allow_multiple_links: fallback.allowMultipleLinks,
+      })
+      .select(RUBRICA_CATALOG_SELECT)
+      .single()
+
+    if (insertError) throw new Error(insertError.message)
+    return normalizeRubricaCatalogDbRow(inserted)
+  }
+
+  return normalizeRubricaCatalogDbRow(row)
 }
 
 function parseRubricaItemIdInput(raw) {
@@ -4365,16 +4410,34 @@ async function bootstrapRubricaDefaultDataIfNeeded() {
 
     let totalImported = 0
 
+    const { data: catalogRows, error: catalogRowsError } = await client
+      .from(rubricaCatalogsTable)
+      .select(RUBRICA_CATALOG_SELECT)
+
+    if (catalogRowsError) {
+      console.warn(`[rubricas-default] Falha ao ler catalogos apos seed: ${catalogRowsError.message}`)
+      return
+    }
+
+    const catalogByKey = new Map((catalogRows || []).map((row) => {
+      const normalized = normalizeRubricaCatalogDbRow(row)
+      return [normalized.key, normalized]
+    }))
+
     for (const filePath of xlsxFiles) {
       const fileName = path.basename(filePath)
       const catalogKey = resolveRubricaCatalogKeyByFilename(fileName)
       if (!catalogKey) continue
 
+      const catalog = catalogByKey.get(catalogKey)
+      if (!catalog || !catalog.id) continue
+
       const rows = extractRubricaRowsFromWorkbook(filePath)
       if (!rows.length) continue
 
       const payload = rows.map((row) => ({
-        catalog_key: catalogKey,
+        catalog_id: catalog.id,
+        catalog_key: catalog.key,
         code: row.code,
         short_description: row.shortDescription,
         full_description: row.fullDescription,
@@ -4386,7 +4449,7 @@ async function bootstrapRubricaDefaultDataIfNeeded() {
       const deduped = Array.from(new Map(payload.map((item) => [item.code, item])).values())
       if (!deduped.length) continue
 
-      const { error } = await client.from(rubricaItemsTable).upsert(deduped, { onConflict: 'catalog_key,code' })
+      const { error } = await client.from(rubricaItemsTable).upsert(deduped, { onConflict: 'catalog_id,code' })
       if (error) {
         console.warn(`[rubricas-default] Falha ao importar ${fileName}: ${error.message}`)
         continue
@@ -4425,19 +4488,20 @@ async function bootstrapRubricaDefaultDataIfNeeded() {
 }
 
 function normalizeRubricaCatalogRow(row) {
-  const key = String(row.catalog_key ?? row.key ?? '').trim()
-  const configured = RUBRICA_CATALOG_BY_KEY.get(key)
+  const normalized = normalizeRubricaCatalogDbRow(row)
   return {
-    key,
-    label: String(row.catalog_label ?? row.label ?? configured?.label ?? key),
-    allowMultipleLinks: row.allow_multiple_links === true || configured?.allowMultipleLinks === true,
+    id: normalized.id,
+    key: normalized.key,
+    label: normalized.label,
+    allowMultipleLinks: normalized.allowMultipleLinks,
   }
 }
 
-function normalizeRubricaItemRow(row) {
+function normalizeRubricaItemRow(row, catalogKey = '') {
+  const normalizedCatalogKey = String(catalogKey || row.catalog_key || '').trim()
   return {
     id: Number(row.id ?? 0),
-    catalogKey: String(row.catalog_key ?? ''),
+    catalogKey: normalizedCatalogKey,
     code: String(row.code ?? ''),
     shortDescription: String(row.short_description ?? ''),
     fullDescription: String(row.full_description ?? ''),
@@ -4452,6 +4516,7 @@ function normalizeRubricaItemRow(row) {
 function parseRubricaItemPayload(payload, catalog) {
   const links = normalizeRubricaLinks(payload.referenceLinks ?? payload.referenceLinksText)
   return {
+    catalog_id: catalog.id,
     catalog_key: catalog.key,
     code: String(payload.code ?? '').trim(),
     short_description: String(payload.shortDescription ?? '').trim(),
@@ -4487,7 +4552,7 @@ async function listRubricaCatalogs() {
   const { client, rubricaCatalogsTable } = getSupabaseClient()
   const { data: rows, error } = await client
     .from(rubricaCatalogsTable)
-    .select('catalog_key, catalog_label, allow_multiple_links')
+    .select(RUBRICA_CATALOG_SELECT)
     .order('id', { ascending: true })
 
   if (error) throw new Error(error.message)
@@ -4507,20 +4572,23 @@ async function listRubricaCatalogs() {
 async function listRubricaItems(catalog) {
   await bootstrapRubricaDefaultDataIfNeeded()
 
+  const catalogRow = await getRubricaCatalogFromDb(catalog.key)
+
   const { client, rubricaItemsTable } = getSupabaseClient()
   const { data: rows, error } = await client
     .from(rubricaItemsTable)
     .select(RUBRICA_ITEM_SELECT)
-    .eq('catalog_key', catalog.key)
+    .eq('catalog_id', catalogRow.id)
     .order('code', { ascending: true })
     .order('id', { ascending: true })
 
   if (error) throw new Error(error.message)
-  return (rows || []).map(normalizeRubricaItemRow)
+  return (rows || []).map((row) => normalizeRubricaItemRow(row, catalogRow.key))
 }
 
 async function createRubricaItem(catalog, payload) {
-  const parsed = parseRubricaItemPayload(payload, catalog)
+  const catalogRow = await getRubricaCatalogFromDb(catalog.key)
+  const parsed = parseRubricaItemPayload(payload, catalogRow)
   validateRubricaItemPayload(parsed)
 
   const { client, rubricaItemsTable } = getSupabaseClient()
@@ -4531,11 +4599,12 @@ async function createRubricaItem(catalog, payload) {
     .single()
 
   if (error) throw new Error(error.message)
-  return normalizeRubricaItemRow(row)
+  return normalizeRubricaItemRow(row, catalogRow.key)
 }
 
 async function updateRubricaItem(id, catalog, payload) {
-  const parsed = parseRubricaItemPayload(payload, catalog)
+  const catalogRow = await getRubricaCatalogFromDb(catalog.key)
+  const parsed = parseRubricaItemPayload(payload, catalogRow)
   validateRubricaItemPayload(parsed)
 
   const { client, rubricaItemsTable } = getSupabaseClient()
@@ -4543,21 +4612,22 @@ async function updateRubricaItem(id, catalog, payload) {
     .from(rubricaItemsTable)
     .update(parsed)
     .eq('id', id)
-    .eq('catalog_key', catalog.key)
+    .eq('catalog_id', catalogRow.id)
     .select(RUBRICA_ITEM_SELECT)
     .single()
 
   if (error) throw new Error(error.message)
-  return normalizeRubricaItemRow(row)
+  return normalizeRubricaItemRow(row, catalogRow.key)
 }
 
 async function deleteRubricaItem(id, catalog) {
+  const catalogRow = await getRubricaCatalogFromDb(catalog.key)
   const { client, rubricaItemsTable } = getSupabaseClient()
   const { error } = await client
     .from(rubricaItemsTable)
     .delete()
     .eq('id', id)
-    .eq('catalog_key', catalog.key)
+    .eq('catalog_id', catalogRow.id)
 
   if (error) throw new Error(error.message)
 }

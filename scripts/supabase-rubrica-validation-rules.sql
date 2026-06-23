@@ -9,7 +9,8 @@ create table if not exists public.rubrica_reference_catalogs (
 
 create table if not exists public.rubrica_reference_items (
   id bigserial primary key,
-  catalog_key text not null references public.rubrica_reference_catalogs(catalog_key) on update cascade on delete cascade,
+  catalog_id bigint,
+  catalog_key text,
   code text not null,
   short_description text not null,
   full_description text not null,
@@ -18,16 +19,74 @@ create table if not exists public.rubrica_reference_items (
   reference_links jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint uq_rubrica_reference_items_catalog_code unique (catalog_key, code),
   constraint ck_rubrica_reference_items_links_array check (jsonb_typeof(reference_links) = 'array'),
   constraint ck_rubrica_reference_items_valid_period check (valid_to is null or valid_from is null or valid_to >= valid_from)
 );
 
-create index if not exists idx_rubrica_reference_items_catalog_code
-  on public.rubrica_reference_items (catalog_key, code);
+alter table if exists public.rubrica_reference_items
+  add column if not exists catalog_id bigint;
 
-create index if not exists idx_rubrica_reference_items_valid_from
-  on public.rubrica_reference_items (catalog_key, valid_from);
+alter table if exists public.rubrica_reference_items
+  add column if not exists catalog_key text;
+
+alter table if exists public.rubrica_reference_items
+  alter column catalog_key drop not null;
+
+update public.rubrica_reference_items as i
+set catalog_id = c.id
+from public.rubrica_reference_catalogs as c
+where i.catalog_id is null
+  and i.catalog_key is not null
+  and i.catalog_key = c.catalog_key;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'rubrica_reference_items_catalog_id_fkey'
+  ) then
+    alter table public.rubrica_reference_items
+      add constraint rubrica_reference_items_catalog_id_fkey
+      foreign key (catalog_id)
+      references public.rubrica_reference_catalogs(id)
+      on update cascade
+      on delete cascade;
+  end if;
+end $$;
+
+alter table if exists public.rubrica_reference_items
+  drop constraint if exists rubrica_reference_items_catalog_key_fkey;
+
+alter table if exists public.rubrica_reference_items
+  drop constraint if exists uq_rubrica_reference_items_catalog_code;
+
+alter table if exists public.rubrica_reference_items
+  drop constraint if exists uq_rubrica_reference_items_catalog_id_code;
+
+alter table if exists public.rubrica_reference_items
+  add constraint uq_rubrica_reference_items_catalog_id_code unique (catalog_id, code);
+
+do $$
+begin
+  if exists (
+    select 1
+    from public.rubrica_reference_items
+    where catalog_id is null
+    limit 1
+  ) then
+    raise notice 'rubrica_reference_items ainda possui linhas sem catalog_id; mantenha catalog_id nullable ate concluir a migracao.';
+  else
+    alter table public.rubrica_reference_items
+      alter column catalog_id set not null;
+  end if;
+end $$;
+
+create index if not exists idx_rubrica_reference_items_catalog_id_code
+  on public.rubrica_reference_items (catalog_id, code);
+
+create index if not exists idx_rubrica_reference_items_catalog_id_valid_from
+  on public.rubrica_reference_items (catalog_id, valid_from);
 
 create or replace function public.set_rubrica_reference_updated_at()
 returns trigger
@@ -70,8 +129,15 @@ set
   allow_multiple_links = excluded.allow_multiple_links,
   updated_at = now();
 
+update public.rubrica_reference_items as i
+set catalog_id = c.id
+from public.rubrica_reference_catalogs as c
+where i.catalog_id is null
+  and i.catalog_key is not null
+  and i.catalog_key = c.catalog_key;
+
 comment on table public.rubrica_reference_catalogs is
 'Cadastros basicos de validacao de rubricas (eSocial/Protheus).';
 
 comment on table public.rubrica_reference_items is
-'Itens das tabelas de referencia de rubricas com vigencia e links normativos.';
+'Itens das tabelas de referencia de rubricas com relacao 1:N por catalog_id, vigencia e links normativos.';

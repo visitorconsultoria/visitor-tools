@@ -6,6 +6,7 @@ import { readdir } from 'node:fs/promises'
 import { createClient } from '@supabase/supabase-js'
 import XLSX from 'xlsx'
 import { ASSIGNABLE_MENU_KEYS, getEffectiveMenus, isVisitorUsername, normalizeMenuPermissions } from './src/lib/menuConfig.mjs'
+import { RUBRICA_RULE_FIELD_DEFINITIONS } from './src/lib/rubricaRuleConfig.mjs'
 
 dotenv.config()
 
@@ -64,6 +65,8 @@ function getSupabaseConfig() {
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
     rubricaCatalogsTable: process.env.SUPABASE_RUBRICA_CATALOGS_TABLE || 'rubrica_reference_catalogs',
     rubricaItemsTable: process.env.SUPABASE_RUBRICA_ITEMS_TABLE || 'rubrica_reference_items',
+    rubricaRuleSetsTable: process.env.SUPABASE_RUBRICA_RULE_SETS_TABLE || 'rubrica_rule_sets',
+    rubricaRuleItemsTable: process.env.SUPABASE_RUBRICA_RULE_ITEMS_TABLE || 'rubrica_rule_items',
   }
 }
 
@@ -112,6 +115,8 @@ function getSupabaseClient() {
     propostasTable: config.propostasTable,
     rubricaCatalogsTable: config.rubricaCatalogsTable,
     rubricaItemsTable: config.rubricaItemsTable,
+    rubricaRuleSetsTable: config.rubricaRuleSetsTable,
+    rubricaRuleItemsTable: config.rubricaRuleItemsTable,
   }
 }
 
@@ -4632,6 +4637,486 @@ async function deleteRubricaItem(id, catalog) {
   if (error) throw new Error(error.message)
 }
 
+const RUBRICA_RULE_SET_SELECT = 'id, name, description, source_file_name, created_at, updated_at'
+const RUBRICA_RULE_ITEM_SELECT = [
+  'id',
+  'rule_set_id',
+  'sort_order',
+  ...RUBRICA_RULE_FIELD_DEFINITIONS.map((field) => field.key),
+  'created_at',
+  'updated_at',
+].join(', ')
+
+const RUBRICA_RULE_SETUP_SQL = `
+create table if not exists public.rubrica_rule_sets (
+  id bigserial primary key,
+  name text not null unique,
+  description text not null default '',
+  source_file_name text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.rubrica_rule_items (
+  id bigserial primary key,
+  rule_set_id bigint not null
+    references public.rubrica_rule_sets(id)
+    on update cascade
+    on delete cascade,
+  sort_order integer not null default 0,
+  ${RUBRICA_RULE_FIELD_DEFINITIONS.map((field) => `${field.key} text not null default ''`).join(',\n  ')},
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_rubrica_rule_items_rule_set_sort
+  on public.rubrica_rule_items (rule_set_id, sort_order, id);
+
+create or replace function public.set_rubrica_rule_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_rubrica_rule_sets_updated_at on public.rubrica_rule_sets;
+
+create trigger trg_rubrica_rule_sets_updated_at
+before update on public.rubrica_rule_sets
+for each row
+execute function public.set_rubrica_rule_updated_at();
+
+drop trigger if exists trg_rubrica_rule_items_updated_at on public.rubrica_rule_items;
+
+create trigger trg_rubrica_rule_items_updated_at
+before update on public.rubrica_rule_items
+for each row
+execute function public.set_rubrica_rule_updated_at();
+
+alter table public.rubrica_rule_sets disable row level security;
+alter table public.rubrica_rule_items disable row level security;
+`
+
+let rubricaRuleSetupPromise = null
+let rubricaRuleSetupCompleted = false
+
+function isRelationMissingError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    message.includes('does not exist') ||
+    message.includes('not found') ||
+    message.includes('42p01') ||
+    message.includes('schema cache') ||
+    message.includes('could not find the table')
+  )
+}
+
+function isExecFunctionMissingError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return message.includes('function public.exec(sql)') || message.includes('function exec')
+}
+
+async function checkRubricaRuleTablesAccessible(client) {
+  const [setsResult, itemsResult] = await Promise.all([
+    client.from('rubrica_rule_sets').select('id').limit(1),
+    client.from('rubrica_rule_items').select('id').limit(1),
+  ])
+
+  return {
+    setsError: setsResult.error,
+    itemsError: itemsResult.error,
+    accessible: !setsResult.error && !itemsResult.error,
+  }
+}
+
+async function ensureRubricaRuleTables() {
+  if (rubricaRuleSetupCompleted) {
+    return
+  }
+
+  if (rubricaRuleSetupPromise) {
+    return rubricaRuleSetupPromise
+  }
+
+  rubricaRuleSetupPromise = (async () => {
+    const { client } = getSupabaseClient()
+
+    const beforeSetup = await checkRubricaRuleTablesAccessible(client)
+    if (beforeSetup.accessible) {
+      rubricaRuleSetupCompleted = true
+      return
+    }
+
+    const { error } = await client.rpc('exec', { sql: RUBRICA_RULE_SETUP_SQL })
+    if (!error) {
+      rubricaRuleSetupCompleted = true
+      return
+    }
+
+    const afterSetup = await checkRubricaRuleTablesAccessible(client)
+    if (afterSetup.accessible) {
+      rubricaRuleSetupCompleted = true
+      return
+    }
+
+    const tableErrors = [afterSetup.setsError, afterSetup.itemsError].filter(Boolean)
+    const hasMissingTables = tableErrors.some((currentError) => isRelationMissingError(currentError))
+    if (isExecFunctionMissingError(error) && (hasMissingTables || tableErrors.length > 0)) {
+      const details = tableErrors.map((currentError) => String(currentError?.message || '')).filter(Boolean).join(' | ')
+      throw new Error(
+        `Falha ao preparar tabelas da Tabela de Regra: a funcao RPC public.exec(sql) nao existe neste projeto Supabase e as tabelas rubrica_rule_sets/rubrica_rule_items nao estao acessiveis. Execute "npm run setup:rubricas" para criar o schema ou rode o SQL de setup manualmente no Supabase SQL Editor.${details ? ` Detalhes: ${details}` : ''}`
+      )
+    }
+
+    throw new Error(`Falha ao preparar tabelas da Tabela de Regra: ${error.message}`)
+  })().finally(() => {
+    rubricaRuleSetupPromise = null
+  })
+
+  return rubricaRuleSetupPromise
+}
+
+function parseRubricaRuleSetIdInput(raw) {
+  const id = Number(String(raw ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('ID do cadastro de regra invalido.')
+  }
+  return id
+}
+
+function parseRubricaRuleItemIdInput(raw) {
+  const id = Number(String(raw ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('ID da regra invalido.')
+  }
+  return id
+}
+
+function normalizeRubricaRuleSetRow(row) {
+  return {
+    id: Number(row?.id ?? 0),
+    name: String(row?.name ?? ''),
+    description: String(row?.description ?? ''),
+    sourceFileName: String(row?.source_file_name ?? ''),
+    createdAt: String(row?.created_at ?? ''),
+    updatedAt: String(row?.updated_at ?? ''),
+  }
+}
+
+function normalizeRubricaRuleItemRow(row) {
+  const base = {
+    id: Number(row?.id ?? 0),
+    ruleSetId: Number(row?.rule_set_id ?? 0),
+    sortOrder: Number(row?.sort_order ?? 0),
+    createdAt: String(row?.created_at ?? ''),
+    updatedAt: String(row?.updated_at ?? ''),
+  }
+
+  for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
+    base[field.key] = String(row?.[field.key] ?? '')
+  }
+
+  return base
+}
+
+function parseRubricaRuleSetPayload(payload) {
+  return {
+    name: String(payload?.name ?? '').trim(),
+    description: String(payload?.description ?? '').trim(),
+    source_file_name: String(payload?.sourceFileName ?? payload?.source_file_name ?? '').trim(),
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function validateRubricaRuleSetPayload(parsed) {
+  if (!parsed.name) {
+    throw new Error('Nome do cadastro de regra obrigatorio.')
+  }
+}
+
+function parseRubricaRuleItemPayload(ruleSetId, payload, defaultSortOrder = 0) {
+  const sortOrder = Number(payload?.sortOrder ?? payload?.sort_order ?? defaultSortOrder)
+  const parsed = {
+    rule_set_id: ruleSetId,
+    sort_order: Number.isFinite(sortOrder) ? sortOrder : defaultSortOrder,
+    updated_at: new Date().toISOString(),
+  }
+
+  for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
+    parsed[field.key] = String(payload?.[field.key] ?? '').trim()
+  }
+
+  return parsed
+}
+
+function validateRubricaRuleItemPayload(parsed) {
+  for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
+    if (field.required && !String(parsed[field.key] ?? '').trim()) {
+      throw new Error(`Campo obrigatorio nao informado: ${field.label}.`)
+    }
+  }
+}
+
+async function getRubricaRuleSetById(id) {
+  await ensureRubricaRuleTables()
+
+  const { client, rubricaRuleSetsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaRuleSetsTable)
+    .select(RUBRICA_RULE_SET_SELECT)
+    .eq('id', id)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRubricaRuleSetRow(row)
+}
+
+async function listRubricaRuleSets() {
+  await ensureRubricaRuleTables()
+
+  const { client, rubricaRuleSetsTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(rubricaRuleSetsTable)
+    .select(RUBRICA_RULE_SET_SELECT)
+    .order('created_at', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeRubricaRuleSetRow)
+}
+
+async function findAvailableRubricaRuleSetName(baseName) {
+  const seed = String(baseName || '').trim()
+  if (!seed) {
+    throw new Error('Nome do cadastro de regra nao informado.')
+  }
+
+  const { client, rubricaRuleSetsTable } = getSupabaseClient()
+  const normalizedSeed = seed.toLowerCase()
+
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    const candidate = attempt === 0 ? seed : `${seed} (${attempt + 1})`
+    const { data: row, error } = await client
+      .from(rubricaRuleSetsTable)
+      .select('id, name')
+      .eq('name', candidate)
+      .maybeSingle()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!row) {
+      return candidate
+    }
+
+    if (attempt === 0 && String(row.name || '').trim().toLowerCase() === normalizedSeed) {
+      continue
+    }
+  }
+
+  throw new Error('Nao foi possivel gerar um nome disponivel para o cadastro de regra.')
+}
+
+async function createRubricaRuleSet(payload, options = { resolveDuplicateName: false }) {
+  await ensureRubricaRuleTables()
+
+  const parsed = parseRubricaRuleSetPayload(payload)
+  validateRubricaRuleSetPayload(parsed)
+
+  const nameToInsert = options.resolveDuplicateName
+    ? await findAvailableRubricaRuleSetName(parsed.name)
+    : parsed.name
+
+  const { client, rubricaRuleSetsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaRuleSetsTable)
+    .insert({
+      name: nameToInsert,
+      description: parsed.description,
+      source_file_name: parsed.source_file_name,
+      created_at: new Date().toISOString(),
+    })
+    .select(RUBRICA_RULE_SET_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRubricaRuleSetRow(row)
+}
+
+async function updateRubricaRuleSet(id, payload) {
+  await ensureRubricaRuleTables()
+
+  const parsed = parseRubricaRuleSetPayload(payload)
+  validateRubricaRuleSetPayload(parsed)
+
+  const { client, rubricaRuleSetsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaRuleSetsTable)
+    .update({
+      name: parsed.name,
+      description: parsed.description,
+      source_file_name: parsed.source_file_name,
+      updated_at: parsed.updated_at,
+    })
+    .eq('id', id)
+    .select(RUBRICA_RULE_SET_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRubricaRuleSetRow(row)
+}
+
+async function deleteRubricaRuleSet(id) {
+  await ensureRubricaRuleTables()
+
+  const { client, rubricaRuleSetsTable } = getSupabaseClient()
+  const { error } = await client
+    .from(rubricaRuleSetsTable)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function listRubricaRuleItems(ruleSetId) {
+  await ensureRubricaRuleTables()
+  await getRubricaRuleSetById(ruleSetId)
+
+  const { client, rubricaRuleItemsTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(rubricaRuleItemsTable)
+    .select(RUBRICA_RULE_ITEM_SELECT)
+    .eq('rule_set_id', ruleSetId)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeRubricaRuleItemRow)
+}
+
+async function createRubricaRuleItem(ruleSetId, payload) {
+  await ensureRubricaRuleTables()
+  await getRubricaRuleSetById(ruleSetId)
+
+  const parsed = parseRubricaRuleItemPayload(ruleSetId, payload)
+  validateRubricaRuleItemPayload(parsed)
+
+  const { client, rubricaRuleItemsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaRuleItemsTable)
+    .insert({ ...parsed, created_at: new Date().toISOString() })
+    .select(RUBRICA_RULE_ITEM_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRubricaRuleItemRow(row)
+}
+
+async function updateRubricaRuleItem(ruleSetId, itemId, payload) {
+  await ensureRubricaRuleTables()
+  await getRubricaRuleSetById(ruleSetId)
+
+  const parsed = parseRubricaRuleItemPayload(ruleSetId, payload)
+  validateRubricaRuleItemPayload(parsed)
+
+  const { client, rubricaRuleItemsTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(rubricaRuleItemsTable)
+    .update(parsed)
+    .eq('id', itemId)
+    .eq('rule_set_id', ruleSetId)
+    .select(RUBRICA_RULE_ITEM_SELECT)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRubricaRuleItemRow(row)
+}
+
+async function deleteRubricaRuleItem(ruleSetId, itemId) {
+  await ensureRubricaRuleTables()
+
+  const { client, rubricaRuleItemsTable } = getSupabaseClient()
+  const { error } = await client
+    .from(rubricaRuleItemsTable)
+    .delete()
+    .eq('id', itemId)
+    .eq('rule_set_id', ruleSetId)
+
+  if (error) throw new Error(error.message)
+}
+
+async function replicateRubricaRuleSet(ruleSetId, payload) {
+  await ensureRubricaRuleTables()
+
+  const sourceSet = await getRubricaRuleSetById(ruleSetId)
+  const sourceItems = await listRubricaRuleItems(ruleSetId)
+  const clonedSet = await createRubricaRuleSet({
+    name: payload?.name,
+    description: payload?.description || sourceSet.description,
+    sourceFileName: sourceSet.sourceFileName,
+  })
+
+  if (!sourceItems.length) {
+    return clonedSet
+  }
+
+  const { client, rubricaRuleItemsTable } = getSupabaseClient()
+  const rowsToInsert = sourceItems.map((item, index) => {
+    const parsed = parseRubricaRuleItemPayload(clonedSet.id, item, item.sortOrder || index + 1)
+    return {
+      ...parsed,
+      created_at: new Date().toISOString(),
+    }
+  })
+
+  const { error } = await client.from(rubricaRuleItemsTable).insert(rowsToInsert)
+  if (error) {
+    await deleteRubricaRuleSet(clonedSet.id)
+    throw new Error(error.message)
+  }
+
+  return clonedSet
+}
+
+async function importRubricaRuleSet(payload) {
+  await ensureRubricaRuleTables()
+
+  const rows = Array.isArray(payload?.rows) ? payload.rows : []
+  if (!rows.length) {
+    throw new Error('Nenhuma regra valida foi enviada para importacao.')
+  }
+
+  const createdSet = await createRubricaRuleSet(payload, { resolveDuplicateName: true })
+
+  try {
+    const { client, rubricaRuleItemsTable } = getSupabaseClient()
+    const insertPayload = rows.map((row, index) => {
+      const parsed = parseRubricaRuleItemPayload(createdSet.id, row, index + 1)
+      validateRubricaRuleItemPayload(parsed)
+      return {
+        ...parsed,
+        created_at: new Date().toISOString(),
+      }
+    })
+
+    const { error } = await client.from(rubricaRuleItemsTable).insert(insertPayload)
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return {
+      item: createdSet,
+      importedCount: insertPayload.length,
+    }
+  } catch (error) {
+    await deleteRubricaRuleSet(createdSet.id)
+    throw error
+  }
+}
+
 app.get('/api/rubricas/catalogs', async (_req, res) => {
   try {
     setNoCacheHeaders(res)
@@ -4687,6 +5172,117 @@ app.delete('/api/rubricas/catalogs/:catalogKey/items/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir registro de rubrica: ${detail}` })
+  }
+})
+
+app.get('/api/rubricas/regras/sets', async (_req, res) => {
+  try {
+    setNoCacheHeaders(res)
+    const items = await listRubricaRuleSets()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar cadastros da Tabela de Regra: ${detail}` })
+  }
+})
+
+app.post('/api/rubricas/regras/sets', async (req, res) => {
+  try {
+    const item = await createRubricaRuleSet(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar cadastro da Tabela de Regra: ${detail}` })
+  }
+})
+
+app.put('/api/rubricas/regras/sets/:id', async (req, res) => {
+  try {
+    const id = parseRubricaRuleSetIdInput(req.params.id)
+    const item = await updateRubricaRuleSet(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar cadastro da Tabela de Regra: ${detail}` })
+  }
+})
+
+app.delete('/api/rubricas/regras/sets/:id', async (req, res) => {
+  try {
+    const id = parseRubricaRuleSetIdInput(req.params.id)
+    await deleteRubricaRuleSet(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir cadastro da Tabela de Regra: ${detail}` })
+  }
+})
+
+app.post('/api/rubricas/regras/sets/:id/replicate', async (req, res) => {
+  try {
+    const id = parseRubricaRuleSetIdInput(req.params.id)
+    const item = await replicateRubricaRuleSet(id, req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao replicar cadastro da Tabela de Regra: ${detail}` })
+  }
+})
+
+app.get('/api/rubricas/regras/sets/:id/items', async (req, res) => {
+  try {
+    setNoCacheHeaders(res)
+    const id = parseRubricaRuleSetIdInput(req.params.id)
+    const items = await listRubricaRuleItems(id)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao buscar regras do cadastro: ${detail}` })
+  }
+})
+
+app.post('/api/rubricas/regras/sets/:id/items', async (req, res) => {
+  try {
+    const id = parseRubricaRuleSetIdInput(req.params.id)
+    const item = await createRubricaRuleItem(id, req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar regra do cadastro: ${detail}` })
+  }
+})
+
+app.put('/api/rubricas/regras/sets/:id/items/:itemId', async (req, res) => {
+  try {
+    const id = parseRubricaRuleSetIdInput(req.params.id)
+    const itemId = parseRubricaRuleItemIdInput(req.params.itemId)
+    const item = await updateRubricaRuleItem(id, itemId, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar regra do cadastro: ${detail}` })
+  }
+})
+
+app.delete('/api/rubricas/regras/sets/:id/items/:itemId', async (req, res) => {
+  try {
+    const id = parseRubricaRuleSetIdInput(req.params.id)
+    const itemId = parseRubricaRuleItemIdInput(req.params.itemId)
+    await deleteRubricaRuleItem(id, itemId)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir regra do cadastro: ${detail}` })
+  }
+})
+
+app.post('/api/rubricas/regras/import', async (req, res) => {
+  try {
+    const result = await importRubricaRuleSet(req.body || {})
+    return res.status(201).json({ ok: true, ...result })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao importar planilha de regra: ${detail}` })
   }
 })
 

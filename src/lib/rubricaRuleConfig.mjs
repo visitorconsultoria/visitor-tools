@@ -1,0 +1,46 @@
+export const RUBRICA_RULE_FIELD_DEFINITIONS = Object.freeze([
+  { key: 'rv_desc', label: 'RV_DESC', required: false, multiline: true },
+  { key: 'rv_descdet', label: 'RV_DESCDET', required: false, multiline: true },
+  { key: 'rv_codfol', label: 'RV_CODFOL', required: false },
+  { key: 'rv_tipo', label: 'RV_TIPO', required: false },
+  { key: 'rv_codcorr', label: 'RV_CODCORR', required: false },
+  { key: 'rv_inss', label: 'RV_INSS', required: false },
+  { key: 'rv_inssfer', label: 'RV_INSSFER', required: false },
+  { key: 'rv_ir', label: 'RV_IR', required: false },
+  { key: 'rv_fgts', label: 'RV_FGTS', required: false },
+  { key: 'rv_rra', label: 'RV_RRA', required: false },
+  { key: 'rv_pis', label: 'RV_PIS', required: false },
+  { key: 'rv_dirf', label: 'RV_DIRF', required: false },
+  { key: 'rv_ref13', label: 'RV_REF13', required: false },
+  { key: 'rv_reffer', label: 'RV_REFFER', required: false },
+  { key: 'rv_refabon', label: 'RV_REFABON', required: false },
+  { key: 'rv_adianta', label: 'RV_ADIANTA', required: false },
+  { key: 'rv_empcons', label: 'RV_EMPCONS', required: false },
+  { key: 'rv_refplr', label: 'RV_REFPLR', required: false },
+  { key: 'rv_he', label: 'RV_HE', required: false },
+  { key: 'rv_coddsr', label: 'RV_CODDSR', required: false },
+  { key: 'rv_compl_', label: 'RV_COMPL_', required: false },
+  { key: 'rv_codcom_', label: 'RV_CODCOM_', required: false },
+  { key: 'rv_codmseg', label: 'RV_CODMSEG', required: false },
+  { key: 'rv_ferseg', label: 'RV_FERSEG', required: false },
+  { key: 'rv_origem', label: 'RV_ORIGEM', required: false },
+  { key: 'rv_incirf', label: 'RV_INCIRF', required: false },
+  { key: 'rv_incfgts', label: 'RV_INCFGTS', required: false },
+  { key: 'rv_inccp', label: 'RV_INCCP', required: false },
+  { key: 'rv_incop', label: 'RV_INCOP', required: false },
+  { key: 'rv_tetop', label: 'RV_TETOP', required: false },
+  { key: 'rv_contrap', label: 'RV_CONTRAP', required: false },
+  { key: 'rv_incpis', label: 'RV_INCPIS', required: false },
+  { key: 'rv_ferdesc', label: 'RV_FERDESC', required: false },
+  { key: 'rv_subst', label: 'RV_SUBST', required: false },
+  { key: 'rv_ferxml', label: 'RV_FERXML', required: false },
+  { key: 'rv_feraxml', label: 'RV_FERAXML', required: false },
+])
+
+export const RUBRICA_RULE_FIELD_KEYS = Object.freeze(
+  RUBRICA_RULE_FIELD_DEFINITIONS.map((field) => field.key),
+)
+
+export const RUBRICA_RULE_REQUIRED_FIELD_KEYS = Object.freeze(
+  RUBRICA_RULE_FIELD_DEFINITIONS.filter((field) => field.required).map((field) => field.key),
+)

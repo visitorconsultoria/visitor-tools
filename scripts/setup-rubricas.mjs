@@ -159,6 +159,98 @@ comment on table public.rubrica_reference_catalogs is
 
 comment on table public.rubrica_reference_items is
 'Itens das tabelas de referencia de rubricas com relacao 1:N por catalog_id, vigencia e links normativos.';
+
+create table if not exists public.rubrica_rule_sets (
+  id bigserial primary key,
+  name text not null unique,
+  description text not null default '',
+  source_file_name text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.rubrica_rule_items (
+  id bigserial primary key,
+  rule_set_id bigint not null
+    references public.rubrica_rule_sets(id)
+    on update cascade
+    on delete cascade,
+  sort_order integer not null default 0,
+  rv_desc text not null default '',
+  rv_descdet text not null default '',
+  rv_codfol text not null default '',
+  rv_tipo text not null default '',
+  rv_codcorr text not null default '',
+  rv_inss text not null default '',
+  rv_inssfer text not null default '',
+  rv_ir text not null default '',
+  rv_fgts text not null default '',
+  rv_rra text not null default '',
+  rv_pis text not null default '',
+  rv_dirf text not null default '',
+  rv_ref13 text not null default '',
+  rv_reffer text not null default '',
+  rv_refabon text not null default '',
+  rv_adianta text not null default '',
+  rv_empcons text not null default '',
+  rv_refplr text not null default '',
+  rv_he text not null default '',
+  rv_coddsr text not null default '',
+  rv_compl_ text not null default '',
+  rv_codcom_ text not null default '',
+  rv_codmseg text not null default '',
+  rv_ferseg text not null default '',
+  rv_origem text not null default '',
+  rv_incirf text not null default '',
+  rv_incfgts text not null default '',
+  rv_inccp text not null default '',
+  rv_incop text not null default '',
+  rv_tetop text not null default '',
+  rv_contrap text not null default '',
+  rv_incpis text not null default '',
+  rv_ferdesc text not null default '',
+  rv_subst text not null default '',
+  rv_ferxml text not null default '',
+  rv_feraxml text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_rubrica_rule_items_rule_set_sort
+  on public.rubrica_rule_items (rule_set_id, sort_order, id);
+
+create or replace function public.set_rubrica_rule_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_rubrica_rule_sets_updated_at on public.rubrica_rule_sets;
+
+create trigger trg_rubrica_rule_sets_updated_at
+before update on public.rubrica_rule_sets
+for each row
+execute function public.set_rubrica_rule_updated_at();
+
+drop trigger if exists trg_rubrica_rule_items_updated_at on public.rubrica_rule_items;
+
+create trigger trg_rubrica_rule_items_updated_at
+before update on public.rubrica_rule_items
+for each row
+execute function public.set_rubrica_rule_updated_at();
+
+alter table public.rubrica_rule_sets disable row level security;
+alter table public.rubrica_rule_items disable row level security;
+
+comment on table public.rubrica_rule_sets is
+'Cadastros importados da Tabela de Regra para validacao de rubricas.';
+
+comment on table public.rubrica_rule_items is
+'Itens da Tabela de Regra com suporte a CRUD, replicacao e multiplos cadastros importados.';
 `
 
 async function executeSetup() {
@@ -190,12 +282,19 @@ async function executeSetup() {
   if (!tablesReady) {
     console.log('\n🔎 Validando se as tabelas ja existem no projeto...')
 
-    const [{ error: catalogsError }, { error: itemsError }] = await Promise.all([
+    const [
+      { error: catalogsError },
+      { error: itemsError },
+      { error: ruleSetsError },
+      { error: ruleItemsError },
+    ] = await Promise.all([
       client.from('rubrica_reference_catalogs').select('id').limit(1),
       client.from('rubrica_reference_items').select('id').limit(1),
+      client.from('rubrica_rule_sets').select('id').limit(1),
+      client.from('rubrica_rule_items').select('id').limit(1),
     ])
 
-    if (!catalogsError && !itemsError) {
+    if (!catalogsError && !itemsError && !ruleSetsError && !ruleItemsError) {
       tablesReady = true
       console.log('✅ Tabelas ja existentes e acessiveis no Supabase')
     } else {
@@ -205,6 +304,14 @@ async function executeSetup() {
 
       if (itemsError) {
         console.log(`⚠️  rubrica_reference_items: ${itemsError.message}`)
+      }
+
+      if (ruleSetsError) {
+        console.log(`⚠️  rubrica_rule_sets: ${ruleSetsError.message}`)
+      }
+
+      if (ruleItemsError) {
+        console.log(`⚠️  rubrica_rule_items: ${ruleItemsError.message}`)
       }
 
       console.log('\n⚠️  Para criar as tabelas, execute este SQL no Supabase SQL Editor:\n')

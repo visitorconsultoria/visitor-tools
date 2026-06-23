@@ -19,6 +19,7 @@ export const MENU_DEFINITIONS = Object.freeze([
   { key: 'rubrica-inc-irrf', label: 'Inc. IRRF', assignable: true },
   { key: 'rubrica-dirf', label: 'DIRF - Protheus', assignable: true },
   { key: 'rubrica-id-calculo', label: 'ID CÁLCULO - Protheus', assignable: true },
+  { key: 'rubrica-regra', label: 'Tabela de Regra', assignable: true },
   { key: 'user-admin', label: 'Usuarios e Acessos', assignable: false },
   { key: 'change-password', label: 'Alterar Senha', assignable: false },
 ])

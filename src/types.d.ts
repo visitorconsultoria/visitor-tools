@@ -25,6 +25,7 @@ export type AllowedMenu =
   | 'rubrica-inc-irrf'
   | 'rubrica-dirf'
   | 'rubrica-id-calculo'
+  | 'rubrica-regra'
   | 'user-admin'
   | 'change-password'
 

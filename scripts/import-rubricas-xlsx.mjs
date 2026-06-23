@@ -58,6 +58,15 @@ function parseDateValue(value) {
   const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   if (br) return `${br[3]}-${br[2]}-${br[1]}`
 
+   const brShortYear = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
+   if (brShortYear) {
+     const day = brShortYear[1].padStart(2, '0')
+     const month = brShortYear[2].padStart(2, '0')
+     const shortYear = Number(brShortYear[3])
+     const fullYear = shortYear >= 70 ? 1900 + shortYear : 2000 + shortYear
+     return `${fullYear}-${month}-${day}`
+   }
+
   const asDate = new Date(text)
   if (!Number.isNaN(asDate.getTime())) {
     return asDate.toISOString().slice(0, 10)
@@ -88,8 +97,8 @@ function extractRowsFromWorkbook(filePath) {
   const idxCodigo = byName(['codigo'])
   const idxDescAbrev = byName(['descricao abreviada'])
   const idxDescComp = byName(['descricao completa'])
-  const idxInicio = byName(['inicio da vigencia'])
-  const idxFim = byName(['fim da vigencia'])
+  const idxInicio = byName(['inicio da vigencia', 'data inicio'])
+  const idxFim = byName(['fim da vigencia', 'data fim'])
   const idxLinks = byName(['links de referencia', 'link de referencia', 'link referencia'])
 
   return matrix.slice(1).map((row) => {

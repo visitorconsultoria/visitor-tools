@@ -18,6 +18,8 @@ const CustomerHubTool = lazy(() => import('./components/CustomerHubTool'))
 const TicketHubTool = lazy(() => import('./components/TicketHubTool'))
 const PropostaComercialTool = lazy(() => import('./components/PropostaComercialTool'))
 const RubricasValidationTool = lazy(() => import('./components/RubricasValidationTool'))
+const RubricaRuleTool = lazy(() => import('./components/RubricaRuleTool'))
+const RubricaRuleComparisonTool = lazy(() => import('./components/RubricaRuleComparisonTool'))
 const DataComparisonTool = lazy(() => import('./components/DataComparisonTool'))
 
 type CsvData = {
@@ -49,10 +51,12 @@ type RubricaCatalogPageKey =
   | 'rubrica-inc-irrf'
   | 'rubrica-dirf'
   | 'rubrica-id-calculo'
+  | 'rubrica-regra'
+  | 'rubrica-regra-comparacao'
 
 type MenuPage = 'home' | AllowedMenu
 
-type SidebarSubmenuSection = 'xml-excel' | 'customer-hub' | 'ticket-hub' | 'rubricas-basicos'
+type SidebarSubmenuSection = 'xml-excel' | 'customer-hub' | 'ticket-hub' | 'rubricas-validacao' | 'rubricas-cadastros'
 
 type UserSession = {
   username: string
@@ -978,9 +982,10 @@ function App() {
               type="button"
               className={`sidebar__link ${currentPage === 'rubricas-validacao' ? 'sidebar__link--active' : ''}`}
               onClick={() => {
-                const shouldCollapse = currentPage === 'rubricas-validacao' && openSidebarSubmenu === 'rubricas-basicos'
+                const isRubricasSubmenuOpen = openSidebarSubmenu === 'rubricas-validacao' || openSidebarSubmenu === 'rubricas-cadastros'
+                const shouldCollapse = currentPage === 'rubricas-validacao' && isRubricasSubmenuOpen
                 setCurrentPage('rubricas-validacao')
-                setOpenSidebarSubmenu(shouldCollapse ? null : 'rubricas-basicos')
+                setOpenSidebarSubmenu(shouldCollapse ? null : 'rubricas-validacao')
                 setShowSourceMenu(false)
               }}
               aria-current={currentPage === 'rubricas-validacao' ? 'page' : undefined}
@@ -993,26 +998,87 @@ function App() {
               <span>Validação de Rubricas</span>
             </button>
           )}
-          {canAccessPage('rubricas-validacao', currentUser) && currentPage === 'rubricas-validacao' && openSidebarSubmenu === 'rubricas-basicos' && (
-            <div className="sidebar__subnav" aria-label="Cadastros Basicos">
+          {canAccessPage('rubricas-validacao', currentUser) && currentPage === 'rubricas-validacao' && (openSidebarSubmenu === 'rubricas-validacao' || openSidebarSubmenu === 'rubricas-cadastros') && (
+            <div className="sidebar__subnav" aria-label="Validação de Rubricas">
               <button
                 type="button"
-                className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-natureza' ? 'sidebar__sublink--active' : ''}`}
+                className={`sidebar__sublink ${openSidebarSubmenu === 'rubricas-cadastros' ? 'sidebar__sublink--active' : ''}`}
                 onClick={() => {
-                  setSelectedRubricaCatalogKey('rubrica-natureza')
+                  setOpenSidebarSubmenu(openSidebarSubmenu === 'rubricas-cadastros' ? 'rubricas-validacao' : 'rubricas-cadastros')
                   setShowSourceMenu(false)
                 }}
-                aria-current={selectedRubricaCatalogKey === 'rubrica-natureza' ? 'page' : undefined}
+                aria-expanded={openSidebarSubmenu === 'rubricas-cadastros'}
               >
-                Natureza de Rubricas
+                Cadastros
               </button>
-              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-cp')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'page' : undefined}>Inc. CP</button>
-              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-fgts')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'page' : undefined}>Inc. FGTS</button>
-              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-pis')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'page' : undefined}>Inc. PIS</button>
-              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-rpps')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'page' : undefined}>Inc. RPPS</button>
-              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-inc-irrf')} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'page' : undefined}>Inc. IRRF</button>
-              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-dirf' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-dirf')} aria-current={selectedRubricaCatalogKey === 'rubrica-dirf' ? 'page' : undefined}>DIRF - Protheus</button>
-              <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'sidebar__sublink--active' : ''}`} onClick={() => setSelectedRubricaCatalogKey('rubrica-id-calculo')} aria-current={selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'page' : undefined}>ID CÁLCULO - Protheus</button>
+              {openSidebarSubmenu === 'rubricas-cadastros' && (
+                <div className="sidebar__subnav sidebar__subnav--nested" aria-label="Cadastros de Rubricas">
+                  <button
+                    type="button"
+                    className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-natureza' ? 'sidebar__sublink--active' : ''}`}
+                    onClick={() => {
+                      setSelectedRubricaCatalogKey('rubrica-natureza')
+                      setOpenSidebarSubmenu('rubricas-cadastros')
+                      setShowSourceMenu(false)
+                    }}
+                    aria-current={selectedRubricaCatalogKey === 'rubrica-natureza' ? 'page' : undefined}
+                  >
+                    Natureza de Rubricas
+                  </button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-inc-cp')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'page' : undefined}>Inc. CP</button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-inc-fgts')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'page' : undefined}>Inc. FGTS</button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-inc-pis')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'page' : undefined}>Inc. PIS</button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-inc-rpps')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'page' : undefined}>Inc. RPPS</button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-inc-irrf')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'page' : undefined}>Inc. IRRF</button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-dirf' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-dirf')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-dirf' ? 'page' : undefined}>DIRF - Protheus</button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-id-calculo')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'page' : undefined}>ID CÁLCULO - Protheus</button>
+                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-regra' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                    setSelectedRubricaCatalogKey('rubrica-regra')
+                    setOpenSidebarSubmenu('rubricas-cadastros')
+                    setShowSourceMenu(false)
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-regra' ? 'page' : undefined}>Tabela de Regra</button>
+                </div>
+              )}
+              <button
+                type="button"
+                className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-regra-comparacao' ? 'sidebar__sublink--active' : ''}`}
+                onClick={() => {
+                  setSelectedRubricaCatalogKey('rubrica-regra-comparacao')
+                  setOpenSidebarSubmenu('rubricas-validacao')
+                  setShowSourceMenu(false)
+                }}
+                aria-current={selectedRubricaCatalogKey === 'rubrica-regra-comparacao' ? 'page' : undefined}
+              >
+                Comparação Tabela de Regra
+              </button>
             </div>
           )}
           {canAccessPage('user-admin', currentUser) && (
@@ -1095,6 +1161,8 @@ function App() {
                         : selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'Inc. RPPS'
                         : selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'Inc. IRRF'
                         : selectedRubricaCatalogKey === 'rubrica-dirf' ? 'DIRF Protheus'
+                        : selectedRubricaCatalogKey === 'rubrica-regra' ? 'Tabela de Regra'
+                        : selectedRubricaCatalogKey === 'rubrica-regra-comparacao' ? 'Comparação Tabela de Regra'
                         : 'ID CÁLCULO Protheus'
                     }`
                     : `XML para Excel • ${selectedXmlRoutine.id.toUpperCase()}`}
@@ -1127,7 +1195,11 @@ function App() {
                 : currentPage === 'propostas'
                   ? 'Criação e gestão de propostas comerciais da Visitor Consultoria.'
                 : currentPage === 'rubricas-validacao'
-                  ? 'Escolha um dos 8 cadastros básicos e mantenha sua base de rubricas com CRUD no Supabase.'
+                  ? selectedRubricaCatalogKey === 'rubrica-regra'
+                    ? 'Importe planilhas modelo, mantenha diversos cadastros de regra e replique estruturas com CRUD completo.'
+                    : selectedRubricaCatalogKey === 'rubrica-regra-comparacao'
+                      ? 'Selecione um cadastro de Tabela de Regra e compare com uma planilha importada pelo RV_CODFOL, ignorando RV_DESC e RV_DESCDET.'
+                    : 'Cadastros básicos para validação das rubricas.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>
           </div>
@@ -1249,7 +1321,7 @@ function App() {
                     onClick={() => {
                       setCurrentPage('rubricas-validacao')
                       setSelectedRubricaCatalogKey('rubrica-natureza')
-                      setOpenSidebarSubmenu('rubricas-basicos')
+                      setOpenSidebarSubmenu('rubricas-cadastros')
                     }}
                   >
                     Abrir Validação de Rubricas
@@ -1414,7 +1486,7 @@ function App() {
                     onClick={() => {
                       setCurrentPage('rubricas-validacao')
                       setSelectedRubricaCatalogKey('rubrica-natureza')
-                      setOpenSidebarSubmenu('rubricas-basicos')
+                      setOpenSidebarSubmenu('rubricas-cadastros')
                     }}
                   >
                     Acessar
@@ -1674,7 +1746,13 @@ function App() {
             ) : currentPage === 'propostas' ? (
               <PropostaComercialTool />
             ) : currentPage === 'rubricas-validacao' ? (
-              <RubricasValidationTool catalogPageKey={selectedRubricaCatalogKey} />
+              selectedRubricaCatalogKey === 'rubrica-regra' ? (
+                <RubricaRuleTool />
+              ) : selectedRubricaCatalogKey === 'rubrica-regra-comparacao' ? (
+                <RubricaRuleComparisonTool />
+              ) : (
+                <RubricasValidationTool catalogPageKey={selectedRubricaCatalogKey} />
+              )
             ) : currentPage === 'user-admin' ? (
               <UserAccessTool currentUsername={currentUser?.username || ''} />
             ) : currentPage === 'change-password' ? (

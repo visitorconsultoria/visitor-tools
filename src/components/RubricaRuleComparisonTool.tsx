@@ -361,7 +361,7 @@ export default function RubricaRuleComparisonTool() {
           <div>
             <h2>Comparar Planilha x Tabela de Regra</h2>
             <p className="muted">
-              Relacione por RV_CODFOL e compare todos os campos, exceto RV_DESC e RV_DESCDET.
+              No cabeçalho deverá conter o nome do campo (Ex: RV_CODFOL) e não a descrição.
             </p>
           </div>
         </div>

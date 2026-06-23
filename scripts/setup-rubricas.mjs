@@ -151,6 +151,9 @@ where i.catalog_id is null
   and i.catalog_key is not null
   and i.catalog_key = c.catalog_key;
 
+alter table public.rubrica_reference_catalogs disable row level security;
+alter table public.rubrica_reference_items disable row level security;
+
 comment on table public.rubrica_reference_catalogs is
 'Cadastros basicos de validacao de rubricas (eSocial/Protheus).';
 

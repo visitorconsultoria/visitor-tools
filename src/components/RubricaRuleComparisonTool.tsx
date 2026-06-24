@@ -33,6 +33,8 @@ type FieldDiff = {
 type Divergence = {
   rvCodfol: string
   diffs: FieldDiff[]
+  ruleRow: Record<RubricaRuleFieldKey, string>
+  importedRow: Record<RubricaRuleFieldKey, string>
 }
 
 type ComparisonResult = {
@@ -156,6 +158,48 @@ function normalizeCode(value: string): string {
   return String(value || '').trim().toUpperCase()
 }
 
+function normalizeComparableValue(value: string): string {
+  const normalized = String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+
+  if (!normalized) return ''
+
+  return normalized
+}
+
+function normalizeComparablePair(expectedValue: string, foundValue: string) {
+  let expectedComparable = normalizeComparableValue(expectedValue)
+  let foundComparable = normalizeComparableValue(foundValue)
+
+  const expectedIsYesNo = expectedComparable === 'sim' || expectedComparable === 'nao'
+  const foundIsYesNo = foundComparable === 'sim' || foundComparable === 'nao'
+
+  if (!expectedComparable && foundIsYesNo) {
+    expectedComparable = 'nao'
+  }
+
+  if (!foundComparable && expectedIsYesNo) {
+    foundComparable = 'nao'
+  }
+
+  return { expectedComparable, foundComparable }
+}
+
+function sanitizeFileNameSegment(value: string): string {
+  const sanitized = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  return sanitized || 'comparacao-rubricas'
+}
+
 function buildRowMap(rows: Array<Record<RubricaRuleFieldKey, string>>) {
   const map = new Map<string, Record<RubricaRuleFieldKey, string>>()
   const duplicates = new Set<string>()
@@ -202,7 +246,10 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
     for (const field of comparableFields) {
       const expected = String(ruleRow[field.key] ?? '').trim()
       const found = String(imported[field.key] ?? '').trim()
-      if (expected !== found) {
+
+      const { expectedComparable, foundComparable } = normalizeComparablePair(expected, found)
+
+      if (expectedComparable !== foundComparable) {
         diffs.push({
           field,
           expected,
@@ -212,7 +259,7 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
     }
 
     if (diffs.length) {
-      divergences.push({ rvCodfol: code, diffs })
+      divergences.push({ rvCodfol: code, diffs, ruleRow, importedRow: imported })
     } else {
       equalRows += 1
     }
@@ -316,6 +363,170 @@ export default function RubricaRuleComparisonTool() {
     return description ? `${value} - ${description}` : value
   }
 
+  const handleExportResult = async () => {
+    if (!result) return
+
+    const ExcelJS = await import('exceljs')
+    const workbook = new ExcelJS.Workbook()
+    const dateTag = new Date().toISOString().slice(0, 10)
+    const allFields = [...RUBRICA_RULE_FIELD_DEFINITIONS]
+
+    const summaryWorksheet = workbook.addWorksheet('resumo')
+    summaryWorksheet.columns = [
+      { header: 'Metrica', key: 'metrica', width: 48 },
+      { header: 'Valor', key: 'valor', width: 36 },
+    ]
+    summaryWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+    summaryWorksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 2 },
+    }
+
+    const summaryRows = [
+      { metrica: 'Cadastro base', valor: result.selectedRuleSetName },
+      { metrica: 'Registros da Tabela de Regra', valor: result.totalRuleRows },
+      { metrica: 'Registros da planilha importada', valor: result.totalImportedRows },
+      { metrica: 'Registros equivalentes', valor: result.equalRows },
+      { metrica: 'Registros com divergencia', valor: result.divergences.length },
+      { metrica: 'RV_CODFOL sem correspondencia na planilha', valor: result.missingInImported.length },
+      { metrica: 'RV_CODFOL novo na planilha', valor: result.extraInImported.length },
+      { metrica: 'RV_CODFOL duplicado na planilha', valor: result.duplicateCodesInImported.length },
+    ]
+    summaryRows.forEach((row) => summaryWorksheet.addRow(row))
+
+    const detailedWorksheet = workbook.addWorksheet('divergencias-completas')
+    detailedWorksheet.columns = [
+      { header: 'Origem', key: 'origem', width: 14 },
+      ...allFields.map((field) => ({
+        header: field.label,
+        key: field.key,
+        width: field.key === 'rv_descdet' ? 42 : 28,
+      })),
+    ]
+    detailedWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+    detailedWorksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: allFields.length + 1 },
+    }
+
+    const headerRow = detailedWorksheet.getRow(1)
+    headerRow.font = { bold: true }
+
+    const highlightFill = {
+      type: 'pattern' as const,
+      pattern: 'solid' as const,
+      fgColor: { argb: 'FFFFC7CE' },
+      bgColor: { argb: 'FFFFC7CE' },
+    }
+
+    const baseRowFill = {
+      type: 'pattern' as const,
+      pattern: 'solid' as const,
+      fgColor: { argb: 'FFE2F0D9' },
+      bgColor: { argb: 'FFE2F0D9' },
+    }
+
+    const importedRowFill = {
+      type: 'pattern' as const,
+      pattern: 'solid' as const,
+      fgColor: { argb: 'FFDDEBF7' },
+      bgColor: { argb: 'FFDDEBF7' },
+    }
+
+    if (!result.divergences.length) {
+      detailedWorksheet.addRow({ origem: 'Sem dados' })
+      detailedWorksheet.mergeCells(2, 1, 2, allFields.length + 1)
+      const noDataCell = detailedWorksheet.getCell(2, 1)
+      noDataCell.value = 'Nenhuma divergencia encontrada para exportar.'
+      noDataCell.alignment = { vertical: 'middle', horizontal: 'center' }
+    } else {
+      for (const divergence of result.divergences) {
+        const divergentFields = new Set(divergence.diffs.map((diff) => diff.field.key))
+
+        const baseRow = detailedWorksheet.addRow({
+          origem: 'Base',
+          ...Object.fromEntries(
+            allFields.map((field) => [field.key, formatFieldValue(field.key, divergence.ruleRow[field.key])]),
+          ),
+        })
+
+        const importedRow = detailedWorksheet.addRow({
+          origem: 'Importado',
+          ...Object.fromEntries(
+            allFields.map((field) => [field.key, formatFieldValue(field.key, divergence.importedRow[field.key])]),
+          ),
+        })
+
+        baseRow.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = baseRowFill
+        })
+
+        importedRow.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = importedRowFill
+        })
+
+        for (const fieldKey of divergentFields) {
+          const fieldIndex = allFields.findIndex((field) => field.key === fieldKey)
+          if (fieldIndex < 0) continue
+
+          const column = fieldIndex + 2
+          const baseCell = baseRow.getCell(column)
+          const importedCell = importedRow.getCell(column)
+
+          baseCell.fill = highlightFill
+          importedCell.fill = highlightFill
+          baseCell.font = { color: { argb: 'FF9C0006' } }
+          importedCell.font = { color: { argb: 'FF9C0006' } }
+        }
+      }
+    }
+
+    const missingRows = result.missingInImported.map((code) => ({ rv_codfol: formatFieldValue('rv_codfol', code) }))
+    const extraRows = result.extraInImported.map((code) => ({ rv_codfol: formatFieldValue('rv_codfol', code) }))
+    const duplicateRows = result.duplicateCodesInImported.map((code) => ({ rv_codfol: formatFieldValue('rv_codfol', code) }))
+
+    const missingWorksheet = workbook.addWorksheet('sem-correspondencia')
+    missingWorksheet.columns = [{ header: 'RV_CODFOL', key: 'rv_codfol', width: 56 }]
+    missingWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+    missingWorksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 1 },
+    }
+    ;(missingRows.length ? missingRows : [{ rv_codfol: 'Nenhum RV_CODFOL sem correspondencia.' }]).forEach((row) => missingWorksheet.addRow(row))
+
+    const extraWorksheet = workbook.addWorksheet('novos-na-planilha')
+    extraWorksheet.columns = [{ header: 'RV_CODFOL', key: 'rv_codfol', width: 56 }]
+    extraWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+    extraWorksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 1 },
+    }
+    ;(extraRows.length ? extraRows : [{ rv_codfol: 'Nenhum RV_CODFOL novo na planilha.' }]).forEach((row) => extraWorksheet.addRow(row))
+
+    const duplicateWorksheet = workbook.addWorksheet('duplicados')
+    duplicateWorksheet.columns = [{ header: 'RV_CODFOL', key: 'rv_codfol', width: 56 }]
+    duplicateWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+    duplicateWorksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 1 },
+    }
+    ;(duplicateRows.length ? duplicateRows : [{ rv_codfol: 'Nenhum RV_CODFOL duplicado.' }]).forEach((row) => duplicateWorksheet.addRow(row))
+
+    const outputBuffer = await workbook.xlsx.writeBuffer()
+    const outputBlob = new Blob([outputBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+
+    const downloadUrl = URL.createObjectURL(outputBlob)
+    const anchor = document.createElement('a')
+    anchor.href = downloadUrl
+    anchor.download = `${sanitizeFileNameSegment(result.selectedRuleSetName)}-${dateTag}.xlsx`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(downloadUrl)
+  }
+
   const handleCompare = async () => {
     if (!selectedRuleSetId) {
       setError('Selecione um cadastro de Tabela de Regra para comparar.')
@@ -366,7 +577,7 @@ export default function RubricaRuleComparisonTool() {
           </div>
         </div>
 
-        <div className="ch-table-toolbar" style={{ alignItems: 'flex-end' }}>
+        <div className="ch-table-toolbar rubrica-compare-toolbar">
           <label style={{ minWidth: '280px', display: 'grid', gap: '0.35rem' }}>
             <span className="muted" style={{ fontSize: '0.82rem' }}>Cadastro de Regra</span>
             <select
@@ -387,7 +598,7 @@ export default function RubricaRuleComparisonTool() {
               accept=".xlsx,.xls"
               onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
             />
-            <span>{selectedFile ? selectedFile.name : 'Selecionar planilha para comparar'}</span>
+            <span>{selectedFile ? selectedFile.name : 'Selecionar Comparação'}</span>
           </label>
 
           <button type="button" className="button-primary" onClick={handleCompare} disabled={isComparing || isLoadingSets}>
@@ -405,6 +616,9 @@ export default function RubricaRuleComparisonTool() {
               <h3>Resultado da Comparação</h3>
               <p className="muted">Cadastro base: {result.selectedRuleSetName}</p>
             </div>
+            <button type="button" className="button-primary" onClick={handleExportResult}>
+              Exportar resultado
+            </button>
           </div>
 
           <div className="results">
@@ -433,7 +647,7 @@ export default function RubricaRuleComparisonTool() {
                 {result.divergences.flatMap((item) =>
                   item.diffs.map((diff, index) => (
                     <tr key={`${item.rvCodfol}-${diff.field.key}-${index}`}>
-                      <td>{item.rvCodfol}</td>
+                      <td>{formatFieldValue('rv_codfol', item.rvCodfol)}</td>
                       <td>{diff.field.label}</td>
                       <td>{formatFieldValue(diff.field.key, diff.expected)}</td>
                       <td>{formatFieldValue(diff.field.key, diff.found)}</td>

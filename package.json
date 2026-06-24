@@ -29,6 +29,7 @@
     "@tiptap/react": "^3.22.3",
     "@tiptap/starter-kit": "^3.22.3",
     "dotenv": "^17.4.0",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "fast-xml-parser": "^5.4.1",
     "jspdf": "^4.2.1",

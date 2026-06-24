@@ -2,7 +2,7 @@ export const RUBRICA_RULE_FIELD_DEFINITIONS = Object.freeze([
   { key: 'rv_desc', label: 'RV_DESC', required: false, multiline: true },
   { key: 'rv_descdet', label: 'RV_DESCDET', required: false, multiline: true },
   { key: 'rv_codfol', label: 'RV_CODFOL', required: false },
-  { key: 'rv_tipo', label: 'RV_TIPO', required: false },
+  { key: 'rv_tipo', label: 'RV_TIPOCOD', required: false },
   { key: 'rv_codcorr', label: 'RV_CODCORR', required: false },
   { key: 'rv_inss', label: 'RV_INSS', required: false },
   { key: 'rv_inssfer', label: 'RV_INSSFER', required: false },

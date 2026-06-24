@@ -2042,6 +2042,22 @@ button:disabled {
   grid-template-columns: 1fr;
 }
 
+.rubrica-compare-toolbar {
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr) auto;
+  align-items: end;
+}
+
+.rubrica-compare-toolbar .file-input {
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+}
+
+.rubrica-compare-toolbar .button-primary {
+  min-height: 42px;
+  align-self: end;
+}
+
 .ch-contacts-search {
   position: relative;
   display: block;
@@ -2215,6 +2231,10 @@ button:disabled {
 
   .ch-table-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .rubrica-compare-toolbar .button-primary {
+    width: 100%;
   }
 
   .ch-filter-select {

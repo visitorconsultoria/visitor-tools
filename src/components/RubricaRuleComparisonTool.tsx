@@ -515,99 +515,214 @@ export default function RubricaRuleComparisonTool() {
     return description ? `${value} - ${description}` : value
   }
 
-  const handleExportResult = () => {
+  const handleExportResult = async () => {
     if (!result) return
 
     try {
-      const workbook = XLSX.utils.book_new()
+      const ExcelJSModule = await import('exceljs')
+      const ExcelJSRuntime = ((ExcelJSModule as any).default ?? ExcelJSModule) as any
+      const WorkbookCtor = ExcelJSRuntime.Workbook
+
+      if (!WorkbookCtor) {
+        throw new Error('Falha ao carregar biblioteca de exportacao (ExcelJS).')
+      }
+
+      const workbook = new WorkbookCtor() as any
       const dateTag = new Date().toISOString().slice(0, 10)
       const allFields = [...RUBRICA_RULE_FIELD_DEFINITIONS]
 
-      const summaryData: Array<Array<string | number>> = [
-        ['Metrica', 'Valor'],
-        ['Cadastro base', result.selectedRuleSetName],
-        ['Registros da Tabela de Regra', result.totalRuleRows],
-        ['Registros da planilha importada', result.totalImportedRows],
-        ['Registros equivalentes', result.equalRows],
-        ['Registros com divergencia', result.divergences.length],
-        ['RV_CODFOL sem correspondencia na planilha', result.missingInImported.length],
-        ['RV_CODFOL novo na planilha', result.extraInImported.length],
-        ['RV_CODFOL duplicado na planilha', result.duplicateCodesInImported.length],
+      const summaryWorksheet = workbook.addWorksheet('resumo')
+      summaryWorksheet.columns = [
+        { header: 'Metrica', key: 'metrica', width: 48 },
+        { header: 'Valor', key: 'valor', width: 36 },
       ]
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryData), 'resumo')
+      summaryWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      summaryWorksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: 2 },
+      }
 
-      const detailedData: string[][] = [
-        ['Origem', ...allFields.map((field) => field.label)],
+      const summaryRows = [
+        { metrica: 'Cadastro base', valor: result.selectedRuleSetName },
+        { metrica: 'Registros da Tabela de Regra', valor: result.totalRuleRows },
+        { metrica: 'Registros da planilha importada', valor: result.totalImportedRows },
+        { metrica: 'Registros equivalentes', valor: result.equalRows },
+        { metrica: 'Registros com divergencia', valor: result.divergences.length },
+        { metrica: 'RV_CODFOL sem correspondencia na planilha', valor: result.missingInImported.length },
+        { metrica: 'RV_CODFOL novo na planilha', valor: result.extraInImported.length },
+        { metrica: 'RV_CODFOL duplicado na planilha', valor: result.duplicateCodesInImported.length },
       ]
+      summaryRows.forEach((row) => summaryWorksheet.addRow(row))
+
+      const detailedWorksheet = workbook.addWorksheet('divergencias-completas')
+      detailedWorksheet.columns = [
+        { header: 'Origem', key: 'origem', width: 14 },
+        ...allFields.map((field) => ({
+          header: field.label,
+          key: field.key,
+          width: field.key === 'rv_descdet' ? 42 : 28,
+        })),
+      ]
+      detailedWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      detailedWorksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: allFields.length + 1 },
+      }
+
+      const headerRow = detailedWorksheet.getRow(1)
+      headerRow.font = { bold: true }
+
+      const highlightFill = {
+        type: 'pattern' as const,
+        pattern: 'solid' as const,
+        fgColor: { argb: 'FFFFC7CE' },
+        bgColor: { argb: 'FFFFC7CE' },
+      }
+
+      const baseRowFill = {
+        type: 'pattern' as const,
+        pattern: 'solid' as const,
+        fgColor: { argb: 'FFE2F0D9' },
+        bgColor: { argb: 'FFE2F0D9' },
+      }
+
+      const importedRowFill = {
+        type: 'pattern' as const,
+        pattern: 'solid' as const,
+        fgColor: { argb: 'FFDDEBF7' },
+        bgColor: { argb: 'FFDDEBF7' },
+      }
+
+      const referenceRowFill = {
+        type: 'pattern' as const,
+        pattern: 'solid' as const,
+        fgColor: { argb: 'FFFCE4D6' },
+        bgColor: { argb: 'FFFCE4D6' },
+      }
 
       if (!result.divergences.length) {
-        detailedData.push(['Sem dados', ...allFields.map(() => '')])
+        detailedWorksheet.addRow({ origem: 'Sem dados' })
+        detailedWorksheet.mergeCells(2, 1, 2, allFields.length + 1)
+        const noDataCell = detailedWorksheet.getCell(2, 1)
+        noDataCell.value = 'Nenhuma divergencia encontrada para exportar.'
+        noDataCell.alignment = { vertical: 'middle', horizontal: 'center' }
       } else {
         for (const divergence of result.divergences) {
-          detailedData.push([
-            'Base',
-            ...allFields.map((field) => formatFieldValue(field.key, divergence.ruleRow[field.key])),
-          ])
+          const divergentFields = new Set(divergence.diffs.map((diff) => diff.field.key))
 
-          detailedData.push([
-            'Importado',
-            ...allFields.map((field) => formatFieldValue(field.key, divergence.importedRow[field.key])),
-          ])
+          const baseRow = detailedWorksheet.addRow({
+            origem: 'Base',
+            ...Object.fromEntries(
+              allFields.map((field) => [field.key, formatFieldValue(field.key, divergence.ruleRow[field.key])]),
+            ),
+          })
+
+          const importedRow = detailedWorksheet.addRow({
+            origem: 'Importado',
+            ...Object.fromEntries(
+              allFields.map((field) => [field.key, formatFieldValue(field.key, divergence.importedRow[field.key])]),
+            ),
+          })
+
+          baseRow.eachCell({ includeEmpty: true }, (cell: any) => {
+            cell.fill = baseRowFill
+          })
+
+          importedRow.eachCell({ includeEmpty: true }, (cell: any) => {
+            cell.fill = importedRowFill
+          })
+
+          for (const fieldKey of divergentFields) {
+            const fieldIndex = allFields.findIndex((field) => field.key === fieldKey)
+            if (fieldIndex < 0) continue
+
+            const column = fieldIndex + 2
+            const baseCell = baseRow.getCell(column)
+            const importedCell = importedRow.getCell(column)
+
+            baseCell.fill = highlightFill
+            importedCell.fill = highlightFill
+            baseCell.font = { color: { argb: 'FF9C0006' } }
+            importedCell.font = { color: { argb: 'FF9C0006' } }
+          }
 
           for (const reference of divergence.specialReferences) {
-            detailedData.push([
-              `Ref ${reference.field.label}`,
-              ...allFields.map((field) => {
+            const referenceRow = detailedWorksheet.addRow({
+              origem: `Ref ${reference.field.label}`,
+              ...Object.fromEntries(
+                allFields.map((field) => {
                 if (reference.referenceRow) {
                   if (field.key === 'rv_desc') {
-                    return buildReferenceDescription(reference.referenceRow, reference.referenceCode)
+                      return [field.key, buildReferenceDescription(reference.referenceRow, reference.referenceCode)]
                   }
 
                   if (field.key === 'rv_codfol') {
-                    return reference.referenceCode
+                      return [field.key, reference.referenceCode]
                   }
 
-                  return formatFieldValue(field.key, reference.referenceRow[field.key])
+                    return [field.key, formatFieldValue(field.key, reference.referenceRow[field.key])]
                 }
 
                 if (field.key === 'rv_codfol') {
-                  return reference.referenceCode
+                    return [field.key, reference.referenceCode]
                 }
 
-                return ''
-              }),
-            ])
+                  return [field.key, '']
+                }),
+              ),
+            })
+
+            referenceRow.eachCell({ includeEmpty: true }, (cell: any) => {
+              cell.fill = referenceRowFill
+            })
           }
         }
       }
 
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(detailedData), 'divergencias-completas')
+      const missingRows = result.missingInImported.map((code) => ({ rv_codfol: formatFieldValue('rv_codfol', code) }))
+      const extraRows = result.extraInImported.map((code) => ({ rv_codfol: formatFieldValue('rv_codfol', code) }))
+      const duplicateRows = result.duplicateCodesInImported.map((code) => ({ rv_codfol: formatFieldValue('rv_codfol', code) }))
 
-      const missingData: string[][] = [
-        ['RV_CODFOL'],
-        ...(result.missingInImported.length
-          ? result.missingInImported.map((code) => [formatFieldValue('rv_codfol', code)])
-          : [['Nenhum RV_CODFOL sem correspondencia.']]),
-      ]
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(missingData), 'sem-correspondencia')
+      const missingWorksheet = workbook.addWorksheet('sem-correspondencia')
+      missingWorksheet.columns = [{ header: 'RV_CODFOL', key: 'rv_codfol', width: 56 }]
+      missingWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      missingWorksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: 1 },
+      }
+      ;(missingRows.length ? missingRows : [{ rv_codfol: 'Nenhum RV_CODFOL sem correspondencia.' }]).forEach((row) => missingWorksheet.addRow(row))
 
-      const extraData: string[][] = [
-        ['RV_CODFOL'],
-        ...(result.extraInImported.length
-          ? result.extraInImported.map((code) => [formatFieldValue('rv_codfol', code)])
-          : [['Nenhum RV_CODFOL novo na planilha.']]),
-      ]
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(extraData), 'novos-na-planilha')
+      const extraWorksheet = workbook.addWorksheet('novos-na-planilha')
+      extraWorksheet.columns = [{ header: 'RV_CODFOL', key: 'rv_codfol', width: 56 }]
+      extraWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      extraWorksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: 1 },
+      }
+      ;(extraRows.length ? extraRows : [{ rv_codfol: 'Nenhum RV_CODFOL novo na planilha.' }]).forEach((row) => extraWorksheet.addRow(row))
 
-      const duplicateData: string[][] = [
-        ['RV_CODFOL'],
-        ...(result.duplicateCodesInImported.length
-          ? result.duplicateCodesInImported.map((code) => [formatFieldValue('rv_codfol', code)])
-          : [['Nenhum RV_CODFOL duplicado.']]),
-      ]
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(duplicateData), 'duplicados')
+      const duplicateWorksheet = workbook.addWorksheet('duplicados')
+      duplicateWorksheet.columns = [{ header: 'RV_CODFOL', key: 'rv_codfol', width: 56 }]
+      duplicateWorksheet.views = [{ state: 'frozen', ySplit: 1 }]
+      duplicateWorksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: 1 },
+      }
+      ;(duplicateRows.length ? duplicateRows : [{ rv_codfol: 'Nenhum RV_CODFOL duplicado.' }]).forEach((row) => duplicateWorksheet.addRow(row))
 
-      XLSX.writeFile(workbook, `${sanitizeFileNameSegment(result.selectedRuleSetName)}-${dateTag}.xlsx`)
+      const outputBuffer = await workbook.xlsx.writeBuffer()
+      const outputBlob = new Blob([outputBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+
+      const downloadUrl = URL.createObjectURL(outputBlob)
+      const anchor = document.createElement('a')
+      anchor.href = downloadUrl
+      anchor.download = `${sanitizeFileNameSegment(result.selectedRuleSetName)}-${dateTag}.xlsx`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(downloadUrl)
     } catch (err) {
       setError(toFriendlyApiError(err, 'Nao foi possivel exportar o resultado da comparacao.'))
     }

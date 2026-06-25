@@ -518,8 +518,15 @@ export default function RubricaRuleComparisonTool() {
   const handleExportResult = async () => {
     if (!result) return
 
-    const ExcelJS = await import('exceljs')
-    const workbook = new ExcelJS.Workbook()
+    const ExcelJSModule = await import('exceljs')
+    const ExcelJSRuntime = ((ExcelJSModule as any).default ?? ExcelJSModule) as any
+    const WorkbookCtor = ExcelJSRuntime.Workbook
+
+    if (!WorkbookCtor) {
+      throw new Error('Falha ao carregar biblioteca de exportacao (ExcelJS).')
+    }
+
+    const workbook = new WorkbookCtor() as any
     const dateTag = new Date().toISOString().slice(0, 10)
     const allFields = [...RUBRICA_RULE_FIELD_DEFINITIONS]
 
@@ -616,11 +623,11 @@ export default function RubricaRuleComparisonTool() {
           ),
         })
 
-        baseRow.eachCell({ includeEmpty: true }, (cell) => {
+        baseRow.eachCell({ includeEmpty: true }, (cell: any) => {
           cell.fill = baseRowFill
         })
 
-        importedRow.eachCell({ includeEmpty: true }, (cell) => {
+        importedRow.eachCell({ includeEmpty: true }, (cell: any) => {
           cell.fill = importedRowFill
         })
 
@@ -664,7 +671,7 @@ export default function RubricaRuleComparisonTool() {
             ),
           })
 
-          referenceRow.eachCell({ includeEmpty: true }, (cell) => {
+          referenceRow.eachCell({ includeEmpty: true }, (cell: any) => {
             cell.fill = referenceRowFill
           })
         }

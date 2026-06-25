@@ -200,7 +200,7 @@ create table if not exists public.rubrica_rule_items (
   rv_codcom_ text not null default '',
   rv_codmseg text not null default '',
   rv_ferseg text not null default '',
-  rv_origem text not null default '',
+  rv_naturez text not null default '',
   rv_incirf text not null default '',
   rv_incfgts text not null default '',
   rv_inccp text not null default '',
@@ -215,6 +215,40 @@ create table if not exists public.rubrica_rule_items (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'rubrica_rule_items'
+      and column_name = 'rv_origem'
+  ) and not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'rubrica_rule_items'
+      and column_name = 'rv_naturez'
+  ) then
+    alter table public.rubrica_rule_items
+      add column rv_naturez text not null default '';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'rubrica_rule_items'
+      and column_name = 'rv_origem'
+  ) then
+    update public.rubrica_rule_items
+    set rv_naturez = rv_origem
+    where coalesce(rv_naturez, '') = ''
+      and coalesce(rv_origem, '') <> '';
+  end if;
+end;
+$$;
 
 create index if not exists idx_rubrica_rule_items_rule_set_sort
   on public.rubrica_rule_items (rule_set_id, sort_order, id);

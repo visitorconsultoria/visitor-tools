@@ -23,7 +23,7 @@ export const RUBRICA_RULE_FIELD_DEFINITIONS = Object.freeze([
   { key: 'rv_codcom_', label: 'RV_CODCOM_', required: false },
   { key: 'rv_codmseg', label: 'RV_CODMSEG', required: false },
   { key: 'rv_ferseg', label: 'RV_FERSEG', required: false },
-  { key: 'rv_origem', label: 'RV_ORIGEM', required: false },
+  { key: 'rv_naturez', label: 'RV_NATUREZ', required: false },
   { key: 'rv_incirf', label: 'RV_INCIRF', required: false },
   { key: 'rv_incfgts', label: 'RV_INCFGTS', required: false },
   { key: 'rv_inccp', label: 'RV_INCCP', required: false },

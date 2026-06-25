@@ -23,7 +23,7 @@ export type RubricaRuleFieldKey =
   | 'rv_codcom_'
   | 'rv_codmseg'
   | 'rv_ferseg'
-  | 'rv_origem'
+  | 'rv_naturez'
   | 'rv_incirf'
   | 'rv_incfgts'
   | 'rv_inccp'

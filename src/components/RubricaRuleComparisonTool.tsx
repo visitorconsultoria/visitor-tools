@@ -49,8 +49,38 @@ type ComparisonResult = {
 }
 
 const EXCLUDED_FIELDS = new Set<RubricaRuleFieldKey>(['rv_desc', 'rv_descdet'])
+const COMPARISON_FIELD_KEYS = new Set<RubricaRuleFieldKey>([
+  'rv_codfol',
+  'rv_tipo',
+  'rv_inss',
+  'rv_inssfer',
+  'rv_ir',
+  'rv_fgts',
+  'rv_rra',
+  'rv_pis',
+  'rv_dirf',
+  'rv_ref13',
+  'rv_reffer',
+  'rv_refabon',
+  'rv_adianta',
+  'rv_empcons',
+  'rv_refplr',
+  'rv_naturez',
+  'rv_incirf',
+  'rv_incfgts',
+  'rv_inccp',
+  'rv_incop',
+  'rv_tetop',
+  'rv_incpis',
+  'rv_ferxml',
+  'rv_feraxml',
+])
+const SPECIAL_REFERENCE_FIELDS = new Set<RubricaRuleFieldKey>(['rv_ferxml', 'rv_feraxml'])
+const FIELD_HEADER_ALIASES: Partial<Record<RubricaRuleFieldKey, string[]>> = {
+  rv_tipo: ['RV_TIPO'],
+}
 const FIELD_CATALOG_MAP: Partial<Record<RubricaRuleFieldKey, string>> = {
-  rv_origem: 'natureza-rubricas',
+  rv_naturez: 'natureza-rubricas',
   rv_incirf: 'inc-irrf',
   rv_incfgts: 'inc-fgts',
   rv_inccp: 'inc-cp',
@@ -131,7 +161,14 @@ async function parseWorkbookRows(file: File): Promise<Array<Record<RubricaRuleFi
   const columnIndexByKey = new Map<RubricaRuleFieldKey, number>()
 
   for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
-    const columnIndex = headerRow.findIndex((header) => header === normalizeHeader(field.label))
+    if (!COMPARISON_FIELD_KEYS.has(field.key) && field.key !== 'rv_codfol') continue
+
+    const acceptedHeaders = [
+      normalizeHeader(field.label),
+      ...((FIELD_HEADER_ALIASES[field.key] || []).map((alias) => normalizeHeader(alias))),
+    ]
+
+    const columnIndex = headerRow.findIndex((header) => acceptedHeaders.includes(header))
     if (columnIndex >= 0) {
       columnIndexByKey.set(field.key, columnIndex)
     }
@@ -155,7 +192,11 @@ async function parseWorkbookRows(file: File): Promise<Array<Record<RubricaRuleFi
 }
 
 function normalizeCode(value: string): string {
-  return String(value || '').trim().toUpperCase()
+  const normalized = String(value || '').trim().toUpperCase()
+  if (!normalized) return ''
+
+  const noLeadingZeros = normalized.replace(/^0+/, '')
+  return noLeadingZeros || '0'
 }
 
 function normalizeComparableValue(value: string): string {
@@ -187,6 +228,40 @@ function normalizeComparablePair(expectedValue: string, foundValue: string) {
   }
 
   return { expectedComparable, foundComparable }
+}
+
+function normalizeReferenceSuffix(value: string): string {
+  const normalized = String(value || '').trim().toUpperCase()
+  if (!normalized) return ''
+
+  if (/^\d+$/.test(normalized)) {
+    const noLeadingZeros = normalized.replace(/^0+/, '')
+    return noLeadingZeros || '0'
+  }
+
+  return normalized
+}
+
+function findSpecialReferenceRuleRow(
+  ruleMap: Map<string, Record<RubricaRuleFieldKey, string>>,
+  fieldLabel: string,
+  originCodeRaw: string,
+) {
+  const originCode = String(originCodeRaw || '').trim().toUpperCase()
+  if (!originCode) return null
+
+  const normalizedOrigin = normalizeReferenceSuffix(originCode)
+  const referenceCodes = new Set<string>([
+    `${fieldLabel}|${originCode}`,
+    `${fieldLabel}|${normalizedOrigin}`,
+  ])
+
+  for (const referenceCode of referenceCodes) {
+    const ruleRow = ruleMap.get(normalizeCode(referenceCode))
+    if (ruleRow) return ruleRow
+  }
+
+  return null
 }
 
 function sanitizeFileNameSegment(value: string): string {
@@ -221,7 +296,7 @@ function buildRowMap(rows: Array<Record<RubricaRuleFieldKey, string>>) {
 
 function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<RubricaRuleFieldKey, string>>, ruleSetName: string): ComparisonResult {
   const comparableFields = RUBRICA_RULE_FIELD_DEFINITIONS.filter(
-    (field) => !EXCLUDED_FIELDS.has(field.key) && field.key !== 'rv_codfol',
+    (field) => COMPARISON_FIELD_KEYS.has(field.key) && !EXCLUDED_FIELDS.has(field.key) && field.key !== 'rv_codfol',
   )
 
   const normalizedRuleRows = ruleRows.map((row) => {
@@ -244,8 +319,40 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
 
     const diffs: FieldDiff[] = []
     for (const field of comparableFields) {
-      const expected = String(ruleRow[field.key] ?? '').trim()
       const found = String(imported[field.key] ?? '').trim()
+
+      if (SPECIAL_REFERENCE_FIELDS.has(field.key)) {
+        const referenceRuleRow = findSpecialReferenceRuleRow(
+          ruleMap,
+          field.label,
+          String(imported.rv_codfol || ruleRow.rv_codfol || '').trim(),
+        )
+
+        if (!referenceRuleRow) {
+          if (normalizeComparableValue(found)) {
+            diffs.push({
+              field,
+              expected: '',
+              found,
+            })
+          }
+          continue
+        }
+
+        const expectedFromReference = String(referenceRuleRow[field.key] ?? '').trim()
+        const { expectedComparable, foundComparable } = normalizeComparablePair(expectedFromReference, found)
+
+        if (expectedComparable !== foundComparable) {
+          diffs.push({
+            field,
+            expected: expectedFromReference,
+            found,
+          })
+        }
+        continue
+      }
+
+      const expected = String(ruleRow[field.key] ?? '').trim()
 
       const { expectedComparable, foundComparable } = normalizeComparablePair(expected, found)
 

@@ -4638,14 +4638,7 @@ async function deleteRubricaItem(id, catalog) {
 }
 
 const RUBRICA_RULE_SET_SELECT = 'id, name, description, source_file_name, created_at, updated_at'
-const RUBRICA_RULE_ITEM_SELECT = [
-  'id',
-  'rule_set_id',
-  'sort_order',
-  ...RUBRICA_RULE_FIELD_DEFINITIONS.map((field) => field.key),
-  'created_at',
-  'updated_at',
-].join(', ')
+const RUBRICA_RULE_ITEM_SELECT = '*'
 
 const RUBRICA_RULE_SETUP_SQL = `
 create table if not exists public.rubrica_rule_sets (
@@ -4668,6 +4661,40 @@ create table if not exists public.rubrica_rule_items (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'rubrica_rule_items'
+      and column_name = 'rv_origem'
+  ) and not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'rubrica_rule_items'
+      and column_name = 'rv_naturez'
+  ) then
+    alter table public.rubrica_rule_items
+      add column rv_naturez text not null default '';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'rubrica_rule_items'
+      and column_name = 'rv_origem'
+  ) then
+    update public.rubrica_rule_items
+    set rv_naturez = rv_origem
+    where coalesce(rv_naturez, '') = ''
+      and coalesce(rv_origem, '') <> '';
+  end if;
+end;
+$$;
 
 create index if not exists idx_rubrica_rule_items_rule_set_sort
   on public.rubrica_rule_items (rule_set_id, sort_order, id);
@@ -4702,9 +4729,23 @@ alter table public.rubrica_rule_items disable row level security;
 
 let rubricaRuleSetupPromise = null
 let rubricaRuleSetupCompleted = false
+let rubricaRuleNatureColumn = 'rv_naturez'
+let rubricaRuleNatureColumnPromise = null
+
+function getSupabaseErrorText(error) {
+  return [
+    String(error?.message || '').trim(),
+    String(error?.details || '').trim(),
+    String(error?.hint || '').trim(),
+    String(error?.code || '').trim(),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
 
 function isRelationMissingError(error) {
-  const message = String(error?.message || '').toLowerCase()
+  const message = getSupabaseErrorText(error)
   return (
     message.includes('does not exist') ||
     message.includes('not found') ||
@@ -4715,8 +4756,32 @@ function isRelationMissingError(error) {
 }
 
 function isExecFunctionMissingError(error) {
-  const message = String(error?.message || '').toLowerCase()
+  const message = getSupabaseErrorText(error)
   return message.includes('function public.exec(sql)') || message.includes('function exec')
+}
+
+function isMissingColumnErrorForName(error, columnName) {
+  const message = getSupabaseErrorText(error)
+  const normalizedColumn = String(columnName || '').trim().toLowerCase()
+  return message.includes(`could not find the '${normalizedColumn}' column`) || message.includes(`column ${normalizedColumn} does not exist`)
+}
+
+function remapNatureColumnToLegacy(payload) {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => remapNatureColumnToLegacy(item))
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return payload
+  }
+
+  const data = { ...payload }
+  if (Object.prototype.hasOwnProperty.call(data, 'rv_naturez') && !Object.prototype.hasOwnProperty.call(data, 'rv_origem')) {
+    data.rv_origem = data.rv_naturez
+    delete data.rv_naturez
+  }
+
+  return data
 }
 
 async function checkRubricaRuleTablesAccessible(client) {
@@ -4816,10 +4881,57 @@ function normalizeRubricaRuleItemRow(row) {
   }
 
   for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
+    if (field.key === 'rv_naturez') {
+      base[field.key] = String(row?.rv_naturez ?? row?.rv_origem ?? '')
+      continue
+    }
+
     base[field.key] = String(row?.[field.key] ?? '')
   }
 
   return base
+}
+
+async function resolveRubricaRuleNatureColumn() {
+  if (rubricaRuleNatureColumnPromise) {
+    return rubricaRuleNatureColumnPromise
+  }
+
+  rubricaRuleNatureColumnPromise = (async () => {
+    const { client, rubricaRuleItemsTable } = getSupabaseClient()
+
+    const natureProbe = await client
+      .from(rubricaRuleItemsTable)
+      .select('rv_naturez')
+      .limit(1)
+
+    if (!natureProbe.error) {
+      rubricaRuleNatureColumn = 'rv_naturez'
+      return rubricaRuleNatureColumn
+    }
+
+    if (!isMissingColumnErrorForName(natureProbe.error, 'rv_naturez')) {
+      rubricaRuleNatureColumn = 'rv_naturez'
+      return rubricaRuleNatureColumn
+    }
+
+    const legacyProbe = await client
+      .from(rubricaRuleItemsTable)
+      .select('rv_origem')
+      .limit(1)
+
+    if (!legacyProbe.error) {
+      rubricaRuleNatureColumn = 'rv_origem'
+      return rubricaRuleNatureColumn
+    }
+
+    rubricaRuleNatureColumn = 'rv_naturez'
+    return rubricaRuleNatureColumn
+  })().finally(() => {
+    rubricaRuleNatureColumnPromise = null
+  })
+
+  return rubricaRuleNatureColumnPromise
 }
 
 function parseRubricaRuleSetPayload(payload) {
@@ -4837,8 +4949,9 @@ function validateRubricaRuleSetPayload(parsed) {
   }
 }
 
-function parseRubricaRuleItemPayload(ruleSetId, payload, defaultSortOrder = 0) {
+async function parseRubricaRuleItemPayload(ruleSetId, payload, defaultSortOrder = 0) {
   const sortOrder = Number(payload?.sortOrder ?? payload?.sort_order ?? defaultSortOrder)
+  const natureColumn = await resolveRubricaRuleNatureColumn()
   const parsed = {
     rule_set_id: ruleSetId,
     sort_order: Number.isFinite(sortOrder) ? sortOrder : defaultSortOrder,
@@ -4846,7 +4959,13 @@ function parseRubricaRuleItemPayload(ruleSetId, payload, defaultSortOrder = 0) {
   }
 
   for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
-    parsed[field.key] = String(payload?.[field.key] ?? '').trim()
+    const value = String(payload?.[field.key] ?? '').trim()
+    if (field.key === 'rv_naturez') {
+      parsed[natureColumn] = value
+      continue
+    }
+
+    parsed[field.key] = value
   }
 
   return parsed
@@ -5001,15 +5120,30 @@ async function createRubricaRuleItem(ruleSetId, payload) {
   await ensureRubricaRuleTables()
   await getRubricaRuleSetById(ruleSetId)
 
-  const parsed = parseRubricaRuleItemPayload(ruleSetId, payload)
+  const parsed = await parseRubricaRuleItemPayload(ruleSetId, payload)
   validateRubricaRuleItemPayload(parsed)
 
   const { client, rubricaRuleItemsTable } = getSupabaseClient()
-  const { data: row, error } = await client
+  let insertPayload = { ...parsed, created_at: new Date().toISOString() }
+  let { data: row, error } = await client
     .from(rubricaRuleItemsTable)
-    .insert({ ...parsed, created_at: new Date().toISOString() })
+    .insert(insertPayload)
     .select(RUBRICA_RULE_ITEM_SELECT)
     .single()
+
+  if (error && isMissingColumnErrorForName(error, 'rv_naturez')) {
+    rubricaRuleNatureColumn = 'rv_origem'
+    insertPayload = remapNatureColumnToLegacy(insertPayload)
+
+    const retryResult = await client
+      .from(rubricaRuleItemsTable)
+      .insert(insertPayload)
+      .select(RUBRICA_RULE_ITEM_SELECT)
+      .single()
+
+    row = retryResult.data
+    error = retryResult.error
+  }
 
   if (error) throw new Error(error.message)
   return normalizeRubricaRuleItemRow(row)
@@ -5019,17 +5153,34 @@ async function updateRubricaRuleItem(ruleSetId, itemId, payload) {
   await ensureRubricaRuleTables()
   await getRubricaRuleSetById(ruleSetId)
 
-  const parsed = parseRubricaRuleItemPayload(ruleSetId, payload)
+  const parsed = await parseRubricaRuleItemPayload(ruleSetId, payload)
   validateRubricaRuleItemPayload(parsed)
 
   const { client, rubricaRuleItemsTable } = getSupabaseClient()
-  const { data: row, error } = await client
+  let updatePayload = { ...parsed }
+  let { data: row, error } = await client
     .from(rubricaRuleItemsTable)
-    .update(parsed)
+    .update(updatePayload)
     .eq('id', itemId)
     .eq('rule_set_id', ruleSetId)
     .select(RUBRICA_RULE_ITEM_SELECT)
     .single()
+
+  if (error && isMissingColumnErrorForName(error, 'rv_naturez')) {
+    rubricaRuleNatureColumn = 'rv_origem'
+    updatePayload = remapNatureColumnToLegacy(updatePayload)
+
+    const retryResult = await client
+      .from(rubricaRuleItemsTable)
+      .update(updatePayload)
+      .eq('id', itemId)
+      .eq('rule_set_id', ruleSetId)
+      .select(RUBRICA_RULE_ITEM_SELECT)
+      .single()
+
+    row = retryResult.data
+    error = retryResult.error
+  }
 
   if (error) throw new Error(error.message)
   return normalizeRubricaRuleItemRow(row)
@@ -5064,15 +5215,22 @@ async function replicateRubricaRuleSet(ruleSetId, payload) {
   }
 
   const { client, rubricaRuleItemsTable } = getSupabaseClient()
-  const rowsToInsert = sourceItems.map((item, index) => {
-    const parsed = parseRubricaRuleItemPayload(clonedSet.id, item, item.sortOrder || index + 1)
+  const rowsToInsert = await Promise.all(sourceItems.map(async (item, index) => {
+    const parsed = await parseRubricaRuleItemPayload(clonedSet.id, item, item.sortOrder || index + 1)
     return {
       ...parsed,
       created_at: new Date().toISOString(),
     }
-  })
+  }))
 
-  const { error } = await client.from(rubricaRuleItemsTable).insert(rowsToInsert)
+  let { error } = await client.from(rubricaRuleItemsTable).insert(rowsToInsert)
+  if (error && isMissingColumnErrorForName(error, 'rv_naturez')) {
+    rubricaRuleNatureColumn = 'rv_origem'
+    const legacyRowsToInsert = remapNatureColumnToLegacy(rowsToInsert)
+    const retryResult = await client.from(rubricaRuleItemsTable).insert(legacyRowsToInsert)
+    error = retryResult.error
+  }
+
   if (error) {
     await deleteRubricaRuleSet(clonedSet.id)
     throw new Error(error.message)
@@ -5093,16 +5251,23 @@ async function importRubricaRuleSet(payload) {
 
   try {
     const { client, rubricaRuleItemsTable } = getSupabaseClient()
-    const insertPayload = rows.map((row, index) => {
-      const parsed = parseRubricaRuleItemPayload(createdSet.id, row, index + 1)
+    const insertPayload = await Promise.all(rows.map(async (row, index) => {
+      const parsed = await parseRubricaRuleItemPayload(createdSet.id, row, index + 1)
       validateRubricaRuleItemPayload(parsed)
       return {
         ...parsed,
         created_at: new Date().toISOString(),
       }
-    })
+    }))
 
-    const { error } = await client.from(rubricaRuleItemsTable).insert(insertPayload)
+    let { error } = await client.from(rubricaRuleItemsTable).insert(insertPayload)
+    if (error && isMissingColumnErrorForName(error, 'rv_naturez')) {
+      rubricaRuleNatureColumn = 'rv_origem'
+      const legacyInsertPayload = remapNatureColumnToLegacy(insertPayload)
+      const retryResult = await client.from(rubricaRuleItemsTable).insert(legacyInsertPayload)
+      error = retryResult.error
+    }
+
     if (error) {
       throw new Error(error.message)
     }

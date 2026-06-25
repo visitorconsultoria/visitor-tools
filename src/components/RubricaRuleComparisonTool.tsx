@@ -30,11 +30,18 @@ type FieldDiff = {
   found: string
 }
 
+type SpecialReference = {
+  field: RubricaRuleFieldDefinition
+  referenceCode: string
+  referenceRow: Record<RubricaRuleFieldKey, string> | null
+}
+
 type Divergence = {
   rvCodfol: string
   diffs: FieldDiff[]
   ruleRow: Record<RubricaRuleFieldKey, string>
   importedRow: Record<RubricaRuleFieldKey, string>
+  specialReferences: SpecialReference[]
 }
 
 type ComparisonResult = {
@@ -195,7 +202,10 @@ function normalizeCode(value: string): string {
   const normalized = String(value || '').trim().toUpperCase()
   if (!normalized) return ''
 
-  const noLeadingZeros = normalized.replace(/^0+/, '')
+  const numericCodeWithDescription = normalized.match(/^(\d+)\s*[-:]\s+.+$/)
+  const rawCode = numericCodeWithDescription ? numericCodeWithDescription[1] : normalized
+
+  const noLeadingZeros = rawCode.replace(/^0+/, '')
   return noLeadingZeros || '0'
 }
 
@@ -258,10 +268,28 @@ function findSpecialReferenceRuleRow(
 
   for (const referenceCode of referenceCodes) {
     const ruleRow = ruleMap.get(normalizeCode(referenceCode))
-    if (ruleRow) return ruleRow
+    if (ruleRow) {
+      return {
+        referenceCode,
+        row: ruleRow,
+      }
+    }
   }
 
   return null
+}
+
+function buildReferenceDescription(referenceRow: Record<RubricaRuleFieldKey, string> | null, referenceCode: string): string {
+  if (!referenceRow) return ''
+
+  const code = String(referenceRow.rv_codfol || '').trim()
+  const description = String(referenceRow.rv_desc || '').trim()
+
+  if (code && description) {
+    return `${code} - ${description}`
+  }
+
+  return description || code || referenceCode
 }
 
 function sanitizeFileNameSegment(value: string): string {
@@ -318,17 +346,28 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
     if (!imported) continue
 
     const diffs: FieldDiff[] = []
+    const specialReferenceByField = new Map<RubricaRuleFieldKey, SpecialReference>()
     for (const field of comparableFields) {
       const found = String(imported[field.key] ?? '').trim()
 
       if (SPECIAL_REFERENCE_FIELDS.has(field.key)) {
-        const referenceRuleRow = findSpecialReferenceRuleRow(
+        const sourceCode = String(ruleRow.rv_codfol || imported.rv_codfol || code || '').trim().toUpperCase()
+        const defaultReferenceCode = sourceCode ? `${field.label}|${sourceCode}` : field.label
+        const referenceMatch = findSpecialReferenceRuleRow(
           ruleMap,
           field.label,
-          String(imported.rv_codfol || ruleRow.rv_codfol || '').trim(),
+          sourceCode,
         )
 
-        if (!referenceRuleRow) {
+        if (normalizeComparableValue(found)) {
+          specialReferenceByField.set(field.key, {
+            field,
+            referenceCode: referenceMatch?.referenceCode || defaultReferenceCode,
+            referenceRow: referenceMatch?.row || null,
+          })
+        }
+
+        if (!referenceMatch?.row) {
           if (normalizeComparableValue(found)) {
             diffs.push({
               field,
@@ -339,7 +378,7 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
           continue
         }
 
-        const expectedFromReference = String(referenceRuleRow[field.key] ?? '').trim()
+        const expectedFromReference = String(referenceMatch.row[field.key] ?? '').trim()
         const { expectedComparable, foundComparable } = normalizeComparablePair(expectedFromReference, found)
 
         if (expectedComparable !== foundComparable) {
@@ -366,7 +405,13 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
     }
 
     if (diffs.length) {
-      divergences.push({ rvCodfol: code, diffs, ruleRow, importedRow: imported })
+      divergences.push({
+        rvCodfol: code,
+        diffs,
+        ruleRow,
+        importedRow: imported,
+        specialReferences: Array.from(specialReferenceByField.values()),
+      })
     } else {
       equalRows += 1
     }
@@ -540,6 +585,13 @@ export default function RubricaRuleComparisonTool() {
       bgColor: { argb: 'FFDDEBF7' },
     }
 
+    const referenceRowFill = {
+      type: 'pattern' as const,
+      pattern: 'solid' as const,
+      fgColor: { argb: 'FFFCE4D6' },
+      bgColor: { argb: 'FFFCE4D6' },
+    }
+
     if (!result.divergences.length) {
       detailedWorksheet.addRow({ origem: 'Sem dados' })
       detailedWorksheet.mergeCells(2, 1, 2, allFields.length + 1)
@@ -584,6 +636,37 @@ export default function RubricaRuleComparisonTool() {
           importedCell.fill = highlightFill
           baseCell.font = { color: { argb: 'FF9C0006' } }
           importedCell.font = { color: { argb: 'FF9C0006' } }
+        }
+
+        for (const reference of divergence.specialReferences) {
+          const referenceRow = detailedWorksheet.addRow({
+            origem: `Ref ${reference.field.label}`,
+            ...Object.fromEntries(
+              allFields.map((field) => {
+                if (reference.referenceRow) {
+                  if (field.key === 'rv_desc') {
+                    return [field.key, buildReferenceDescription(reference.referenceRow, reference.referenceCode)]
+                  }
+
+                  if (field.key === 'rv_codfol') {
+                    return [field.key, reference.referenceCode]
+                  }
+
+                  return [field.key, formatFieldValue(field.key, reference.referenceRow[field.key])]
+                }
+
+                if (field.key === 'rv_codfol') {
+                  return [field.key, reference.referenceCode]
+                }
+
+                return [field.key, '']
+              }),
+            ),
+          })
+
+          referenceRow.eachCell({ includeEmpty: true }, (cell) => {
+            cell.fill = referenceRowFill
+          })
         }
       }
     }
@@ -752,14 +835,28 @@ export default function RubricaRuleComparisonTool() {
               </thead>
               <tbody>
                 {result.divergences.flatMap((item) =>
-                  item.diffs.map((diff, index) => (
-                    <tr key={`${item.rvCodfol}-${diff.field.key}-${index}`}>
-                      <td>{formatFieldValue('rv_codfol', item.rvCodfol)}</td>
-                      <td>{diff.field.label}</td>
-                      <td>{formatFieldValue(diff.field.key, diff.expected)}</td>
-                      <td>{formatFieldValue(diff.field.key, diff.found)}</td>
-                    </tr>
-                  )),
+                  item.diffs.flatMap((diff, index) => {
+                    const reference = item.specialReferences.find((entry) => entry.field.key === diff.field.key)
+
+                    return [
+                      <tr key={`${item.rvCodfol}-${diff.field.key}-${index}`}>
+                        <td>{formatFieldValue('rv_codfol', item.rvCodfol)}</td>
+                        <td>{diff.field.label}</td>
+                        <td>{formatFieldValue(diff.field.key, diff.expected)}</td>
+                        <td>{formatFieldValue(diff.field.key, diff.found)}</td>
+                      </tr>,
+                      ...(reference
+                        ? [
+                          <tr key={`${item.rvCodfol}-${diff.field.key}-${index}-ref`}>
+                            <td>{reference.referenceCode}</td>
+                            <td>{`${diff.field.label} (Registro referencia)`}</td>
+                            <td>{reference.referenceRow ? formatFieldValue(diff.field.key, reference.referenceRow[diff.field.key]) : 'Registro de referencia nao encontrado'}</td>
+                            <td>-</td>
+                          </tr>,
+                        ]
+                        : []),
+                    ]
+                  }),
                 )}
                 {result.divergences.length === 0 && (
                   <tr>

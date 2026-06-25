@@ -52,6 +52,63 @@ function normalizeHeader(value: unknown): string {
     .trim()
 }
 
+const IMPORT_FIELD_HEADER_ALIASES: Partial<Record<RubricaRuleFieldKey, string[]>> = {
+  rv_tipo: ['RV_TIPO'],
+}
+
+function getImportAcceptedHeaders(field: RubricaRuleFieldDefinition): string[] {
+  return [
+    normalizeHeader(field.label),
+    ...((IMPORT_FIELD_HEADER_ALIASES[field.key] || []).map((alias) => normalizeHeader(alias))),
+  ]
+}
+
+function getImportSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | undefined {
+  const normalizedSheetNames = workbook.SheetNames.map((name) => ({ name, normalized: normalizeHeader(name) }))
+  const preferredSheet = normalizedSheetNames.find((item) => item.normalized === 'tabela regra' || item.normalized === 'regras')
+  if (preferredSheet) {
+    return workbook.Sheets[preferredSheet.name]
+  }
+
+  const normalizedHeaderByField = new Map<RubricaRuleFieldKey, string[]>(
+    RUBRICA_RULE_FIELD_DEFINITIONS.map((field) => [field.key, getImportAcceptedHeaders(field)]),
+  )
+
+  let bestScore = -1
+  let bestSheetName = workbook.SheetNames[0]
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName]
+    if (!sheet) continue
+
+    const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
+      header: 1,
+      raw: false,
+      defval: '',
+      range: 0,
+      blankrows: false,
+    })
+
+    const headerRow = (rows[0] || []).map((cell) => normalizeHeader(cell))
+    if (!headerRow.length) continue
+
+    let score = 0
+    for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
+      const acceptedHeaders = normalizedHeaderByField.get(field.key) || []
+      if (acceptedHeaders.some((header) => headerRow.includes(header))) {
+        score += 1
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score
+      bestSheetName = sheetName
+    }
+  }
+
+  return workbook.Sheets[bestSheetName]
+}
+
 function toFriendlyApiError(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message || fallback
   if (typeof error === 'string' && error.trim()) return error
@@ -92,8 +149,7 @@ async function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 async function parseWorkbookRows(file: File): Promise<RuleFormValues[]> {
   const buffer = await readFileAsArrayBuffer(file)
   const workbook = XLSX.read(buffer, { type: 'array' })
-  const preferredSheet = workbook.SheetNames.find((name) => normalizeHeader(name) === 'tabela regra')
-  const sheet = workbook.Sheets[preferredSheet || workbook.SheetNames[0]]
+  const sheet = getImportSheet(workbook)
   if (!sheet) {
     throw new Error('A planilha nao possui aba de dados para importar.')
   }
@@ -112,8 +168,8 @@ async function parseWorkbookRows(file: File): Promise<RuleFormValues[]> {
   const columnIndexByKey = new Map<RubricaRuleFieldKey, number>()
 
   for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
-    const normalizedLabel = normalizeHeader(field.label)
-    const columnIndex = headerRow.findIndex((header) => header === normalizedLabel)
+    const acceptedHeaders = getImportAcceptedHeaders(field)
+    const columnIndex = headerRow.findIndex((header) => acceptedHeaders.includes(header))
     if (columnIndex === -1 && field.required) {
       throw new Error(`Coluna obrigatoria nao encontrada na planilha: ${field.label}`)
     }

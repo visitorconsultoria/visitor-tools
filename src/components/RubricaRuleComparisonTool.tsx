@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
-import * as ExcelJS from 'exceljs'
+import ExcelJS from 'exceljs/dist/exceljs.min.js'
 import { apiUrl } from '../lib/api'
 import {
   RUBRICA_RULE_FIELD_DEFINITIONS,

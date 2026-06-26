@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import * as ExcelJS from 'exceljs'
 import { apiUrl } from '../lib/api'
 import {
   RUBRICA_RULE_FIELD_DEFINITIONS,
@@ -519,8 +520,7 @@ export default function RubricaRuleComparisonTool() {
     if (!result) return
 
     try {
-      const ExcelJSModule = await import('exceljs')
-      const ExcelJSRuntime = ((ExcelJSModule as any).default ?? ExcelJSModule) as any
+      const ExcelJSRuntime = ((ExcelJS as any).default ?? ExcelJS) as any
       const WorkbookCtor = ExcelJSRuntime.Workbook
 
       if (!WorkbookCtor) {

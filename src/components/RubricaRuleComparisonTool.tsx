@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
-import ExcelJS from 'exceljs/dist/exceljs.min.js'
 import { apiUrl } from '../lib/api'
 import {
   RUBRICA_RULE_FIELD_DEFINITIONS,
@@ -95,6 +94,48 @@ const FIELD_CATALOG_MAP: Partial<Record<RubricaRuleFieldKey, string>> = {
   rv_incop: 'inc-rpps',
   rv_incpis: 'inc-pis',
   rv_codfol: 'id-calculo-protheus',
+}
+
+type ExcelJSRuntime = {
+  Workbook: new () => any
+}
+
+let excelJsLoader: Promise<ExcelJSRuntime> | null = null
+
+async function loadExcelJSRuntime(): Promise<ExcelJSRuntime> {
+  const browserWindow = window as Window & { ExcelJS?: ExcelJSRuntime }
+  if (browserWindow.ExcelJS?.Workbook) {
+    return browserWindow.ExcelJS
+  }
+
+  if (!excelJsLoader) {
+    excelJsLoader = new Promise<ExcelJSRuntime>((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
+      script.async = true
+
+      script.onload = () => {
+        const loadedRuntime = (window as Window & { ExcelJS?: ExcelJSRuntime }).ExcelJS
+        if (!loadedRuntime?.Workbook) {
+          reject(new Error('ExcelJS foi carregado, mas nao expôs Workbook.'))
+          return
+        }
+
+        resolve(loadedRuntime)
+      }
+
+      script.onerror = () => {
+        reject(new Error('Falha ao carregar biblioteca de exportacao (ExcelJS CDN).'))
+      }
+
+      document.head.appendChild(script)
+    }).catch((error) => {
+      excelJsLoader = null
+      throw error
+    })
+  }
+
+  return excelJsLoader
 }
 
 function toFriendlyApiError(error: unknown, fallback: string): string {
@@ -520,7 +561,7 @@ export default function RubricaRuleComparisonTool() {
     if (!result) return
 
     try {
-      const ExcelJSRuntime = ((ExcelJS as any).default ?? ExcelJS) as any
+      const ExcelJSRuntime = await loadExcelJSRuntime()
       const WorkbookCtor = ExcelJSRuntime.Workbook
 
       if (!WorkbookCtor) {

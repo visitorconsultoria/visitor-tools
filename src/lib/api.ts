@@ -19,17 +19,15 @@ function resolveApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
     const hostname = String(window.location.hostname || '').toLowerCase()
 
-    if (hostname.endsWith('github.io')) {
-      if (normalizedEnvBaseUrl && !isLocalApiUrl(normalizedEnvBaseUrl)) {
-        return normalizedEnvBaseUrl
-      }
-
-      return DEFAULT_PROD_API_BASE_URL
+    if (normalizedEnvBaseUrl && !isLocalApiUrl(normalizedEnvBaseUrl)) {
+      return normalizedEnvBaseUrl
     }
 
-    if (normalizedEnvBaseUrl) return normalizedEnvBaseUrl
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return ''
+    }
 
-    return ''
+    return DEFAULT_PROD_API_BASE_URL
   }
 
   if (normalizedEnvBaseUrl) {

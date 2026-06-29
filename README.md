@@ -45,7 +45,7 @@ No GitHub: `Settings` → `Pages` → `Build and deployment`:
 
 Após salvar, o site fica disponível em:
 
-`https://SEU_USUARIO.github.io/visitor-tools/`
+`https://tools.visitorconsultoria.com`
 
 ## Publicacao completa (frontend + API em producao)
 
@@ -69,7 +69,7 @@ SUPABASE_CUSTOMER_CONTACTS_TABLE=customer_hub_contacts
 SUPABASE_CUSTOMER_SYSTEMS_TABLE=customer_hub_systems
 SUPABASE_CUSTOMER_PROCESSES_TABLE=customer_hub_processes
 SUPABASE_CUSTOMER_ACTIVITIES_TABLE=customer_hub_activities
-CORS_ALLOWED_ORIGINS=https://SEU_USUARIO.github.io
+CORS_ALLOWED_ORIGINS=https://visitorconsultoria.github.io,https://tools.visitorconsultoria.com
 ```
 
 Depois de publicar, voce tera uma URL da API, por exemplo:
@@ -98,7 +98,7 @@ As variaveis `VITE_SUPABASE_*` permitem que a rotina `Excel/CSV para SQL` consul
 
 ### 3) Resultado
 
-- Frontend: `https://SEU_USUARIO.github.io/visitor-tools/`
+- Frontend: `https://tools.visitorconsultoria.com`
 - API: URL do host Node escolhido
 - A aplicacao passa a funcionar fora da rede local (login, CRUD, apontamentos, usuarios, ranking)
 

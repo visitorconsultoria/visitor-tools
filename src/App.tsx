@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
 import visitorLogo from './assets/vistor_logo_verde2.png'
+import sidebarMascot from './assets/sidebar-mascot.png'
 import { apiUrl } from './lib/api'
 import type { CustomerHubPage } from './components/CustomerHubTool'
 import { ALL_MENU_KEYS, getEffectiveMenus } from './lib/menuConfig'
@@ -655,7 +656,7 @@ function App() {
       <aside className="sidebar">
         <div className="sidebar__header">
           <div className="sidebar__brand">
-            <img src={visitorLogo} alt="Visitor Tools" className="sidebar__logo" />
+            <img src={sidebarMascot} alt="Mascote Visitor Tools" className="sidebar__logo sidebar__logo--mascot" />
           </div>
         </div>
         <nav className="sidebar__nav">

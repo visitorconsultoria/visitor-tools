@@ -140,7 +140,7 @@ input[type='search']:focus {
 .sidebar__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 0.75rem;
   padding: 1rem 0.75rem;
   border-bottom: 1px solid hsl(165, 35%, 25%);
@@ -151,6 +151,8 @@ input[type='search']:focus {
   display: flex;
   flex-direction: row;
   align-items: center;
+  justify-content: center;
+  width: 100%;
   gap: 0.6rem;
 }
 
@@ -159,6 +161,12 @@ input[type='search']:focus {
   height: auto;
   object-fit: contain;
   margin-top: 0;
+}
+
+.sidebar__logo--mascot {
+  width: 116px;
+  display: block;
+  margin: 0 auto;
 }
 
 .sidebar__nav {

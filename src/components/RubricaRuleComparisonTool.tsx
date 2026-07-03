@@ -24,6 +24,10 @@ type RuleRow = {
   sortOrder: number
 } & Record<RubricaRuleFieldKey, string>
 
+type ImportedRuleRow = Record<RubricaRuleFieldKey, string> & {
+  __rv_cod?: string
+}
+
 type FieldDiff = {
   field: RubricaRuleFieldDefinition
   expected: string
@@ -40,12 +44,13 @@ type Divergence = {
   rvCodfol: string
   diffs: FieldDiff[]
   ruleRow: Record<RubricaRuleFieldKey, string>
-  importedRow: Record<RubricaRuleFieldKey, string>
+  importedRow: ImportedRuleRow
   specialReferences: SpecialReference[]
 }
 
 type ComparisonResult = {
   selectedRuleSetName: string
+  selectedComparisonFieldKeys: RubricaRuleFieldKey[]
   totalRuleRows: number
   totalImportedRows: number
   equalRows: number
@@ -56,7 +61,7 @@ type ComparisonResult = {
 }
 
 const EXCLUDED_FIELDS = new Set<RubricaRuleFieldKey>(['rv_desc', 'rv_descdet'])
-const COMPARISON_FIELD_KEYS = new Set<RubricaRuleFieldKey>([
+const DEFAULT_SELECTED_COMPARISON_FIELDS = new Set<RubricaRuleFieldKey>([
   'rv_codfol',
   'rv_tipo',
   'rv_inss',
@@ -79,12 +84,11 @@ const COMPARISON_FIELD_KEYS = new Set<RubricaRuleFieldKey>([
   'rv_incop',
   'rv_tetop',
   'rv_incpis',
-  'rv_ferxml',
-  'rv_feraxml',
 ])
 const SPECIAL_REFERENCE_FIELDS = new Set<RubricaRuleFieldKey>(['rv_ferxml', 'rv_feraxml'])
 const FIELD_HEADER_ALIASES: Partial<Record<RubricaRuleFieldKey, string[]>> = {
   rv_tipo: ['RV_TIPO'],
+  rv_desc: ['DESCRICAO', 'DESCRIÇÃO', 'DESC', 'DESCRICAO DA VERBA', 'DESCRICAO VERBA'],
 }
 const FIELD_CATALOG_MAP: Partial<Record<RubricaRuleFieldKey, string>> = {
   rv_naturez: 'natureza-rubricas',
@@ -187,7 +191,10 @@ function mapRuleItemRow(row: unknown): RuleRow {
   }
 }
 
-async function parseWorkbookRows(file: File): Promise<Array<Record<RubricaRuleFieldKey, string>>> {
+async function parseWorkbookRows(
+  file: File,
+  selectedComparisonFieldKeys: Set<RubricaRuleFieldKey>,
+): Promise<ImportedRuleRow[]> {
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
   const preferredSheet = workbook.SheetNames.find((name) => normalizeHeader(name) === 'tabela regra')
   const sheet = workbook.Sheets[preferredSheet || workbook.SheetNames[0]]
@@ -208,9 +215,10 @@ async function parseWorkbookRows(file: File): Promise<Array<Record<RubricaRuleFi
 
   const headerRow = (matrix[0] || []).map((cell) => normalizeHeader(cell))
   const columnIndexByKey = new Map<RubricaRuleFieldKey, number>()
+  const rvCodColumnIndex = headerRow.findIndex((header) => header === normalizeHeader('RV_COD'))
 
   for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
-    if (!COMPARISON_FIELD_KEYS.has(field.key) && field.key !== 'rv_codfol') continue
+    if (!selectedComparisonFieldKeys.has(field.key) && field.key !== 'rv_codfol' && field.key !== 'rv_desc') continue
 
     const acceptedHeaders = [
       normalizeHeader(field.label),
@@ -230,11 +238,16 @@ async function parseWorkbookRows(file: File): Promise<Array<Record<RubricaRuleFi
   return matrix
     .slice(1)
     .map((row) => {
-      const parsed = {} as Record<RubricaRuleFieldKey, string>
+      const parsed = {} as ImportedRuleRow
       for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
         const idx = columnIndexByKey.get(field.key)
         parsed[field.key] = idx === undefined ? '' : String(row[idx] ?? '').trim()
       }
+
+      if (rvCodColumnIndex >= 0) {
+        parsed.__rv_cod = String(row[rvCodColumnIndex] ?? '').trim()
+      }
+
       return parsed
     })
     .filter((row) => String(row.rv_codfol || '').trim())
@@ -264,9 +277,22 @@ function normalizeComparableValue(value: string): string {
   return normalized
 }
 
-function normalizeComparablePair(expectedValue: string, foundValue: string) {
+function normalizeComparablePair(fieldKey: RubricaRuleFieldKey, expectedValue: string, foundValue: string) {
   let expectedComparable = normalizeComparableValue(expectedValue)
   let foundComparable = normalizeComparableValue(foundValue)
+
+  const normalizeDirfValue = (value: string) => {
+    if (value === 'n' || value === 'nao') return ''
+    if (value === 's') return 'sim'
+    return value
+  }
+
+  expectedComparable = normalizeDirfValue(expectedComparable)
+  foundComparable = normalizeDirfValue(foundComparable)
+
+  if (fieldKey === 'rv_dirf' && !expectedComparable && !foundComparable) {
+    return { expectedComparable: '', foundComparable: '' }
+  }
 
   const expectedIsYesNo = expectedComparable === 'sim' || expectedComparable === 'nao'
   const foundIsYesNo = foundComparable === 'sim' || foundComparable === 'nao'
@@ -345,8 +371,8 @@ function sanitizeFileNameSegment(value: string): string {
   return sanitized || 'comparacao-rubricas'
 }
 
-function buildRowMap(rows: Array<Record<RubricaRuleFieldKey, string>>) {
-  const map = new Map<string, Record<RubricaRuleFieldKey, string>>()
+function buildRowMap<T extends Record<RubricaRuleFieldKey, string>>(rows: T[]) {
+  const map = new Map<string, T>()
   const duplicates = new Set<string>()
 
   for (const row of rows) {
@@ -364,9 +390,14 @@ function buildRowMap(rows: Array<Record<RubricaRuleFieldKey, string>>) {
   return { map, duplicates: Array.from(duplicates).sort((a, b) => a.localeCompare(b)) }
 }
 
-function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<RubricaRuleFieldKey, string>>, ruleSetName: string): ComparisonResult {
+function compareRuleRows(
+  ruleRows: RuleRow[],
+  importedRows: ImportedRuleRow[],
+  ruleSetName: string,
+  selectedComparisonFieldKeys: Set<RubricaRuleFieldKey>,
+): ComparisonResult {
   const comparableFields = RUBRICA_RULE_FIELD_DEFINITIONS.filter(
-    (field) => COMPARISON_FIELD_KEYS.has(field.key) && !EXCLUDED_FIELDS.has(field.key) && field.key !== 'rv_codfol',
+    (field) => selectedComparisonFieldKeys.has(field.key) && !EXCLUDED_FIELDS.has(field.key) && field.key !== 'rv_codfol',
   )
 
   const normalizedRuleRows = ruleRows.map((row) => {
@@ -421,7 +452,7 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
         }
 
         const expectedFromReference = String(referenceMatch.row[field.key] ?? '').trim()
-        const { expectedComparable, foundComparable } = normalizeComparablePair(expectedFromReference, found)
+        const { expectedComparable, foundComparable } = normalizeComparablePair(field.key, expectedFromReference, found)
 
         if (expectedComparable !== foundComparable) {
           diffs.push({
@@ -435,7 +466,7 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
 
       const expected = String(ruleRow[field.key] ?? '').trim()
 
-      const { expectedComparable, foundComparable } = normalizeComparablePair(expected, found)
+      const { expectedComparable, foundComparable } = normalizeComparablePair(field.key, expected, found)
 
       if (expectedComparable !== foundComparable) {
         diffs.push({
@@ -464,6 +495,7 @@ function compareRuleRows(ruleRows: RuleRow[], importedRows: Array<Record<Rubrica
 
   return {
     selectedRuleSetName: ruleSetName,
+    selectedComparisonFieldKeys: comparableFields.map((field) => field.key),
     totalRuleRows: ruleMap.size,
     totalImportedRows: importedMap.size,
     equalRows,
@@ -481,8 +513,16 @@ export default function RubricaRuleComparisonTool() {
   const [isLoadingSets, setIsLoadingSets] = useState(false)
   const [isComparing, setIsComparing] = useState(false)
   const [catalogLookup, setCatalogLookup] = useState<Partial<Record<RubricaRuleFieldKey, Map<string, string>>>>({})
+  const [selectedComparisonFieldKeys, setSelectedComparisonFieldKeys] = useState<Set<RubricaRuleFieldKey>>(
+    () => new Set(DEFAULT_SELECTED_COMPARISON_FIELDS),
+  )
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ComparisonResult | null>(null)
+
+  const availableComparisonFields = useMemo(
+    () => RUBRICA_RULE_FIELD_DEFINITIONS.filter((field) => !EXCLUDED_FIELDS.has(field.key) && field.key !== 'rv_codfol'),
+    [],
+  )
 
   const selectedRuleSet = useMemo(
     () => ruleSets.find((item) => item.id === selectedRuleSetId) ?? null,
@@ -661,7 +701,20 @@ export default function RubricaRuleComparisonTool() {
           const importedRow = detailedWorksheet.addRow({
             origem: 'Importado',
             ...Object.fromEntries(
-              allFields.map((field) => [field.key, formatFieldValue(field.key, divergence.importedRow[field.key])]),
+              allFields.map((field) => {
+                if (field.key === 'rv_desc') {
+                  const importedCode = String(divergence.importedRow.__rv_cod || '').trim()
+                  const importedDescription = String(divergence.importedRow.rv_desc || '').trim()
+
+                  const combinedDescription = importedCode && importedDescription
+                    ? `${importedCode} - ${importedDescription}`
+                    : importedDescription || importedCode
+
+                  return [field.key, combinedDescription || '-']
+                }
+
+                return [field.key, formatFieldValue(field.key, divergence.importedRow[field.key])]
+              }),
             ),
           })
 
@@ -780,13 +833,18 @@ export default function RubricaRuleComparisonTool() {
       return
     }
 
+    if (!selectedComparisonFieldKeys.size) {
+      setError('Selecione ao menos um campo para validar na comparacao.')
+      return
+    }
+
     setError(null)
     setResult(null)
     setIsComparing(true)
 
     try {
       const [rowsFromSheet, ruleItemsResponse] = await Promise.all([
-        parseWorkbookRows(selectedFile),
+        parseWorkbookRows(selectedFile, selectedComparisonFieldKeys),
         fetch(apiUrl(`/api/rubricas/regras/sets/${selectedRuleSetId}/items`)),
       ])
 
@@ -798,7 +856,12 @@ export default function RubricaRuleComparisonTool() {
       const itemsBody = await ruleItemsResponse.json() as { items?: unknown[] }
       const ruleRows = Array.isArray(itemsBody.items) ? itemsBody.items.map(mapRuleItemRow) : []
 
-      const compared = compareRuleRows(ruleRows, rowsFromSheet, selectedRuleSet?.name || `Cadastro ${selectedRuleSetId}`)
+      const compared = compareRuleRows(
+        ruleRows,
+        rowsFromSheet,
+        selectedRuleSet?.name || `Cadastro ${selectedRuleSetId}`,
+        selectedComparisonFieldKeys,
+      )
       setResult(compared)
     } catch (err) {
       setError(toFriendlyApiError(err, 'Nao foi possivel comparar os dados da planilha com a tabela de regra.'))
@@ -848,6 +911,67 @@ export default function RubricaRuleComparisonTool() {
           </button>
         </div>
 
+        <div className="rubrica-compare-fields">
+          <div className="rubrica-compare-fields__header">
+            <strong>Campos a validar na comparacao</strong>
+            <span className="muted">Padrao inicial aplicado conforme configuracao solicitada.</span>
+          </div>
+
+          <div className="rubrica-compare-fields__actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setSelectedComparisonFieldKeys(new Set(availableComparisonFields.map((field) => field.key)))}
+            >
+              Marcar todos
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setSelectedComparisonFieldKeys(new Set(DEFAULT_SELECTED_COMPARISON_FIELDS))}
+            >
+              Restaurar padrao
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setSelectedComparisonFieldKeys(new Set())}
+            >
+              Desmarcar todos
+            </button>
+          </div>
+
+          <div className="rubrica-compare-fields__grid">
+            {availableComparisonFields.map((field) => {
+              const isSelected = selectedComparisonFieldKeys.has(field.key)
+
+              return (
+                <label key={field.key} className="rubrica-compare-fields__item">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(event) => {
+                      setSelectedComparisonFieldKeys((prev) => {
+                        const next = new Set(prev)
+                        if (event.target.checked) {
+                          next.add(field.key)
+                        } else {
+                          next.delete(field.key)
+                        }
+                        return next
+                      })
+                    }}
+                  />
+                  <span className="rubrica-compare-fields__field">{field.label}</span>
+                  <span className={isSelected ? 'rubrica-compare-fields__status rubrica-compare-fields__status--on' : 'rubrica-compare-fields__status'}>
+                    {isSelected ? 'Validar' : 'Nao validar'}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+
         {error && <p className="error">{error}</p>}
       </section>
 
@@ -874,6 +998,7 @@ export default function RubricaRuleComparisonTool() {
               <li><strong>RV_CODFOL duplicado na planilha:</strong> {result.duplicateCodesInImported.length}</li>
             </ul>
           </div>
+
         </section>
       )}
     </div>

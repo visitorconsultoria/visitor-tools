@@ -2066,6 +2066,91 @@ button:disabled {
   align-self: end;
 }
 
+.rubrica-compare-fields {
+  border: 1px solid #dbe5e2;
+  border-radius: 12px;
+  padding: 0.85rem;
+  margin-bottom: 1rem;
+  background: #fbfdfc;
+}
+
+.rubrica-compare-fields__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.rubrica-compare-fields__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.rubrica-compare-fields__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+
+.rubrica-compare-fields__item {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #e0ebe7;
+  border-radius: 10px;
+  padding: 0.42rem 0.55rem;
+  background: #ffffff;
+}
+
+.rubrica-compare-fields__item input {
+  width: 16px;
+  height: 16px;
+}
+
+.rubrica-compare-fields__field {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #173b35;
+}
+
+.rubrica-compare-fields__status {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #7a908a;
+}
+
+.rubrica-compare-fields__status--on {
+  color: #1f6f5d;
+}
+
+.rubrica-compare-selected-fields {
+  margin-top: 0.85rem;
+}
+
+.rubrica-compare-diff-table td {
+  vertical-align: top;
+}
+
+.rubrica-compare-diff-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.rubrica-compare-diff-list__item {
+  padding: 0.28rem 0.42rem;
+  border: 1px solid #e7efec;
+  border-radius: 8px;
+  background: #f8fcfa;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .ch-contacts-search {
   position: relative;
   display: block;
@@ -2243,6 +2328,19 @@ button:disabled {
 
   .rubrica-compare-toolbar .button-primary {
     width: 100%;
+  }
+
+  .rubrica-compare-fields__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rubrica-compare-fields__item {
+    grid-template-columns: 20px 1fr;
+  }
+
+  .rubrica-compare-fields__status {
+    grid-column: 1 / -1;
+    padding-left: 1.5rem;
   }
 
   .ch-filter-select {

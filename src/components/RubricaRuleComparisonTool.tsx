@@ -38,6 +38,9 @@ type SpecialReference = {
   field: RubricaRuleFieldDefinition
   referenceCode: string
   referenceRow: Record<RubricaRuleFieldKey, string> | null
+  importedVerbaCode: string
+  linkedImportedRow: ImportedRuleRow | null
+  divergentFieldKeys: RubricaRuleFieldKey[]
 }
 
 type Divergence = {
@@ -84,6 +87,8 @@ const DEFAULT_SELECTED_COMPARISON_FIELDS = new Set<RubricaRuleFieldKey>([
   'rv_incop',
   'rv_tetop',
   'rv_incpis',
+  'rv_ferxml',
+  'rv_feraxml',
 ])
 const SPECIAL_REFERENCE_FIELDS = new Set<RubricaRuleFieldKey>(['rv_ferxml', 'rv_feraxml'])
 const FIELD_HEADER_ALIASES: Partial<Record<RubricaRuleFieldKey, string[]>> = {
@@ -281,6 +286,11 @@ function normalizeComparablePair(fieldKey: RubricaRuleFieldKey, expectedValue: s
   let expectedComparable = normalizeComparableValue(expectedValue)
   let foundComparable = normalizeComparableValue(foundValue)
 
+  if (fieldKey === 'rv_incpis') {
+    if (expectedComparable === '00') expectedComparable = ''
+    if (foundComparable === '00') foundComparable = ''
+  }
+
   const normalizeDirfValue = (value: string) => {
     if (value === 'n' || value === 'nao') return ''
     if (value === 's') return 'sim'
@@ -320,19 +330,38 @@ function normalizeReferenceSuffix(value: string): string {
   return normalized
 }
 
+function normalizeSpecialReferenceId(value: string): string {
+  const normalized = normalizeReferenceSuffix(value)
+  if (!normalized) return ''
+
+  if (/^\d+$/.test(normalized)) {
+    return normalized.padStart(4, '0')
+  }
+
+  return normalized
+}
+
+function extractReferenceBindingCode(value: string): string {
+  const normalized = String(value || '').trim().toUpperCase()
+  if (!normalized) return ''
+
+  const pipeIndex = normalized.lastIndexOf('|')
+  if (pipeIndex >= 0) {
+    return normalizeSpecialReferenceId(normalized.slice(pipeIndex + 1))
+  }
+
+  return normalizeCode(normalized)
+}
+
 function findSpecialReferenceRuleRow(
   ruleMap: Map<string, Record<RubricaRuleFieldKey, string>>,
   fieldLabel: string,
   originCodeRaw: string,
 ) {
-  const originCode = String(originCodeRaw || '').trim().toUpperCase()
+  const originCode = normalizeSpecialReferenceId(originCodeRaw)
   if (!originCode) return null
 
-  const normalizedOrigin = normalizeReferenceSuffix(originCode)
-  const referenceCodes = new Set<string>([
-    `${fieldLabel}|${originCode}`,
-    `${fieldLabel}|${normalizedOrigin}`,
-  ])
+  const referenceCodes = new Set<string>([`${fieldLabel}|${originCode}`])
 
   for (const referenceCode of referenceCodes) {
     const ruleRow = ruleMap.get(normalizeCode(referenceCode))
@@ -358,6 +387,18 @@ function buildReferenceDescription(referenceRow: Record<RubricaRuleFieldKey, str
   }
 
   return description || code || referenceCode
+}
+
+function formatReferenceCode(value: string): string {
+  const normalized = String(value || '').trim().toUpperCase()
+  if (!normalized) return ''
+
+  const pipeIndex = normalized.lastIndexOf('|')
+  if (pipeIndex < 0) return normalized
+
+  const prefix = normalized.slice(0, pipeIndex)
+  const suffix = normalizeSpecialReferenceId(normalized.slice(pipeIndex + 1))
+  return suffix ? `${prefix}|${suffix}` : prefix
 }
 
 function sanitizeFileNameSegment(value: string): string {
@@ -399,6 +440,7 @@ function compareRuleRows(
   const comparableFields = RUBRICA_RULE_FIELD_DEFINITIONS.filter(
     (field) => selectedComparisonFieldKeys.has(field.key) && !EXCLUDED_FIELDS.has(field.key) && field.key !== 'rv_codfol',
   )
+  const referenceComparableFields = comparableFields.filter((field) => !SPECIAL_REFERENCE_FIELDS.has(field.key))
 
   const normalizedRuleRows = ruleRows.map((row) => {
     const normalized = {} as Record<RubricaRuleFieldKey, string>
@@ -410,6 +452,27 @@ function compareRuleRows(
 
   const { map: ruleMap } = buildRowMap(normalizedRuleRows)
   const { map: importedMap, duplicates } = buildRowMap(importedRows)
+  const importedBaseRowsByCode = new Map<string, ImportedRuleRow>()
+  const importedSpecialRowsByBaseCode = new Map<string, ImportedRuleRow[]>()
+
+  for (const row of importedRows) {
+    const rvCodFol = String(row.rv_codfol || '').trim()
+    if (!rvCodFol) continue
+
+    if (rvCodFol.includes('|')) {
+      const baseCode = extractReferenceBindingCode(rvCodFol)
+      if (!baseCode) continue
+
+      const rows = importedSpecialRowsByBaseCode.get(baseCode) || []
+      rows.push(row)
+      importedSpecialRowsByBaseCode.set(baseCode, rows)
+      continue
+    }
+
+    const baseCode = normalizeCode(rvCodFol)
+    if (!baseCode || importedBaseRowsByCode.has(baseCode)) continue
+    importedBaseRowsByCode.set(baseCode, row)
+  }
 
   const divergences: Divergence[] = []
   let equalRows = 0
@@ -424,42 +487,61 @@ function compareRuleRows(
       const found = String(imported[field.key] ?? '').trim()
 
       if (SPECIAL_REFERENCE_FIELDS.has(field.key)) {
-        const sourceCode = String(ruleRow.rv_codfol || imported.rv_codfol || code || '').trim().toUpperCase()
-        const defaultReferenceCode = sourceCode ? `${field.label}|${sourceCode}` : field.label
+        const informedVerba = normalizeReferenceSuffix(found)
+        const baseReferenceCode = extractReferenceBindingCode(String(ruleRow.rv_codfol || imported.rv_codfol || code || ''))
+        const baseRuleRow = ruleMap.get(baseReferenceCode) || ruleRow
+        const defaultReferenceCode = baseReferenceCode ? `${field.label}|${baseReferenceCode}` : field.label
         const referenceMatch = findSpecialReferenceRuleRow(
           ruleMap,
           field.label,
-          sourceCode,
+          baseReferenceCode,
         )
+        const linkedImportedRow = informedVerba ? importedBaseRowsByCode.get(informedVerba) || null : null
 
-        if (normalizeComparableValue(found)) {
+        if (informedVerba || referenceMatch?.row) {
           specialReferenceByField.set(field.key, {
             field,
             referenceCode: referenceMatch?.referenceCode || defaultReferenceCode,
             referenceRow: referenceMatch?.row || null,
+            importedVerbaCode: informedVerba,
+            linkedImportedRow,
+            divergentFieldKeys: [],
           })
         }
 
+        const specialReference = specialReferenceByField.get(field.key)
+
         if (!referenceMatch?.row) {
-          if (normalizeComparableValue(found)) {
-            diffs.push({
-              field,
-              expected: '',
-              found,
-            })
-          }
           continue
         }
 
-        const expectedFromReference = String(referenceMatch.row[field.key] ?? '').trim()
-        const { expectedComparable, foundComparable } = normalizeComparablePair(field.key, expectedFromReference, found)
+        if (!informedVerba) {
+          continue
+        }
 
-        if (expectedComparable !== foundComparable) {
-          diffs.push({
-            field,
-            expected: expectedFromReference,
-            found,
-          })
+        if (!linkedImportedRow) {
+          continue
+        }
+
+        for (const referenceField of referenceComparableFields) {
+          const expectedReferenceValue = String(baseRuleRow[referenceField.key] ?? '').trim()
+          const foundReferenceValue = String(referenceMatch.row?.[referenceField.key] ?? '').trim()
+          const { expectedComparable, foundComparable } = normalizeComparablePair(
+            referenceField.key,
+            expectedReferenceValue,
+            foundReferenceValue,
+          )
+
+          if (expectedComparable !== foundComparable) {
+            diffs.push({
+              field: referenceField,
+              expected: expectedReferenceValue,
+              found: foundReferenceValue,
+            })
+            if (specialReference) {
+              specialReference.divergentFieldKeys.push(referenceField.key)
+            }
+          }
         }
         continue
       }
@@ -477,7 +559,47 @@ function compareRuleRows(
       }
     }
 
-    if (diffs.length) {
+    const relatedSpecialRows = importedSpecialRowsByBaseCode.get(code) || []
+    for (const specialImportedRow of relatedSpecialRows) {
+      const specialReferenceCode = String(specialImportedRow.rv_codfol || '').trim().toUpperCase()
+      const specialFieldLabel = specialReferenceCode.split('|')[0]?.trim() || ''
+      const specialField = RUBRICA_RULE_FIELD_DEFINITIONS.find((field) => field.label === specialFieldLabel)
+      if (!specialField) continue
+
+      const specialReference = specialReferenceByField.get(specialField.key) || {
+        field: specialField,
+        referenceCode: specialReferenceCode,
+        referenceRow: specialImportedRow,
+        importedVerbaCode: code,
+        linkedImportedRow: imported,
+        divergentFieldKeys: [],
+      }
+
+      specialReference.referenceCode = specialReferenceCode || `${specialField.label}|${code}`
+      specialReference.referenceRow = specialImportedRow
+      specialReference.importedVerbaCode = code
+      specialReference.linkedImportedRow = imported
+
+      for (const referenceField of referenceComparableFields) {
+        const expectedReferenceValue = String(ruleRow[referenceField.key] ?? '').trim()
+        const foundReferenceValue = String(specialImportedRow[referenceField.key] ?? '').trim()
+        const { expectedComparable, foundComparable } = normalizeComparablePair(
+          referenceField.key,
+          expectedReferenceValue,
+          foundReferenceValue,
+        )
+
+        if (expectedComparable !== foundComparable) {
+          specialReference.divergentFieldKeys.push(referenceField.key)
+        }
+      }
+
+      if (specialReference.divergentFieldKeys.length) {
+        specialReferenceByField.set(specialField.key, specialReference)
+      }
+    }
+
+    if (diffs.length || specialReferenceByField.size) {
       divergences.push({
         rvCodfol: code,
         diffs,
@@ -611,6 +733,12 @@ export default function RubricaRuleComparisonTool() {
       const workbook = new WorkbookCtor() as any
       const dateTag = new Date().toISOString().slice(0, 10)
       const allFields = [...RUBRICA_RULE_FIELD_DEFINITIONS]
+      const exportReferenceComparableFields = RUBRICA_RULE_FIELD_DEFINITIONS.filter(
+        (field) => result.selectedComparisonFieldKeys.includes(field.key)
+          && !EXCLUDED_FIELDS.has(field.key)
+          && field.key !== 'rv_codfol'
+          && !SPECIAL_REFERENCE_FIELDS.has(field.key),
+      )
 
       const summaryWorksheet = workbook.addWorksheet('resumo')
       summaryWorksheet.columns = [
@@ -741,24 +869,64 @@ export default function RubricaRuleComparisonTool() {
           }
 
           for (const reference of divergence.specialReferences) {
+            const importedSpecialCode = String(reference.importedVerbaCode || '').trim()
+            const linkedImportedRow = reference.linkedImportedRow
+            const referenceDivergentFields = new Set<RubricaRuleFieldKey>()
+
+            if (reference.referenceRow) {
+              for (const field of exportReferenceComparableFields) {
+                const expected = String(divergence.ruleRow[field.key] ?? '').trim()
+                const found = String(reference.referenceRow[field.key] ?? '').trim()
+                const { expectedComparable, foundComparable } = normalizeComparablePair(field.key, expected, found)
+
+                if (expectedComparable !== foundComparable) {
+                  referenceDivergentFields.add(field.key)
+                }
+              }
+            }
+
             const referenceRow = detailedWorksheet.addRow({
               origem: `Ref ${reference.field.label}`,
               ...Object.fromEntries(
                 allFields.map((field) => {
                 if (reference.referenceRow) {
                   if (field.key === 'rv_desc') {
-                      return [field.key, buildReferenceDescription(reference.referenceRow, reference.referenceCode)]
+                      const referenceDescription = buildReferenceDescription(reference.referenceRow, reference.referenceCode)
+                      const descriptionWithImportedCode = importedSpecialCode && referenceDescription
+                        ? `${importedSpecialCode} - ${referenceDescription}`
+                        : referenceDescription || importedSpecialCode
+                      return [field.key, descriptionWithImportedCode]
                   }
 
                   if (field.key === 'rv_codfol') {
-                      return [field.key, reference.referenceCode]
+                      return [field.key, formatReferenceCode(reference.referenceCode)]
                   }
 
                     return [field.key, formatFieldValue(field.key, reference.referenceRow[field.key])]
                 }
 
+                if (linkedImportedRow) {
+                  if (field.key === 'rv_desc') {
+                    const linkedDescription = String(linkedImportedRow.rv_desc || '').trim()
+                    const descriptionWithImportedCode = importedSpecialCode && linkedDescription
+                      ? `${importedSpecialCode} - ${linkedDescription}`
+                      : linkedDescription || importedSpecialCode
+                    return [field.key, descriptionWithImportedCode]
+                  }
+
+                  if (field.key === 'rv_codfol') {
+                    return [field.key, formatReferenceCode(reference.referenceCode)]
+                  }
+
+                  return [field.key, formatFieldValue(field.key, linkedImportedRow[field.key])]
+                }
+
                 if (field.key === 'rv_codfol') {
-                    return [field.key, reference.referenceCode]
+          return [field.key, formatReferenceCode(reference.referenceCode)]
+                }
+
+                if (field.key === 'rv_desc' && importedSpecialCode) {
+                  return [field.key, importedSpecialCode]
                 }
 
                   return [field.key, '']
@@ -769,6 +937,16 @@ export default function RubricaRuleComparisonTool() {
             referenceRow.eachCell({ includeEmpty: true }, (cell: any) => {
               cell.fill = referenceRowFill
             })
+
+            for (const fieldKey of referenceDivergentFields) {
+              const fieldIndex = allFields.findIndex((field) => field.key === fieldKey)
+              if (fieldIndex < 0) continue
+
+              const column = fieldIndex + 2
+              const referenceCell = referenceRow.getCell(column)
+              referenceCell.fill = highlightFill
+              referenceCell.font = { color: { argb: 'FF9C0006' } }
+            }
           }
         }
       }
@@ -913,7 +1091,7 @@ export default function RubricaRuleComparisonTool() {
 
         <div className="rubrica-compare-fields">
           <div className="rubrica-compare-fields__header">
-            <strong>Campos a validar na comparacao</strong>
+            <strong>Campos a validar na comparação</strong>
             <span className="muted">Padrao inicial aplicado conforme configuracao solicitada.</span>
           </div>
 

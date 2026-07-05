@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
+import visitorLogo from './assets/vistor_logo_verde2.png'
 import sidebarMascot from './assets/sidebar-mascot.png'
 import { apiUrl } from './lib/api'
 import type { CustomerHubPage } from './components/CustomerHubTool'
@@ -609,7 +610,7 @@ function App() {
     return (
       <main className="login-screen">
         <section className="login-card" aria-label="Tela de login">
-          <img src={sidebarMascot} alt="Mascote Visitor Tools" className="login-card__logo" />
+          <img src={visitorLogo} alt="Visitor Tools" className="login-card__logo" />
           <h1>Acesso ao Visitor Tools</h1>
           <p className="muted">
             Faça login para acessar a aplicação.

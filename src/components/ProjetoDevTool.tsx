@@ -134,6 +134,25 @@ function normalizeProject(input: unknown): Project | null {
   }
 }
 
+function formatProjectDate(date: string): string {
+  const value = date.trim()
+  if (!value) return '-'
+
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch
+    return `${day}/${month}/${year}`
+  }
+
+  const slashMatch = value.match(/^(\d{4})\/(\d{2})\/(\d{2})$/)
+  if (slashMatch) {
+    const [, year, month, day] = slashMatch
+    return `${day}/${month}/${year}`
+  }
+
+  return value
+}
+
 export default function ProjetoDevTool() {
   const [currentScreen, setCurrentScreen] = useState<ProjectScreenMode>('overview')
   const [projects, setProjects] = useState<Project[]>([])
@@ -536,7 +555,7 @@ export default function ProjetoDevTool() {
                 <article key={project.id} className={`rule-tool__set-card ${selectedProjectId === project.id ? 'rule-tool__set-card--active' : ''}`}>
                   <div>
                     <h3>{project.client}</h3>
-                    <p className="muted">Data: {project.date}</p>
+                    <p className="muted">Data: {formatProjectDate(project.date)}</p>
                     <p className="muted">{project.description}</p>
                     <p className="muted">Itens cadastrados: {project.items.length}</p>
                   </div>
@@ -621,7 +640,7 @@ export default function ProjetoDevTool() {
                   <option value="">Nenhum projeto selecionado</option>
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>
-                      {project.client} - {project.date}
+                      {project.client} - {formatProjectDate(project.date)}
                     </option>
                   ))}
                 </select>
@@ -695,7 +714,7 @@ export default function ProjetoDevTool() {
                 </article>
                 <article className="projeto-dev__summary-card">
                   <span className="projeto-dev__summary-label">Data</span>
-                  <strong>{selectedProject.date}</strong>
+                  <strong>{formatProjectDate(selectedProject.date)}</strong>
                 </article>
                 <article className="projeto-dev__summary-card projeto-dev__summary-card--wide">
                   <span className="projeto-dev__summary-label">Descricao do projeto</span>

@@ -286,7 +286,7 @@ export default function ProjetoDevTool() {
     const description = projectForm.description.trim()
 
     if (!client || !date || !description) {
-      setError('Preencha cliente, data e descricao do projeto.')
+      setError('Preencha cliente, data e Descrição do projeto.')
       return
     }
 
@@ -376,7 +376,7 @@ export default function ProjetoDevTool() {
     const description = itemForm.description.trim()
 
     if (!module || !description) {
-      setError('Preencha modulo e descricao do item do projeto.')
+      setError('Preencha modulo e Descrição do item do projeto.')
       return
     }
 
@@ -525,7 +525,7 @@ export default function ProjetoDevTool() {
                   type="search"
                   value={projectSearch}
                   onChange={(event) => setProjectSearch(event.target.value)}
-                  placeholder="Buscar por cliente, data ou descricao"
+                  placeholder="Buscar por cliente, data ou Descrição"
                 />
               </label>
             </div>
@@ -665,7 +665,7 @@ export default function ProjetoDevTool() {
                 />
               </label>
               <label className="form-grid__full">
-                Descricao
+                Descrição
                 <textarea
                   rows={3}
                   value={projectForm.description}
@@ -717,7 +717,7 @@ export default function ProjetoDevTool() {
                   <strong>{formatProjectDate(selectedProject.date)}</strong>
                 </article>
                 <article className="projeto-dev__summary-card projeto-dev__summary-card--wide">
-                  <span className="projeto-dev__summary-label">Descricao do projeto</span>
+                  <span className="projeto-dev__summary-label">Descrição do projeto</span>
                   <strong>{selectedProject.description}</strong>
                 </article>
                 <article className="projeto-dev__summary-card">
@@ -732,7 +732,7 @@ export default function ProjetoDevTool() {
                 <div className="projeto-dev__item-panel-head">
                   <div>
                     <h4>{editingItemId ? 'Editar item do projeto' : 'Novo item do projeto'}</h4>
-                    <p className="muted">Cadastre o modulo, tipo, descricao funcional e a complexidade da entrega.</p>
+                    <p className="muted">Cadastre o modulo, tipo, Descrição funcional e a complexidade da entrega.</p>
                   </div>
                 </div>
 
@@ -774,7 +774,7 @@ export default function ProjetoDevTool() {
                     </select>
                   </label>
                   <label className="form-grid__full">
-                    Descricao
+                    Descrição
                     <textarea
                       rows={4}
                       value={itemForm.description}
@@ -784,12 +784,12 @@ export default function ProjetoDevTool() {
                     />
                   </label>
                   <label className="form-grid__full">
-                    Observacoes
+                    Observações
                     <textarea
                       rows={4}
                       value={itemForm.notes}
                       onChange={(event) => setItemForm((prev) => ({ ...prev, notes: event.target.value }))}
-                      placeholder="Dependencias, premissas, detalhes tecnicos ou observacoes complementares"
+                      placeholder="Dependencias, premissas, detalhes tecnicos ou Observações complementares"
                     />
                   </label>
                   <div className="form-grid__actions projeto-dev__actions">
@@ -823,7 +823,7 @@ export default function ProjetoDevTool() {
                         type="search"
                         value={itemSearch}
                         onChange={(event) => setItemSearch(event.target.value)}
-                        placeholder="Buscar modulo, tipo, descricao..."
+                        placeholder="Buscar modulo, tipo, Descrição..."
                         disabled={!selectedProject}
                       />
                     </label>
@@ -835,7 +835,7 @@ export default function ProjetoDevTool() {
                       <tr>
                         <th className="projeto-dev__col-module">Modulo</th>
                         <th className="projeto-dev__col-type">Tipo</th>
-                        <th className="projeto-dev__col-description">Descricao</th>
+                        <th className="projeto-dev__col-description">Descrição</th>
                         <th className="projeto-dev__col-complexity">Complexidade</th>
                         <th className="projeto-dev__col-notes">Obs</th>
                         <th className="projeto-dev__col-actions">Acoes</th>

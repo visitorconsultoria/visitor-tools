@@ -65,7 +65,7 @@ type ComparisonResult = {
 }
 
 const EXCLUDED_FIELDS = new Set<RubricaRuleFieldKey>(['rv_desc', 'rv_descdet'])
-const DEFAULT_SELECTED_COMPARISON_FIELDS = new Set<RubricaRuleFieldKey>([
+const DEFAULT_SELECTED_COMPARISON_FIELD_ORDER: RubricaRuleFieldKey[] = [
   'rv_codfol',
   'rv_tipo',
   'rv_inss',
@@ -90,9 +90,45 @@ const DEFAULT_SELECTED_COMPARISON_FIELDS = new Set<RubricaRuleFieldKey>([
   'rv_incpis',
   'rv_ferxml',
   'rv_feraxml',
-])
+]
+const DEFAULT_SELECTED_COMPARISON_FIELDS = new Set<RubricaRuleFieldKey>(DEFAULT_SELECTED_COMPARISON_FIELD_ORDER)
 const SPECIAL_REFERENCE_FIELDS = new Set<RubricaRuleFieldKey>(['rv_ferxml', 'rv_feraxml'])
 const SPECIAL_REFERENCE_EXPORT_ORDER: RubricaRuleFieldKey[] = ['rv_ferxml', 'rv_feraxml']
+const COMPARISON_FIELD_TITLES: Partial<Record<RubricaRuleFieldKey, string>> = {
+  rv_tipo: 'Tipo do Cod.',
+  rv_codcorr: 'Cod.Corresp.',
+  rv_inss: 'INSS',
+  rv_inssfer: 'INSS Fer.',
+  rv_ir: 'IR',
+  rv_fgts: 'FGTS',
+  rv_rra: 'RRA',
+  rv_pis: 'PIS',
+  rv_dirf: 'DIRF',
+  rv_ref13: 'Ref. a 13o.',
+  rv_reffer: 'Ref.a Ferias',
+  rv_refabon: 'Ref.Ab.Fer',
+  rv_adianta: 'Ref. Adiant.',
+  rv_empcons: 'Emp. Cons.',
+  rv_refplr: 'Ref. PLR?',
+  rv_he: 'Hora Extra',
+  rv_coddsr: 'Verba DSR',
+  rv_compl_: 'Dissid. Ret.',
+  rv_codcom_: 'Verba P.Diss',
+  rv_codmseg: 'V. Mes Segui',
+  rv_ferseg: 'V. Dif. Fer.',
+  rv_naturez: 'Natureza',
+  rv_incirf: 'Cd. Inc.IRRF',
+  rv_incfgts: 'Cd.Inc.FGTS',
+  rv_inccp: 'Cd.Inc.CP',
+  rv_incop: 'Cd.Inc.RPPS',
+  rv_tetop: 'Teto Remun.',
+  rv_contrap: 'V.eSoc.CPart',
+  rv_incpis: 'Cd. Inc. PIS',
+  rv_ferdesc: 'Vb.Desc.Fer',
+  rv_subst: 'Vb Subst',
+  rv_ferxml: 'Vb Fer Mes',
+  rv_feraxml: 'Vb Fer Mes A',
+}
 const FIELD_HEADER_ALIASES: Partial<Record<RubricaRuleFieldKey, string[]>> = {
   rv_tipo: ['RV_TIPO'],
   rv_desc: ['DESCRICAO', 'DESCRIÇÃO', 'DESC', 'DESCRICAO DA VERBA', 'DESCRICAO VERBA'],
@@ -499,6 +535,13 @@ function sanitizeFileNameSegment(value: string): string {
   return sanitized || 'comparacao-rubricas'
 }
 
+function getComparisonFieldTitle(fieldKey: RubricaRuleFieldKey, fallbackLabel: string): string {
+  const mappedTitle = COMPARISON_FIELD_TITLES[fieldKey]
+  if (mappedTitle) return mappedTitle
+
+  return fallbackLabel.replace(/^RV_/, '').replace(/_/g, ' ').trim()
+}
+
 function buildRowMap<T extends Record<RubricaRuleFieldKey, string>>(rows: T[]) {
   const map = new Map<string, T>()
   const duplicates = new Set<string>()
@@ -749,6 +792,16 @@ export default function RubricaRuleComparisonTool() {
     () => RUBRICA_RULE_FIELD_DEFINITIONS.filter((field) => !EXCLUDED_FIELDS.has(field.key) && field.key !== 'rv_codfol'),
     [],
   )
+
+  const comparisonFieldsForDisplay = useMemo(() => {
+    return availableComparisonFields
+      .map((field) => ({
+        ...field,
+        title: getComparisonFieldTitle(field.key, field.label),
+        isSelected: selectedComparisonFieldKeys.has(field.key),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+  }, [availableComparisonFields, selectedComparisonFieldKeys])
 
   const selectedRuleSet = useMemo(
     () => ruleSets.find((item) => item.id === selectedRuleSetId) ?? null,
@@ -1212,7 +1265,7 @@ export default function RubricaRuleComparisonTool() {
         <div className="rubrica-compare-fields">
           <div className="rubrica-compare-fields__header">
             <strong>Campos a validar na comparação</strong>
-            <span className="muted">Padrao inicial aplicado conforme configuracao solicitada.</span>
+            <span className="muted">Exibindo código técnico + título do campo para facilitar a seleção.</span>
           </div>
 
           <div className="rubrica-compare-fields__actions">
@@ -1239,9 +1292,9 @@ export default function RubricaRuleComparisonTool() {
             </button>
           </div>
 
-          <div className="rubrica-compare-fields__grid">
-            {availableComparisonFields.map((field) => {
-              const isSelected = selectedComparisonFieldKeys.has(field.key)
+          <div className="rubrica-compare-fields__grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            {comparisonFieldsForDisplay.map((field) => {
+              const isSelected = field.isSelected
 
               return (
                 <label key={field.key} className="rubrica-compare-fields__item">
@@ -1261,8 +1314,12 @@ export default function RubricaRuleComparisonTool() {
                     }}
                   />
                   <span className="rubrica-compare-fields__field">{field.label}</span>
-                  <span className={isSelected ? 'rubrica-compare-fields__status rubrica-compare-fields__status--on' : 'rubrica-compare-fields__status'}>
-                    {isSelected ? 'Validar' : 'Nao validar'}
+                  <span className="muted" style={{ fontSize: '0.76rem', lineHeight: 1.2 }}>{field.title}</span>
+                  <span
+                    className={isSelected ? 'rubrica-compare-fields__status rubrica-compare-fields__status--on' : 'rubrica-compare-fields__status'}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    {isSelected ? 'Validar' : 'Não validar'}
                   </span>
                 </label>
               )

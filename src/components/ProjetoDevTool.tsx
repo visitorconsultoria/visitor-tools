@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import * as XLSX from 'xlsx'
 import { apiUrl } from '../lib/api'
 
 type ProjectItemType = 'cadastro' | 'processo' | 'relatorio' | 'formula' | 'dicionario' | 'workflow' | 'outros'
@@ -54,9 +55,9 @@ const EMPTY_ITEM_FORM: ProjectItemForm = {
 const ITEM_TYPE_LABELS: Record<ProjectItemType, string> = {
   cadastro: 'Cadastro',
   processo: 'Processo',
-  relatorio: 'Relatorio',
-  formula: 'Formula',
-  dicionario: 'Dicionario',
+  relatorio: 'Relatório',
+  formula: 'Fórmula',
+  dicionario: 'Dicionário',
   workflow: 'Workflow',
   outros: 'Outros',
 }
@@ -93,7 +94,7 @@ function normalizeProjectItem(input: unknown): ProjectGridItem | null {
   const type = String(item.type ?? '') as ProjectItemType
   const complexity = String(item.complexity ?? '') as ProjectItemComplexity
 
-  const validType = ['cadastro', 'processo', 'relatorio', 'formula', 'dicionario', 'workflow', 'outros'].includes(type)
+  const validType = ['cadastro', 'processo', 'relatrio', 'formula', 'dicionario', 'workflow', 'outros'].includes(type)
   const validComplexity = ['baixa', 'media', 'alta'].includes(complexity)
 
   if (!Number.isFinite(id) || id <= 0 || !module || !description || !validType || !validComplexity) {
@@ -163,6 +164,7 @@ export default function ProjetoDevTool() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [itemForm, setItemForm] = useState<ProjectItemForm>(EMPTY_ITEM_FORM)
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
+  const [detailItem, setDetailItem] = useState<ProjectGridItem | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -479,6 +481,42 @@ export default function ProjetoDevTool() {
     }
   }
 
+  const handleExportItems = () => {
+    if (!selectedProject || !selectedProject.items.length) {
+      setError('Nao ha itens cadastrados para exportar neste projeto.')
+      return
+    }
+
+    try {
+      const rows = selectedProject.items.map((item, index) => ({
+        '#': index + 1,
+        Modulo: item.module,
+        Tipo: ITEM_TYPE_LABELS[item.type],
+        Complexidade: COMPLEXITY_LABELS[item.complexity],
+        Descricao: item.description,
+        Observacoes: item.notes || '',
+      }))
+
+      const workbook = XLSX.utils.book_new()
+      const worksheet = XLSX.utils.json_to_sheet(rows)
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'itens-projeto')
+
+      const dateTag = new Date().toISOString().slice(0, 10)
+      const safeClient = selectedProject.client
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        || 'projeto'
+
+      XLSX.writeFile(workbook, `${safeClient}-itens-${dateTag}.xlsx`)
+      setSuccess('Planilha de itens gerada com sucesso.')
+    } catch {
+      setError('Falha ao gerar planilha de itens.')
+    }
+  }
+
   return (
     <div className={`customer-hub rule-tool ${currentScreen === 'workspace' ? 'rule-tool--workspace' : 'rule-tool--overview'} projeto-dev`}>
       {error && <p className="error">{error}</p>}
@@ -755,9 +793,9 @@ export default function ProjetoDevTool() {
                     >
                       <option value="cadastro">Cadastro</option>
                       <option value="processo">Processo</option>
-                      <option value="relatorio">Relatorio</option>
-                      <option value="formula">Formula</option>
-                      <option value="dicionario">Dicionario</option>
+                      <option value="relatorio">Relatório</option>
+                      <option value="formula">Fórmula</option>
+                      <option value="dicionario">Dicionário</option>
                       <option value="workflow">Workflow</option>
                       <option value="outros">Outros</option>
                     </select>
@@ -812,58 +850,80 @@ export default function ProjetoDevTool() {
                       <h4>Itens cadastrados</h4>
                       <p className="muted">Consulte, filtre e edite os itens vinculados a este projeto.</p>
                     </div>
-                    <label className="ch-table-search projeto-dev__search" aria-label="Buscar itens do projeto">
-                      <span className="ch-table-search__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="11" cy="11" r="7" />
-                          <line x1="16.5" y1="16.5" x2="21" y2="21" />
-                        </svg>
-                      </span>
-                      <input
-                        type="search"
-                        value={itemSearch}
-                        onChange={(event) => setItemSearch(event.target.value)}
-                        placeholder="Buscar modulo, tipo, Descrição..."
-                        disabled={!selectedProject}
-                      />
-                    </label>
+                    <div className="projeto-dev__list-actions">
+                      <label className="ch-table-search projeto-dev__search" aria-label="Buscar itens do projeto">
+                        <span className="ch-table-search__icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="7" />
+                            <line x1="16.5" y1="16.5" x2="21" y2="21" />
+                          </svg>
+                        </span>
+                        <input
+                          type="search"
+                          value={itemSearch}
+                          onChange={(event) => setItemSearch(event.target.value)}
+                          placeholder="Buscar modulo, tipo, Descrição..."
+                          disabled={!selectedProject}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={handleExportItems}
+                        disabled={!selectedProject || !selectedProject.items.length}
+                      >
+                        Exportar planilha
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="rule-tool__table-wrap projeto-dev__table-wrap projeto-dev__table-wrap--screen">
+                <div className="rule-tool__table-wrap projeto-dev__table-wrap projeto-dev__table-wrap--screen estimativas-table ch-table-theme">
                   <table className="projeto-dev__table projeto-dev__table--modal">
                     <thead>
                       <tr>
+                        <th className="projeto-dev__col-index">#</th>
                         <th className="projeto-dev__col-module">Modulo</th>
                         <th className="projeto-dev__col-type">Tipo</th>
-                        <th className="projeto-dev__col-description">Descrição</th>
                         <th className="projeto-dev__col-complexity">Complexidade</th>
-                        <th className="projeto-dev__col-notes">Obs</th>
-                        <th className="projeto-dev__col-actions">Acoes</th>
+                        <th className="projeto-dev__col-actions">Ações</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredProjectItems.map((item) => (
+                      {filteredProjectItems.map((item, index) => (
                         <tr key={item.id}>
+                          <td className="projeto-dev__cell projeto-dev__cell--index">{index + 1}</td>
                           <td className="projeto-dev__cell projeto-dev__cell--module">{item.module}</td>
                           <td className="projeto-dev__cell projeto-dev__cell--type">
                             <span className={`projeto-dev__badge ${ITEM_TYPE_BADGE_CLASS[item.type]}`}>
                               {ITEM_TYPE_LABELS[item.type]}
                             </span>
                           </td>
-                          <td className="projeto-dev__cell projeto-dev__cell--description">{item.description}</td>
                           <td className="projeto-dev__cell projeto-dev__cell--complexity">
                             <span className={`projeto-dev__badge ${ITEM_COMPLEXITY_BADGE_CLASS[item.complexity]}`}>
                               {COMPLEXITY_LABELS[item.complexity]}
                             </span>
                           </td>
-                          <td className="projeto-dev__cell projeto-dev__cell--notes">{item.notes || '-'}</td>
                           <td className="projeto-dev__cell projeto-dev__cell--actions">
-                            <div className="projeto-dev__row-actions">
-                              <button type="button" className="button-secondary" onClick={() => handleEditItem(item)} disabled={isSaving}>
-                                Editar
+                            <div className="projeto-dev__row-actions ch-row-actions ch-row-actions--icons">
+                              <button type="button" className="ch-icon-action" title="Detalhes" onClick={() => setDetailItem(item)} disabled={isSaving}>
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="3" />
+                                  <path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7Z" />
+                                </svg>
                               </button>
-                              <button type="button" className="button-secondary" onClick={() => void handleDeleteItem(item.id)} disabled={isSaving}>
-                                Excluir
+                              <button type="button" className="ch-icon-action" title="Editar" onClick={() => handleEditItem(item)} disabled={isSaving}>
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M12 20h9" />
+                                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+                                </svg>
+                              </button>
+                              <button type="button" className="ch-icon-action ch-icon-action--danger" title="Excluir" onClick={() => void handleDeleteItem(item.id)} disabled={isSaving}>
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M3 6h18" />
+                                  <path d="M8 6V4h8v2" />
+                                  <path d="M6 6l1 14h10l1-14" />
+                                  <path d="M10 10v7M14 10v7" />
+                                </svg>
                               </button>
                             </div>
                           </td>
@@ -875,6 +935,41 @@ export default function ProjetoDevTool() {
 
                 {!filteredProjectItems.length && <p className="muted projeto-dev__empty">Nenhum item encontrado.</p>}
               </section>
+
+              {detailItem && (
+                <div className="projeto-dev__details-overlay" role="dialog" aria-modal="true" aria-label="Detalhes do item">
+                  <article className="projeto-dev__details-modal">
+                    <header className="projeto-dev__details-header">
+                      <h4>Detalhes do item</h4>
+                      <button type="button" className="button-secondary" onClick={() => setDetailItem(null)}>
+                        Fechar
+                      </button>
+                    </header>
+                    <div className="projeto-dev__details-grid">
+                      <div>
+                        <span className="projeto-dev__details-label">Modulo</span>
+                        <strong>{detailItem.module}</strong>
+                      </div>
+                      <div>
+                        <span className="projeto-dev__details-label">Tipo</span>
+                        <strong>{ITEM_TYPE_LABELS[detailItem.type]}</strong>
+                      </div>
+                      <div>
+                        <span className="projeto-dev__details-label">Complexidade</span>
+                        <strong>{COMPLEXITY_LABELS[detailItem.complexity]}</strong>
+                      </div>
+                    </div>
+                    <section className="projeto-dev__details-section">
+                      <h5>Descrição</h5>
+                      <p>{detailItem.description}</p>
+                    </section>
+                    <section className="projeto-dev__details-section">
+                      <h5>Observações</h5>
+                      <p>{detailItem.notes || 'Nenhuma observação informada.'}</p>
+                    </section>
+                  </article>
+                </div>
+              )}
             </div>
           </section>
         </div>

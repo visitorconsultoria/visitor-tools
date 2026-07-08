@@ -92,6 +92,7 @@ const DEFAULT_SELECTED_COMPARISON_FIELDS = new Set<RubricaRuleFieldKey>([
   'rv_feraxml',
 ])
 const SPECIAL_REFERENCE_FIELDS = new Set<RubricaRuleFieldKey>(['rv_ferxml', 'rv_feraxml'])
+const SPECIAL_REFERENCE_EXPORT_ORDER: RubricaRuleFieldKey[] = ['rv_ferxml', 'rv_feraxml']
 const FIELD_HEADER_ALIASES: Partial<Record<RubricaRuleFieldKey, string[]>> = {
   rv_tipo: ['RV_TIPO'],
   rv_desc: ['DESCRICAO', 'DESCRIÇÃO', 'DESC', 'DESCRICAO DA VERBA', 'DESCRICAO VERBA'],
@@ -127,7 +128,7 @@ async function loadExcelJSRuntime(): Promise<ExcelJSRuntime> {
       script.onload = () => {
         const loadedRuntime = (window as Window & { ExcelJS?: ExcelJSRuntime }).ExcelJS
         if (!loadedRuntime?.Workbook) {
-          reject(new Error('ExcelJS foi carregado, mas nao expôs Workbook.'))
+          reject(new Error('ExcelJS foi carregado, mas não expôs Workbook.'))
           return
         }
 
@@ -439,28 +440,6 @@ function mergeReferenceRows(
   return merged
 }
 
-function mergeReferenceRowsWithFallbacks(
-  rows: Array<Partial<Record<RubricaRuleFieldKey, string>> | null | undefined>,
-): Record<RubricaRuleFieldKey, string> | null {
-  const hasAnyRow = rows.some((row) => !!row)
-  if (!hasAnyRow) return null
-
-  const merged = {} as Record<RubricaRuleFieldKey, string>
-
-  for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
-    merged[field.key] = ''
-    for (const row of rows) {
-      const candidateValue = String(row?.[field.key] ?? '').trim()
-      if (candidateValue) {
-        merged[field.key] = candidateValue
-        break
-      }
-    }
-  }
-
-  return merged
-}
-
 function scoreImportedReferenceRow(row: ImportedRuleRow): number {
   const isReferenceRow = String(row.rv_codfol || '').includes('|')
   let score = isReferenceRow ? 0 : 1000
@@ -643,7 +622,7 @@ function compareRuleRows(
         }
 
         for (const referenceField of referenceComparableFields) {
-          const expectedReferenceValue = String(baseRuleRow[referenceField.key] ?? '').trim()
+          const expectedReferenceValue = String(referenceMatch.row?.[referenceField.key] ?? baseRuleRow[referenceField.key] ?? '').trim()
           const foundReferenceValue = String(referenceMatch.row?.[referenceField.key] ?? '').trim()
           const { expectedComparable, foundComparable } = normalizeComparablePair(
             referenceField.key,
@@ -706,7 +685,7 @@ function compareRuleRows(
       const resolvedReferenceRow = mergeReferenceRows(specialReference.importedReferenceRow, specialReference.referenceRow)
 
       for (const referenceField of referenceComparableFields) {
-        const expectedReferenceValue = String(ruleRow[referenceField.key] ?? '').trim()
+        const expectedReferenceValue = String(specialReference.referenceRow?.[referenceField.key] ?? ruleRow[referenceField.key] ?? '').trim()
         const foundReferenceValue = String((resolvedReferenceRow || specialImportedRow)[referenceField.key] ?? '').trim()
         const { expectedComparable, foundComparable } = normalizeComparablePair(
           referenceField.key,
@@ -993,20 +972,31 @@ export default function RubricaRuleComparisonTool() {
             importedCell.font = { color: { argb: 'FF9C0006' } }
           }
 
-          for (const reference of divergence.specialReferences) {
+          const sortedSpecialReferences = [...divergence.specialReferences].sort((a, b) => {
+            const indexA = SPECIAL_REFERENCE_EXPORT_ORDER.indexOf(a.field.key)
+            const indexB = SPECIAL_REFERENCE_EXPORT_ORDER.indexOf(b.field.key)
+
+            const normalizedIndexA = indexA >= 0 ? indexA : Number.MAX_SAFE_INTEGER
+            const normalizedIndexB = indexB >= 0 ? indexB : Number.MAX_SAFE_INTEGER
+
+            if (normalizedIndexA !== normalizedIndexB) {
+              return normalizedIndexA - normalizedIndexB
+            }
+
+            return a.referenceCode.localeCompare(b.referenceCode)
+          })
+
+          for (const reference of sortedSpecialReferences) {
             const importedSpecialCode = String(reference.importedVerbaCode || '').trim()
             const linkedImportedRow = reference.linkedImportedRow
-            const displayedReferenceRow = mergeReferenceRowsWithFallbacks([
-              reference.importedReferenceRow,
-              linkedImportedRow,
-              reference.referenceRow,
-            ])
+            const baseReferenceRow = reference.referenceRow || reference.importedReferenceRow || linkedImportedRow
+            const importedReferenceRow = reference.importedReferenceRow || linkedImportedRow || reference.referenceRow
             const referenceDivergentFields = new Set<RubricaRuleFieldKey>()
 
-            if (displayedReferenceRow) {
+            if (baseReferenceRow && importedReferenceRow) {
               for (const field of exportReferenceComparableFields) {
-                const expected = String(divergence.ruleRow[field.key] ?? '').trim()
-                const found = String(displayedReferenceRow[field.key] ?? '').trim()
+                const expected = String(baseReferenceRow[field.key] ?? '').trim()
+                const found = String(importedReferenceRow[field.key] ?? '').trim()
                 const { expectedComparable, foundComparable } = normalizeComparablePair(field.key, expected, found)
 
                 if (expectedComparable !== foundComparable) {
@@ -1015,32 +1005,15 @@ export default function RubricaRuleComparisonTool() {
               }
             }
 
-            const referenceRow = detailedWorksheet.addRow({
-              origem: `Ref ${reference.field.label}`,
+            const baseSpecialRow = detailedWorksheet.addRow({
+              origem: 'Base',
               ...Object.fromEntries(
                 allFields.map((field) => {
-                if (displayedReferenceRow) {
                   if (field.key === 'rv_desc') {
-                      const referenceDescription = buildReferenceDescription(displayedReferenceRow, reference.referenceCode)
-                      const descriptionWithImportedCode = importedSpecialCode && referenceDescription
-                        ? `${importedSpecialCode} - ${referenceDescription}`
-                        : referenceDescription || importedSpecialCode
-                      return [field.key, descriptionWithImportedCode]
-                  }
-
-                  if (field.key === 'rv_codfol') {
-                      return [field.key, formatReferenceCode(reference.referenceCode)]
-                  }
-
-                    return [field.key, formatFieldValue(field.key, displayedReferenceRow[field.key])]
-                }
-
-                if (linkedImportedRow) {
-                  if (field.key === 'rv_desc') {
-                    const linkedDescription = String(linkedImportedRow.rv_desc || '').trim()
-                    const descriptionWithImportedCode = importedSpecialCode && linkedDescription
-                      ? `${importedSpecialCode} - ${linkedDescription}`
-                      : linkedDescription || importedSpecialCode
+                    const referenceDescription = buildReferenceDescription(baseReferenceRow, reference.referenceCode)
+                    const descriptionWithImportedCode = importedSpecialCode && referenceDescription
+                      ? `${importedSpecialCode} - ${referenceDescription}`
+                      : referenceDescription || importedSpecialCode || '-'
                     return [field.key, descriptionWithImportedCode]
                   }
 
@@ -1048,34 +1021,51 @@ export default function RubricaRuleComparisonTool() {
                     return [field.key, formatReferenceCode(reference.referenceCode)]
                   }
 
-                  return [field.key, formatFieldValue(field.key, linkedImportedRow[field.key])]
-                }
-
-                if (field.key === 'rv_codfol') {
-          return [field.key, formatReferenceCode(reference.referenceCode)]
-                }
-
-                if (field.key === 'rv_desc' && importedSpecialCode) {
-                  return [field.key, importedSpecialCode]
-                }
-
-                  return [field.key, '']
+                  return [field.key, formatFieldValue(field.key, baseReferenceRow?.[field.key] || '')]
                 }),
               ),
             })
 
-            referenceRow.eachCell({ includeEmpty: true }, (cell: any) => {
+            const importedSpecialRow = detailedWorksheet.addRow({
+              origem: 'Importado',
+              ...Object.fromEntries(
+                allFields.map((field) => {
+                  if (field.key === 'rv_desc') {
+                    const importedDescription = String(importedReferenceRow?.rv_desc || '').trim()
+                    const descriptionWithImportedCode = importedSpecialCode && importedDescription
+                      ? `${importedSpecialCode} - ${importedDescription}`
+                      : importedDescription || importedSpecialCode || '-'
+                    return [field.key, descriptionWithImportedCode]
+                  }
+
+                  if (field.key === 'rv_codfol') {
+                    return [field.key, formatReferenceCode(reference.referenceCode)]
+                  }
+
+                  return [field.key, formatFieldValue(field.key, importedReferenceRow?.[field.key] || '')]
+                }),
+              ),
+            })
+
+            baseSpecialRow.eachCell({ includeEmpty: true }, (cell: any) => {
               cell.fill = referenceRowFill
             })
 
+            importedSpecialRow.eachCell({ includeEmpty: true }, (cell: any) => {
+              cell.fill = importedRowFill
+            })
+
+            const referenceRowsToHighlight = [baseSpecialRow, importedSpecialRow]
             for (const fieldKey of referenceDivergentFields) {
               const fieldIndex = allFields.findIndex((field) => field.key === fieldKey)
               if (fieldIndex < 0) continue
 
               const column = fieldIndex + 2
-              const referenceCell = referenceRow.getCell(column)
-              referenceCell.fill = highlightFill
-              referenceCell.font = { color: { argb: 'FF9C0006' } }
+              for (const worksheetRow of referenceRowsToHighlight) {
+                const referenceCell = worksheetRow.getCell(column)
+                referenceCell.fill = highlightFill
+                referenceCell.font = { color: { argb: 'FF9C0006' } }
+              }
             }
           }
         }

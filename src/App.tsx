@@ -1225,7 +1225,7 @@ function App() {
                   ? selectedRubricaCatalogKey === 'rubrica-regra'
                     ? 'Importe planilhas modelo, mantenha diversos cadastros de regra e replique estruturas com CRUD completo.'
                     : selectedRubricaCatalogKey === 'rubrica-regra-comparacao'
-                      ? 'Selecione um cadastro de Tabela de Regra e compare com uma planilha importada pelo RV_CODFOL, ignorando RV_DESC e RV_DESCDET.'
+                      ? 'Selecione um cadastro de Tabela de Regra e compare com uma planilha importada.'
                     : 'Cadastros básicos para validação das rubricas.'
                     : 'Consolidação de múltiplos XMLs do eSocial em uma única planilha Excel'}
             </p>

@@ -5,6 +5,7 @@ export const MENU_DEFINITIONS = Object.freeze([
   { key: 'excel-csv-sqlite', label: 'Excel/CSV para SQL', assignable: true },
   { key: 'resume-ranking', label: 'Ranking de Curriculos', assignable: true },
   { key: 'estimativas', label: 'Estimativas', assignable: true },
+  { key: 'projeto-dev', label: 'Projeto Dev', assignable: true },
   { key: 'daily-activities', label: 'Apontamentos', assignable: true },
   { key: 'digte-demands', label: 'Demandas DIGTE', assignable: true },
   { key: 'customer-hub', label: 'Central de Clientes', assignable: true },

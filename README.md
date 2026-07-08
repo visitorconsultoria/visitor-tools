@@ -69,6 +69,8 @@ SUPABASE_CUSTOMER_CONTACTS_TABLE=customer_hub_contacts
 SUPABASE_CUSTOMER_SYSTEMS_TABLE=customer_hub_systems
 SUPABASE_CUSTOMER_PROCESSES_TABLE=customer_hub_processes
 SUPABASE_CUSTOMER_ACTIVITIES_TABLE=customer_hub_activities
+SUPABASE_DEV_PROJECTS_TABLE=dev_projects
+SUPABASE_DEV_PROJECT_ITEMS_TABLE=dev_project_items
 CORS_ALLOWED_ORIGINS=https://visitorconsultoria.github.io,https://tools.visitorconsultoria.com
 ```
 
@@ -193,6 +195,28 @@ npm run dev:all
 ```
 
 O formulario de inclusao abre em modal com os campos de cabecalho e um grid de itens `detail/hours` (1:N) por id.
+
+## Projeto Dev via Supabase
+
+O modulo `Projeto Dev` utiliza duas tabelas no Supabase para persistencia de projetos e seus itens.
+
+Modelo de dados:
+- `dev_projects`: cabecalho (`id`, `client`, `date`, `description`)
+- `dev_project_items`: itens do projeto (`module`, `type`, `description`, `complexity`, `notes`) com relacao 1:N por `project_id`
+
+1. Crie as tabelas no Supabase com o script [scripts/supabase-projeto-dev.sql](scripts/supabase-projeto-dev.sql).
+2. Configure o `.env`:
+
+```bash
+SUPABASE_DEV_PROJECTS_TABLE=dev_projects
+SUPABASE_DEV_PROJECT_ITEMS_TABLE=dev_project_items
+```
+
+3. Rode frontend + API:
+
+```bash
+npm run dev:all
+```
 
 ## Usuarios e permissoes de menu
 

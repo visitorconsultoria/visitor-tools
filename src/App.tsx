@@ -11,6 +11,7 @@ const XmlToExcelTool = lazy(() => import('./components/XmlToExcelTool'))
 const ExcelCsvToSqliteTool = lazy(() => import('./components/ExcelCsvToSqliteTool'))
 const ResumeRankingTool = lazy(() => import('./components/ResumeRankingTool'))
 const EstimativasTool = lazy(() => import('./components/EstimativasTool'))
+const ProjetoDevTool = lazy(() => import('./components/ProjetoDevTool'))
 const UserAccessTool = lazy(() => import('./components/UserAccessTool'))
 const DailyActivityTool = lazy(() => import('./components/DailyActivityTool'))
 const DigteDemandsTool = lazy(() => import('./components/DigteDemandsTool'))
@@ -92,6 +93,7 @@ type SidebarIconName =
   | 'excel-csv-sqlite'
   | 'resume-ranking'
   | 'estimativas'
+  | 'projeto-dev'
   | 'daily-activities'
   | 'digte-demands'
   | 'customer-hub'
@@ -117,6 +119,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M5 20V10m7 10V6m7 14v-8M4 4h16" />
     case 'estimativas':
       return <path d="M8 4h8l3 3v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h2zm2 6h6M10 14h6M10 18h4" />
+    case 'projeto-dev':
+      return <path d="M4 6h7v5H4V6zm9 0h7v5h-7V6zM4 13h7v5H4v-5zm9 2h7m-3-3v6" />
     case 'daily-activities':
       return <path d="M12 7v5l3 2m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
     case 'digte-demands':
@@ -811,6 +815,24 @@ function App() {
               <span>Estimativas</span>
             </button>
           )}
+          {canAccessPage('projeto-dev', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'projeto-dev' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('projeto-dev')
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'projeto-dev' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="projeto-dev" />
+                </svg>
+              </span>
+              <span>Projeto Dev</span>
+            </button>
+          )}
           {canAccessPage('daily-activities', currentUser) && (
             <button
               type="button"
@@ -1139,6 +1161,8 @@ function App() {
                     ? 'Ranking de Currículos'
                 : currentPage === 'estimativas'
                   ? 'Controle de Estimativas'
+                : currentPage === 'projeto-dev'
+                  ? 'Projeto Dev'
                 : currentPage === 'daily-activities'
                   ? 'Apontamentos'
                 : currentPage === 'digte-demands'
@@ -1181,6 +1205,8 @@ function App() {
                     ? 'Avalie e ranqueie currículos com base na descrição da vaga'
                 : currentPage === 'estimativas'
                   ? 'Controle e acompanhamento de envio de estimativas de demandas'
+                : currentPage === 'projeto-dev'
+                  ? 'Cadastro de projetos de desenvolvimento e detalhamento de itens por modulo.'
                 : currentPage === 'daily-activities'
                   ? 'Registro diario das atividades executadas por recurso.'
                 : currentPage === 'digte-demands'
@@ -1265,6 +1291,15 @@ function App() {
                     onClick={() => setCurrentPage('estimativas')}
                   >
                     Abrir Estimativas
+                  </button>
+                )}
+                {canAccessPage('projeto-dev', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('projeto-dev')}
+                  >
+                    Abrir Projeto Dev
                   </button>
                 )}
                 {canAccessPage('daily-activities', currentUser) && (
@@ -1404,6 +1439,19 @@ function App() {
                     type="button"
                     className="button-secondary"
                     onClick={() => setCurrentPage('estimativas')}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('projeto-dev', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Projeto Dev</h3>
+                  <p>Cadastre projetos com cliente, data e descricao e detalhe os itens tecnicos em grade.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setCurrentPage('projeto-dev')}
                   >
                     Acessar
                   </button>
@@ -1727,6 +1775,8 @@ function App() {
               <ResumeRankingTool />
             ) : currentPage === 'estimativas' ? (
               <EstimativasTool />
+            ) : currentPage === 'projeto-dev' ? (
+              <ProjetoDevTool />
             ) : currentPage === 'daily-activities' ? (
               <DailyActivityTool currentUsername={currentUser?.username || ''} currentDisplayName={currentUser?.displayName || ''} hasDigteDemandsAccess={currentUser?.allowedMenus.includes('digte-demands') ?? false} />
             ) : currentPage === 'digte-demands' ? (

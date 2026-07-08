@@ -63,6 +63,8 @@ function getSupabaseConfig() {
     customerStatusReportHistoryTable: process.env.SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE || 'customer_hub_status_report_history',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
+    devProjectsTable: process.env.SUPABASE_DEV_PROJECTS_TABLE || 'dev_projects',
+    devProjectItemsTable: process.env.SUPABASE_DEV_PROJECT_ITEMS_TABLE || 'dev_project_items',
     rubricaCatalogsTable: process.env.SUPABASE_RUBRICA_CATALOGS_TABLE || 'rubrica_reference_catalogs',
     rubricaItemsTable: process.env.SUPABASE_RUBRICA_ITEMS_TABLE || 'rubrica_reference_items',
     rubricaRuleSetsTable: process.env.SUPABASE_RUBRICA_RULE_SETS_TABLE || 'rubrica_rule_sets',
@@ -113,6 +115,8 @@ function getSupabaseClient() {
     customerStatusReportHistoryTable: config.customerStatusReportHistoryTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
+    devProjectsTable: config.devProjectsTable,
+    devProjectItemsTable: config.devProjectItemsTable,
     rubricaCatalogsTable: config.rubricaCatalogsTable,
     rubricaItemsTable: config.rubricaItemsTable,
     rubricaRuleSetsTable: config.rubricaRuleSetsTable,
@@ -845,6 +849,243 @@ async function deleteEstimate(id) {
   if (error) {
     throw new Error(error.message)
   }
+}
+
+const PROJECT_DEV_ITEM_TYPES = ['cadastro', 'processo', 'relatorio', 'formula', 'dicionario', 'workflow', 'outros']
+const PROJECT_DEV_COMPLEXITIES = ['baixa', 'media', 'alta']
+
+function parseProjectDevIdInput(value, fieldLabel = 'ID do projeto') {
+  const id = Number(String(value ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error(`${fieldLabel} invalido.`)
+  }
+  return id
+}
+
+function normalizeProjectDevProjectRow(row, items = []) {
+  return {
+    id: Number(row.id ?? 0),
+    client: String(row.client ?? ''),
+    date: String(row.date ?? ''),
+    description: String(row.description ?? ''),
+    items: items.map((item) => ({
+      id: Number(item.id ?? 0),
+      module: String(item.module ?? ''),
+      type: String(item.type ?? 'outros'),
+      description: String(item.description ?? ''),
+      complexity: String(item.complexity ?? 'baixa'),
+      notes: String(item.notes ?? ''),
+      sortOrder: Number(item.sort_order ?? 1),
+    })),
+  }
+}
+
+function parseProjectDevProjectPayload(payload) {
+  return {
+    client: String(payload.client ?? '').trim(),
+    date: normalizeDateInput(String(payload.date ?? '')),
+    description: String(payload.description ?? '').trim(),
+  }
+}
+
+function validateProjectDevProjectPayload(parsed) {
+  const missing = []
+  if (!parsed.client) missing.push('client')
+  if (!parsed.date) missing.push('date')
+  if (!parsed.description) missing.push('description')
+
+  if (missing.length) {
+    throw new Error(`Campos obrigatorios ausentes: ${missing.join(', ')}`)
+  }
+}
+
+function parseProjectDevItemPayload(payload) {
+  const type = String(payload.type ?? '').trim().toLowerCase()
+  const complexity = String(payload.complexity ?? '').trim().toLowerCase()
+
+  return {
+    module: String(payload.module ?? '').trim(),
+    type: PROJECT_DEV_ITEM_TYPES.includes(type) ? type : 'outros',
+    description: String(payload.description ?? '').trim(),
+    complexity: PROJECT_DEV_COMPLEXITIES.includes(complexity) ? complexity : 'baixa',
+    notes: String(payload.notes ?? '').trim(),
+  }
+}
+
+function validateProjectDevItemPayload(parsed) {
+  const missing = []
+  if (!parsed.module) missing.push('module')
+  if (!parsed.description) missing.push('description')
+
+  if (missing.length) {
+    throw new Error(`Campos obrigatorios ausentes: ${missing.join(', ')}`)
+  }
+}
+
+async function listDevProjects() {
+  const { client, devProjectsTable, devProjectItemsTable } = getSupabaseClient()
+
+  const { data: rows, error } = await client
+    .from(devProjectsTable)
+    .select('id, client, date, description, created_at')
+    .order('id', { ascending: false })
+
+  if (error) throw new Error(error.message)
+  if (!rows?.length) return []
+
+  const projectIds = rows.map((row) => Number(row.id))
+  const { data: itemRows, error: itemsError } = await client
+    .from(devProjectItemsTable)
+    .select('id, project_id, module, type, description, complexity, notes, sort_order')
+    .in('project_id', projectIds)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (itemsError) throw new Error(itemsError.message)
+
+  const itemsByProject = new Map()
+  ;(itemRows || []).forEach((row) => {
+    const key = Number(row.project_id)
+    const current = itemsByProject.get(key) || []
+    current.push(row)
+    itemsByProject.set(key, current)
+  })
+
+  return rows.map((row) => normalizeProjectDevProjectRow(row, itemsByProject.get(Number(row.id)) || []))
+}
+
+async function getDevProjectById(projectId) {
+  const { client, devProjectsTable, devProjectItemsTable } = getSupabaseClient()
+
+  const { data: row, error } = await client
+    .from(devProjectsTable)
+    .select('id, client, date, description')
+    .eq('id', projectId)
+    .single()
+
+  if (error) throw new Error(error.message)
+
+  const { data: items, error: itemsError } = await client
+    .from(devProjectItemsTable)
+    .select('id, project_id, module, type, description, complexity, notes, sort_order')
+    .eq('project_id', projectId)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (itemsError) throw new Error(itemsError.message)
+
+  return normalizeProjectDevProjectRow(row, items || [])
+}
+
+async function createDevProject(payload) {
+  const parsed = parseProjectDevProjectPayload(payload)
+  validateProjectDevProjectPayload(parsed)
+
+  const { client, devProjectsTable } = getSupabaseClient()
+
+  const { data: row, error } = await client
+    .from(devProjectsTable)
+    .insert(parsed)
+    .select('id, client, date, description')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeProjectDevProjectRow(row, [])
+}
+
+async function updateDevProject(projectId, payload) {
+  const parsed = parseProjectDevProjectPayload(payload)
+  validateProjectDevProjectPayload(parsed)
+
+  const { client, devProjectsTable } = getSupabaseClient()
+
+  const { error } = await client
+    .from(devProjectsTable)
+    .update(parsed)
+    .eq('id', projectId)
+
+  if (error) throw new Error(error.message)
+  return getDevProjectById(projectId)
+}
+
+async function deleteDevProject(projectId) {
+  const { client, devProjectsTable } = getSupabaseClient()
+
+  const { error } = await client
+    .from(devProjectsTable)
+    .delete()
+    .eq('id', projectId)
+
+  if (error) throw new Error(error.message)
+}
+
+async function createDevProjectItem(projectId, payload) {
+  const parsed = parseProjectDevItemPayload(payload)
+  validateProjectDevItemPayload(parsed)
+
+  const { client, devProjectItemsTable } = getSupabaseClient()
+
+  const { data: currentItems, error: listError } = await client
+    .from(devProjectItemsTable)
+    .select('sort_order')
+    .eq('project_id', projectId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+
+  if (listError) throw new Error(listError.message)
+
+  const sortOrder = Number(currentItems?.[0]?.sort_order ?? 0) + 1
+  const insertPayload = {
+    project_id: projectId,
+    module: parsed.module,
+    type: parsed.type,
+    description: parsed.description,
+    complexity: parsed.complexity,
+    notes: parsed.notes,
+    sort_order: sortOrder,
+  }
+
+  const { error } = await client
+    .from(devProjectItemsTable)
+    .insert(insertPayload)
+
+  if (error) throw new Error(error.message)
+  return getDevProjectById(projectId)
+}
+
+async function updateDevProjectItem(projectId, itemId, payload) {
+  const parsed = parseProjectDevItemPayload(payload)
+  validateProjectDevItemPayload(parsed)
+
+  const { client, devProjectItemsTable } = getSupabaseClient()
+
+  const { error } = await client
+    .from(devProjectItemsTable)
+    .update({
+      module: parsed.module,
+      type: parsed.type,
+      description: parsed.description,
+      complexity: parsed.complexity,
+      notes: parsed.notes,
+    })
+    .eq('id', itemId)
+    .eq('project_id', projectId)
+
+  if (error) throw new Error(error.message)
+  return getDevProjectById(projectId)
+}
+
+async function deleteDevProjectItem(projectId, itemId) {
+  const { client, devProjectItemsTable } = getSupabaseClient()
+
+  const { error } = await client
+    .from(devProjectItemsTable)
+    .delete()
+    .eq('id', itemId)
+    .eq('project_id', projectId)
+
+  if (error) throw new Error(error.message)
+  return getDevProjectById(projectId)
 }
 
 function parseDataDictionarySyncPayload(payload) {
@@ -2333,6 +2574,83 @@ app.delete('/api/estimativas/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir estimativa: ${detail}` })
+  }
+})
+
+app.get('/api/projeto-dev/projects', async (_req, res) => {
+  try {
+    const items = await listDevProjects()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar projetos dev: ${detail}` })
+  }
+})
+
+app.post('/api/projeto-dev/projects', async (req, res) => {
+  try {
+    const item = await createDevProject(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar projeto dev: ${detail}` })
+  }
+})
+
+app.put('/api/projeto-dev/projects/:id', async (req, res) => {
+  try {
+    const projectId = parseProjectDevIdInput(req.params.id)
+    const item = await updateDevProject(projectId, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar projeto dev: ${detail}` })
+  }
+})
+
+app.delete('/api/projeto-dev/projects/:id', async (req, res) => {
+  try {
+    const projectId = parseProjectDevIdInput(req.params.id)
+    await deleteDevProject(projectId)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir projeto dev: ${detail}` })
+  }
+})
+
+app.post('/api/projeto-dev/projects/:id/items', async (req, res) => {
+  try {
+    const projectId = parseProjectDevIdInput(req.params.id)
+    const item = await createDevProjectItem(projectId, req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar item do projeto dev: ${detail}` })
+  }
+})
+
+app.put('/api/projeto-dev/projects/:id/items/:itemId', async (req, res) => {
+  try {
+    const projectId = parseProjectDevIdInput(req.params.id)
+    const itemId = parseProjectDevIdInput(req.params.itemId, 'ID do item')
+    const item = await updateDevProjectItem(projectId, itemId, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar item do projeto dev: ${detail}` })
+  }
+})
+
+app.delete('/api/projeto-dev/projects/:id/items/:itemId', async (req, res) => {
+  try {
+    const projectId = parseProjectDevIdInput(req.params.id)
+    const itemId = parseProjectDevIdInput(req.params.itemId, 'ID do item')
+    const item = await deleteDevProjectItem(projectId, itemId)
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir item do projeto dev: ${detail}` })
   }
 })
 

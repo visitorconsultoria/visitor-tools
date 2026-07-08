@@ -5,6 +5,7 @@ export type AllowedMenu =
   | 'excel-csv-sqlite'
   | 'resume-ranking'
   | 'estimativas'
+  | 'projeto-dev'
   | 'daily-activities'
   | 'digte-demands'
   | 'customer-hub'

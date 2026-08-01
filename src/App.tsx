@@ -4,6 +4,7 @@ import visitorLogo from './assets/vistor_logo_verde2.png'
 import sidebarMascot from './assets/sidebar-mascot.png'
 import { apiUrl } from './lib/api'
 import type { CustomerHubPage } from './components/CustomerHubTool'
+import type { CentralServicosPage } from './components/CentralServicosTool'
 import { ALL_MENU_KEYS, getEffectiveMenus } from './lib/menuConfig'
 import type { AllowedMenu } from './types'
 
@@ -17,6 +18,7 @@ const DailyActivityTool = lazy(() => import('./components/DailyActivityTool'))
 const DigteDemandsTool = lazy(() => import('./components/DigteDemandsTool'))
 const ChangePasswordTool = lazy(() => import('./components/ChangePasswordTool'))
 const CustomerHubTool = lazy(() => import('./components/CustomerHubTool'))
+const CentralServicosTool = lazy(() => import('./components/CentralServicosTool'))
 const TicketHubTool = lazy(() => import('./components/TicketHubTool'))
 const PropostaComercialTool = lazy(() => import('./components/PropostaComercialTool'))
 const RubricasValidationTool = lazy(() => import('./components/RubricasValidationTool'))
@@ -58,7 +60,7 @@ type RubricaCatalogPageKey =
 
 type MenuPage = 'home' | AllowedMenu
 
-type SidebarSubmenuSection = 'xml-excel' | 'customer-hub' | 'ticket-hub' | 'rubricas-validacao' | 'rubricas-cadastros'
+type SidebarSubmenuSection = 'xml-excel' | 'customer-hub' | 'central-servicos' | 'ticket-hub' | 'rubricas-validacao' | 'rubricas-cadastros'
 
 type UserSession = {
   username: string
@@ -79,6 +81,15 @@ const CUSTOMER_HUB_PAGES: Array<{ id: CustomerHubPage; label: string }> = [
   { id: 'historico', label: 'Histórico' },
 ]
 
+const CENTRAL_SERVICOS_PAGES: Array<{ id: CentralServicosPage; label: string }> = [
+  { id: 'dashboard', label: 'Dashboards' },
+  { id: 'recursos', label: 'Recursos' },
+  { id: 'contratos-servicos', label: 'Contratos e Serviços' },
+  { id: 'despesas', label: 'Despesas' },
+  { id: 'faturamento', label: 'Faturamento' },
+  { id: 'pagamentos', label: 'Pagamentos' },
+]
+
 const XML_EXCEL_ROUTINES: XmlExcelRoutineOption[] = [
   { id: 's-5002', label: 'Item S-5002', available: true },
   { id: 's-5011', label: 'Item S-5011', available: false },
@@ -97,6 +108,7 @@ type SidebarIconName =
   | 'daily-activities'
   | 'digte-demands'
   | 'customer-hub'
+    | 'central-servicos'
   | 'ticket-hub'
   | 'propostas'
   | 'rubricas-validacao'
@@ -129,6 +141,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
       return <path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm8 2c-2.67 0-8 1.34-8 4v2h12v-2c0-2.66-1.79-4-4-4zM8 14c-2.67 0-6 1.34-6 4v2h4" />
     case 'customer-hub':
       return <path d="M17 20h5v-2a3 3 0 0 0-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 0 1 9.288 0M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
+    case 'central-servicos':
+      return <path d="M4 7h16v10H4V7zm2 2v6h12V9H6zm3 9h6v2H9v-2zM8 4h8v2H8V4z" />
     case 'ticket-hub':
       return <path d="M7 9h10m-10 5h10m2-12H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 0V3a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2h14z" />
     case 'propostas':
@@ -354,6 +368,7 @@ function App() {
   const [selectedRubricaCatalogKey, setSelectedRubricaCatalogKey] = useState<RubricaCatalogPageKey>('rubrica-natureza')
   const [xmlExcelRoutine, setXmlExcelRoutine] = useState<XmlExcelRoutine>('s-5002')
   const [customerHubPage, setCustomerHubPage] = useState<CustomerHubPage>('dashboard')
+  const [centralServicosPage, setCentralServicosPage] = useState<CentralServicosPage>('dashboard')
   const [ticketHubPage, setTicketHubPage] = useState<'todos' | 'abertos' | 'admin'>('todos')
   const [openSidebarSubmenu, setOpenSidebarSubmenu] = useState<SidebarSubmenuSection | null>(null)
   const sourceMenuRef = useRef<HTMLDivElement | null>(null)
@@ -913,6 +928,52 @@ function App() {
               ))}
             </div>
           )}
+          {canAccessPage('central-servicos', currentUser) && (
+            <button
+              type="button"
+              className={`sidebar__link ${currentPage === 'central-servicos' ? 'sidebar__link--active' : ''}`}
+              onClick={() => {
+                setCurrentPage('central-servicos')
+                const isSamePage = currentPage === 'central-servicos'
+                const shouldCollapse = isSamePage && openSidebarSubmenu === 'central-servicos'
+                if (!isSamePage) {
+                  setCentralServicosPage('dashboard')
+                  setOpenSidebarSubmenu('central-servicos')
+                } else {
+                  setOpenSidebarSubmenu(shouldCollapse ? null : 'central-servicos')
+                }
+                setShowSourceMenu(false)
+              }}
+              aria-current={currentPage === 'central-servicos' ? 'page' : undefined}
+            >
+              <span className="sidebar__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <SidebarIcon name="central-servicos" />
+                </svg>
+              </span>
+              <span>Central de Serviços</span>
+            </button>
+          )}
+          {canAccessPage('central-servicos', currentUser) && currentPage === 'central-servicos' && openSidebarSubmenu === 'central-servicos' && (
+            <div className="sidebar__subnav" aria-label="Central de Serviços">
+              {CENTRAL_SERVICOS_PAGES.map((page) => (
+                <button
+                  key={page.id}
+                  type="button"
+                  className={`sidebar__sublink ${page.id === centralServicosPage ? 'sidebar__sublink--active' : ''}`}
+                  onClick={() => {
+                    setCurrentPage('central-servicos')
+                    setCentralServicosPage(page.id)
+                    setOpenSidebarSubmenu('central-servicos')
+                    setShowSourceMenu(false)
+                  }}
+                  aria-current={centralServicosPage === page.id ? 'page' : undefined}
+                >
+                  {page.label}
+                </button>
+              ))}
+            </div>
+          )}
           {canAccessPage('ticket-hub', currentUser) && (
             <button
               type="button"
@@ -1173,6 +1234,8 @@ function App() {
                   ? 'Alterar Senha'
                 : currentPage === 'customer-hub'
                   ? 'Central de Clientes'
+                : currentPage === 'central-servicos'
+                  ? 'Central de Serviços'
                 : currentPage === 'ticket-hub'
                   ? 'Central de Chamados'
                 : currentPage === 'propostas'
@@ -1217,6 +1280,8 @@ function App() {
                   ? 'Altere sua senha de acesso ao sistema.'
                 : currentPage === 'customer-hub'
                   ? 'Gestão de clientes, contatos, sistemas e atividades.'
+                : currentPage === 'central-servicos'
+                  ? 'Gestão de recursos, contratos, despesas, faturamentos e pagamentos.'
                 : currentPage === 'ticket-hub'
                   ? 'Gestão de chamados e tickets através do TomTicket.'
                 : currentPage === 'propostas'
@@ -1336,6 +1401,15 @@ function App() {
                     onClick={() => { setCurrentPage('customer-hub'); setCustomerHubPage('dashboard') }}
                   >
                     Abrir Central de Clientes
+                  </button>
+                )}
+                {canAccessPage('central-servicos', currentUser) && (
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => { setCurrentPage('central-servicos'); setCentralServicosPage('dashboard'); setOpenSidebarSubmenu('central-servicos') }}
+                  >
+                    Abrir Central de Serviços
                   </button>
                 )}
                 {canAccessPage('ticket-hub', currentUser) && (
@@ -1504,6 +1578,19 @@ function App() {
                     type="button"
                     className="button-secondary"
                     onClick={() => { setCurrentPage('customer-hub'); setCustomerHubPage('dashboard') }}
+                  >
+                    Acessar
+                  </button>
+                </section>
+              )}
+              {canAccessPage('central-servicos', currentUser) && (
+                <section className="card home-tool">
+                  <h3>Central de Serviços</h3>
+                  <p>Controle recursos, contratos, despesas, faturamentos e pagamentos em um único lugar.</p>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => { setCurrentPage('central-servicos'); setCentralServicosPage('dashboard'); setOpenSidebarSubmenu('central-servicos') }}
                   >
                     Acessar
                   </button>
@@ -1792,6 +1879,8 @@ function App() {
                   setOpenSidebarSubmenu('customer-hub')
                 }}
               />
+            ) : currentPage === 'central-servicos' ? (
+              <CentralServicosTool subPage={centralServicosPage} />
             ) : currentPage === 'ticket-hub' ? (
               <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
             ) : currentPage === 'propostas' ? (

@@ -2928,6 +2928,195 @@ button:disabled {
   font-weight: 700;
 }
 
+.central-servicos .estimativas-modal__header .button-secondary {
+  min-width: 84px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.central-servicos .estimativas-actions {
+  justify-content: flex-start;
+  margin-top: 0.25rem;
+}
+
+.central-servicos .estimativas-actions .button-primary {
+  min-width: 126px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.central-servicos {
+  display: grid;
+  gap: 1rem;
+}
+
+.central-servicos .ch-table-toolbar {
+  margin-bottom: 0.95rem;
+}
+
+.central-servicos .projeto-dev__item-panel,
+.central-servicos .projeto-dev__item-form-card,
+.central-servicos .projeto-dev__item-list-card,
+.central-servicos .projeto-dev__summary-card,
+.central-servicos .estimativas-modal {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-card);
+  padding: 1rem;
+}
+
+.central-servicos .projeto-dev__item-panel,
+.central-servicos .projeto-dev__item-form-card,
+.central-servicos .projeto-dev__item-list-card {
+  padding: 1rem;
+}
+
+.central-servicos .projeto-dev__item-panel-head h4,
+.central-servicos .projeto-dev__item-panel-head p,
+.central-servicos .ch-section-header h2,
+.central-servicos .ch-section-header p {
+  color: var(--ink-primary);
+}
+
+.central-servicos .projeto-dev__row-actions .button-secondary,
+.central-servicos .projeto-dev__actions .button-secondary,
+.central-servicos .projeto-dev__actions .button-primary {
+  min-height: 40px;
+}
+
+.central-servicos .ch-icon-action {
+  border-color: #c8ddd7;
+  background: #f0f7f5;
+}
+
+.central-servicos .ch-icon-action:hover {
+  background: #d6ede7;
+}
+
+.central-servicos .rule-tool__table-wrap,
+.central-servicos .csv-table {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line-soft);
+  background: var(--bg-surface);
+}
+
+.central-servicos .ch-badge {
+  background: #eaf5f1;
+  color: #246a56;
+}
+
+.central-servicos .ch-badge--danger,
+.central-servicos .ch-icon-action--danger {
+  color: var(--danger-700);
+}
+
+.central-servicos .ch-table-search input,
+.central-servicos .ch-table-toolbar select,
+.central-servicos .form-grid input,
+.central-servicos .form-grid select,
+.central-servicos .form-grid textarea,
+.central-servicos .estimativas-form input,
+.central-servicos .estimativas-form select,
+.central-servicos .estimativas-form textarea {
+  border-color: var(--line-soft);
+  color: var(--ink-secondary);
+  background: #fcfefd;
+}
+
+.central-servicos .form-grid label,
+.central-servicos .estimativas-form label {
+  color: var(--ink-primary);
+  font-weight: 700;
+}
+
+.central-servicos .central-servicos__toolbar {
+  padding: 0.85rem;
+}
+
+.ch-line-chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ch-line-chart {
+  width: 100%;
+  min-width: 640px;
+  height: auto;
+}
+
+.ch-line-chart__axis {
+  stroke: #d4e4df;
+  stroke-width: 1;
+}
+
+.ch-line-chart__line {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.ch-line-chart__line--primary {
+  stroke: #2b7a48;
+}
+
+.ch-line-chart__line--secondary {
+  stroke: #2f7a98;
+}
+
+.ch-line-chart__point {
+  stroke: #ffffff;
+  stroke-width: 2;
+  cursor: pointer;
+  transition: r 120ms ease;
+}
+
+.ch-line-chart__point--primary {
+  fill: #2b7a48;
+}
+
+.ch-line-chart__point--secondary {
+  fill: #2f7a98;
+}
+
+.ch-line-chart__label {
+  fill: #5d756f;
+  font-size: 11px;
+}
+
+.ch-dashboard-inline-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.ch-dashboard-inline-toolbar h3 {
+  margin: 0;
+}
+
+.ch-dashboard-inline-toolbar label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #43615a;
+}
+
+.ch-dashboard-inline-toolbar select {
+  min-width: 148px;
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--line-soft);
+  background: #fcfefd;
+  color: var(--ink-secondary);
+  padding: 0 0.6rem;
+}
+
 .ch-ticket-detail-overlay {
   position: fixed;
   inset: 0;

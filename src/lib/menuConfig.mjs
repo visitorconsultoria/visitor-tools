@@ -9,6 +9,7 @@ export const MENU_DEFINITIONS = Object.freeze([
   { key: 'daily-activities', label: 'Apontamentos', assignable: true },
   { key: 'digte-demands', label: 'Demandas DIGTE', assignable: true },
   { key: 'customer-hub', label: 'Central de Clientes', assignable: true },
+  { key: 'central-servicos', label: 'Central de Serviços', assignable: true },
   { key: 'ticket-hub', label: 'Central de Chamados', assignable: true },
   { key: 'propostas', label: 'Propostas Comerciais', assignable: true },
   { key: 'rubricas-validacao', label: 'Validação de Rubricas', assignable: true },

@@ -15,6 +15,7 @@ export type AllowedMenu =
   | 'daily-activities'
   | 'digte-demands'
   | 'customer-hub'
+  | 'central-servicos'
   | 'ticket-hub'
   | 'propostas'
   | 'rubricas-validacao'

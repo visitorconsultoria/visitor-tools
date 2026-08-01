@@ -61,6 +61,11 @@ function getSupabaseConfig() {
     customerProcessesTable: process.env.SUPABASE_CUSTOMER_PROCESSES_TABLE || 'customer_hub_processes',
     customerActivitiesTable: process.env.SUPABASE_CUSTOMER_ACTIVITIES_TABLE || 'customer_hub_activities',
     customerStatusReportHistoryTable: process.env.SUPABASE_CUSTOMER_STATUS_REPORT_HISTORY_TABLE || 'customer_hub_status_report_history',
+    centralServicosRecursosTable: process.env.SUPABASE_CENTRAL_SERVICOS_RECURSOS_TABLE || 'central_servicos_recursos',
+    centralServicosContratosServicosTable: process.env.SUPABASE_CENTRAL_SERVICOS_CONTRATOS_SERVICOS_TABLE || 'central_servicos_contratos_servicos',
+    centralServicosDespesasTable: process.env.SUPABASE_CENTRAL_SERVICOS_DESPESAS_TABLE || 'central_servicos_despesas',
+    centralServicosFaturamentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_FATURAMENTOS_TABLE || 'central_servicos_faturamentos',
+    centralServicosPagamentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_PAGAMENTOS_TABLE || 'central_servicos_pagamentos',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
     devProjectsTable: process.env.SUPABASE_DEV_PROJECTS_TABLE || 'dev_projects',
@@ -113,6 +118,11 @@ function getSupabaseClient() {
     customerProcessesTable: config.customerProcessesTable,
     customerActivitiesTable: config.customerActivitiesTable,
     customerStatusReportHistoryTable: config.customerStatusReportHistoryTable,
+    centralServicosRecursosTable: config.centralServicosRecursosTable,
+    centralServicosContratosServicosTable: config.centralServicosContratosServicosTable,
+    centralServicosDespesasTable: config.centralServicosDespesasTable,
+    centralServicosFaturamentosTable: config.centralServicosFaturamentosTable,
+    centralServicosPagamentosTable: config.centralServicosPagamentosTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
     devProjectsTable: config.devProjectsTable,
@@ -1086,6 +1096,533 @@ async function deleteDevProjectItem(projectId, itemId) {
 
   if (error) throw new Error(error.message)
   return getDevProjectById(projectId)
+}
+
+const CENTRAL_SERVICOS_RESOURCE_SEXES = ['Nao Informado', 'Masculino', 'Feminino', 'Outro']
+const CENTRAL_SERVICOS_RESOURCE_STATUS = ['Ativo', 'Inativo', 'Bloqueado']
+const CENTRAL_SERVICOS_RELATION_TYPES = ['Cliente', 'Recurso']
+const CENTRAL_SERVICOS_CONTRACT_TYPES = ['Recorrente', 'Banco de Horas', 'Delivery', 'Projeto']
+const CENTRAL_SERVICOS_VALUE_TYPES = ['Hora', 'Valor', 'Tarefa']
+const CENTRAL_SERVICOS_EXPENSE_TYPES = ['Fixa', 'Avulsa']
+const CENTRAL_SERVICOS_INVOICE_STATUS = ['Pendente', 'Faturado', 'Pago']
+const CENTRAL_SERVICOS_PAYMENT_STATUS = ['Pendente', 'Pago']
+
+function parseCentralServicosTextInput(value) {
+  return String(value ?? '').trim()
+}
+
+function parseCentralServicosNullableDateInput(value) {
+  const text = parseCentralServicosTextInput(value)
+  return text || null
+}
+
+function parseCentralServicosNullableNumberInput(value) {
+  const text = parseCentralServicosTextInput(value).replace(',', '.')
+  if (!text) return null
+  const parsed = Number(text)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeCentralServicosResourceRow(row) {
+  const id = Number(row?.id)
+  const nome = parseCentralServicosTextInput(row?.nome)
+  if (!Number.isFinite(id) || id <= 0 || !nome) return null
+
+  const sexo = parseCentralServicosTextInput(row?.sexo)
+  const status = parseCentralServicosTextInput(row?.status)
+
+  return {
+    id,
+    nome,
+    cpf: parseCentralServicosTextInput(row?.cpf),
+    cnpj: parseCentralServicosTextInput(row?.cnpj),
+    sexo: CENTRAL_SERVICOS_RESOURCE_SEXES.includes(sexo) ? sexo : 'Nao Informado',
+    dataNascimento: parseCentralServicosTextInput(row?.data_nascimento),
+    emailPessoal: parseCentralServicosTextInput(row?.email_pessoal),
+    dadosPagamento: parseCentralServicosTextInput(row?.dados_pagamento),
+    status: CENTRAL_SERVICOS_RESOURCE_STATUS.includes(status) ? status : 'Ativo',
+  }
+}
+
+function parseCentralServicosResourcePayload(payload) {
+  const sexo = parseCentralServicosTextInput(payload?.sexo)
+  const status = parseCentralServicosTextInput(payload?.status)
+
+  return {
+    nome: parseCentralServicosTextInput(payload?.nome),
+    cpf: parseCentralServicosTextInput(payload?.cpf),
+    cnpj: parseCentralServicosTextInput(payload?.cnpj),
+    sexo: CENTRAL_SERVICOS_RESOURCE_SEXES.includes(sexo) ? sexo : 'Nao Informado',
+    data_nascimento: parseCentralServicosNullableDateInput(payload?.data_nascimento ?? payload?.dataNascimento),
+    email_pessoal: parseCentralServicosTextInput(payload?.email_pessoal ?? payload?.emailPessoal),
+    dados_pagamento: parseCentralServicosTextInput(payload?.dados_pagamento ?? payload?.dadosPagamento),
+    status: CENTRAL_SERVICOS_RESOURCE_STATUS.includes(status) ? status : 'Ativo',
+  }
+}
+
+function validateCentralServicosResourcePayload(parsed) {
+  if (!parsed.nome) {
+    throw new Error('Informe o nome do recurso.')
+  }
+}
+
+function normalizeCentralServicosContractRow(row) {
+  const id = Number(row?.id)
+  const titulo = parseCentralServicosTextInput(row?.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  const tipo = parseCentralServicosTextInput(row?.tipo)
+  const tipoContrato = parseCentralServicosTextInput(row?.tipo_contrato)
+  const tipoValor = parseCentralServicosTextInput(row?.tipo_valor)
+  const status = parseCentralServicosTextInput(row?.status)
+
+  return {
+    id,
+    titulo,
+    tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    relaciona: parseCentralServicosTextInput(row?.relaciona),
+    descricao: parseCentralServicosTextInput(row?.descricao),
+    tipoContrato: CENTRAL_SERVICOS_CONTRACT_TYPES.includes(tipoContrato) ? tipoContrato : 'Recorrente',
+    valorUnitario: row?.valor_unitario === null || row?.valor_unitario === undefined ? null : Number(row.valor_unitario),
+    tipoValor: CENTRAL_SERVICOS_VALUE_TYPES.includes(tipoValor) ? tipoValor : 'Hora',
+    quantidade: row?.quantidade === null || row?.quantidade === undefined ? null : Number(row.quantidade),
+    dataInicio: parseCentralServicosTextInput(row?.data_inicio),
+    vigenciaInicio: parseCentralServicosTextInput(row?.vigencia_inicio),
+    vigenciaTermino: parseCentralServicosTextInput(row?.vigencia_termino),
+    observacoes: parseCentralServicosTextInput(row?.observacoes),
+    status: status === 'Encerrado' ? 'Encerrado' : 'Ativo',
+  }
+}
+
+function parseCentralServicosContractPayload(payload) {
+  const tipo = parseCentralServicosTextInput(payload?.tipo)
+  const tipoContrato = parseCentralServicosTextInput(payload?.tipo_contrato ?? payload?.tipoContrato)
+  const tipoValor = parseCentralServicosTextInput(payload?.tipo_valor ?? payload?.tipoValor)
+  const status = parseCentralServicosTextInput(payload?.status)
+
+  return {
+    titulo: parseCentralServicosTextInput(payload?.titulo),
+    tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    relaciona: parseCentralServicosTextInput(payload?.relaciona),
+    descricao: parseCentralServicosTextInput(payload?.descricao),
+    tipo_contrato: CENTRAL_SERVICOS_CONTRACT_TYPES.includes(tipoContrato) ? tipoContrato : 'Recorrente',
+    valor_unitario: parseCentralServicosNullableNumberInput(payload?.valor_unitario ?? payload?.valorUnitario),
+    tipo_valor: CENTRAL_SERVICOS_VALUE_TYPES.includes(tipoValor) ? tipoValor : 'Hora',
+    quantidade: parseCentralServicosNullableNumberInput(payload?.quantidade),
+    data_inicio: parseCentralServicosNullableDateInput(payload?.data_inicio ?? payload?.dataInicio),
+    vigencia_inicio: parseCentralServicosNullableDateInput(payload?.vigencia_inicio ?? payload?.vigenciaInicio),
+    vigencia_termino: parseCentralServicosNullableDateInput(payload?.vigencia_termino ?? payload?.vigenciaTermino),
+    observacoes: parseCentralServicosTextInput(payload?.observacoes),
+    status: status === 'Encerrado' ? 'Encerrado' : 'Ativo',
+  }
+}
+
+function validateCentralServicosContractPayload(parsed) {
+  if (!parsed.titulo) {
+    throw new Error('Informe o título do contrato.')
+  }
+}
+
+function normalizeCentralServicosExpenseRow(row) {
+  const id = Number(row?.id)
+  const titulo = parseCentralServicosTextInput(row?.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  const tipo = parseCentralServicosTextInput(row?.tipo)
+  const tipoDespesa = parseCentralServicosTextInput(row?.tipo_despesa)
+  const tipoValor = parseCentralServicosTextInput(row?.tipo_valor)
+
+  return {
+    id,
+    titulo,
+    tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    relaciona: parseCentralServicosTextInput(row?.relaciona),
+    descricao: parseCentralServicosTextInput(row?.descricao),
+    tipoDespesa: CENTRAL_SERVICOS_EXPENSE_TYPES.includes(tipoDespesa) ? tipoDespesa : 'Fixa',
+    valorUnitario: row?.valor_unitario === null || row?.valor_unitario === undefined ? null : Number(row.valor_unitario),
+    tipoValor: CENTRAL_SERVICOS_VALUE_TYPES.includes(tipoValor) ? tipoValor : 'Hora',
+    quantidade: row?.quantidade === null || row?.quantidade === undefined ? null : Number(row.quantidade),
+    dataInicio: parseCentralServicosTextInput(row?.data_inicio),
+    vigenciaInicio: parseCentralServicosTextInput(row?.vigencia_inicio),
+    vigenciaTermino: parseCentralServicosTextInput(row?.vigencia_termino),
+    observacoes: parseCentralServicosTextInput(row?.observacoes),
+  }
+}
+
+function parseCentralServicosExpensePayload(payload) {
+  const tipo = parseCentralServicosTextInput(payload?.tipo)
+  const tipoDespesa = parseCentralServicosTextInput(payload?.tipo_despesa ?? payload?.tipoDespesa)
+  const tipoValor = parseCentralServicosTextInput(payload?.tipo_valor ?? payload?.tipoValor)
+
+  return {
+    titulo: parseCentralServicosTextInput(payload?.titulo),
+    tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    relaciona: parseCentralServicosTextInput(payload?.relaciona),
+    descricao: parseCentralServicosTextInput(payload?.descricao),
+    tipo_despesa: CENTRAL_SERVICOS_EXPENSE_TYPES.includes(tipoDespesa) ? tipoDespesa : 'Fixa',
+    valor_unitario: parseCentralServicosNullableNumberInput(payload?.valor_unitario ?? payload?.valorUnitario),
+    tipo_valor: CENTRAL_SERVICOS_VALUE_TYPES.includes(tipoValor) ? tipoValor : 'Hora',
+    quantidade: parseCentralServicosNullableNumberInput(payload?.quantidade),
+    data_inicio: parseCentralServicosNullableDateInput(payload?.data_inicio ?? payload?.dataInicio),
+    vigencia_inicio: parseCentralServicosNullableDateInput(payload?.vigencia_inicio ?? payload?.vigenciaInicio),
+    vigencia_termino: parseCentralServicosNullableDateInput(payload?.vigencia_termino ?? payload?.vigenciaTermino),
+    observacoes: parseCentralServicosTextInput(payload?.observacoes),
+  }
+}
+
+function validateCentralServicosExpensePayload(parsed) {
+  if (!parsed.titulo) {
+    throw new Error('Informe o título da despesa.')
+  }
+}
+
+function normalizeCentralServicosInvoiceRow(row) {
+  const id = Number(row?.id)
+  const titulo = parseCentralServicosTextInput(row?.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  const status = parseCentralServicosTextInput(row?.status)
+
+  return {
+    id,
+    titulo,
+    nota: parseCentralServicosTextInput(row?.nota),
+    emissao: parseCentralServicosTextInput(row?.emissao),
+    referencia: parseCentralServicosTextInput(row?.referencia),
+    previsaoPagamento: parseCentralServicosTextInput(row?.previsao_pagamento),
+    cliente: parseCentralServicosTextInput(row?.cliente),
+    contrato: parseCentralServicosTextInput(row?.contrato),
+    descricao: parseCentralServicosTextInput(row?.descricao),
+    valor: row?.valor === null || row?.valor === undefined ? null : Number(row.valor),
+    status: CENTRAL_SERVICOS_INVOICE_STATUS.includes(status) ? status : 'Pendente',
+    dataPagamento: parseCentralServicosTextInput(row?.data_pagamento),
+  }
+}
+
+function parseCentralServicosInvoicePayload(payload) {
+  const status = parseCentralServicosTextInput(payload?.status)
+
+  return {
+    titulo: parseCentralServicosTextInput(payload?.titulo),
+    nota: parseCentralServicosTextInput(payload?.nota),
+    emissao: parseCentralServicosNullableDateInput(payload?.emissao),
+    referencia: parseCentralServicosTextInput(payload?.referencia),
+    previsao_pagamento: parseCentralServicosNullableDateInput(payload?.previsao_pagamento ?? payload?.previsaoPagamento),
+    cliente: parseCentralServicosTextInput(payload?.cliente),
+    contrato: parseCentralServicosTextInput(payload?.contrato),
+    descricao: parseCentralServicosTextInput(payload?.descricao),
+    valor: parseCentralServicosNullableNumberInput(payload?.valor),
+    status: CENTRAL_SERVICOS_INVOICE_STATUS.includes(status) ? status : 'Pendente',
+    data_pagamento: parseCentralServicosNullableDateInput(payload?.data_pagamento ?? payload?.dataPagamento),
+  }
+}
+
+function validateCentralServicosInvoicePayload(parsed) {
+  if (!parsed.titulo) {
+    throw new Error('Informe o título do faturamento.')
+  }
+}
+
+function normalizeCentralServicosPaymentRow(row) {
+  const id = Number(row?.id)
+  const titulo = parseCentralServicosTextInput(row?.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  const tipo = parseCentralServicosTextInput(row?.tipo)
+  const status = parseCentralServicosTextInput(row?.status)
+
+  return {
+    id,
+    titulo,
+    nota: parseCentralServicosTextInput(row?.nota),
+    emissao: parseCentralServicosTextInput(row?.emissao),
+    referencia: parseCentralServicosTextInput(row?.referencia),
+    previsaoPagamento: parseCentralServicosTextInput(row?.previsao_pagamento),
+    tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    contrato: parseCentralServicosTextInput(row?.contrato),
+    descricao: parseCentralServicosTextInput(row?.descricao),
+    valor: row?.valor === null || row?.valor === undefined ? null : Number(row.valor),
+    status: CENTRAL_SERVICOS_PAYMENT_STATUS.includes(status) ? status : 'Pendente',
+    dataPagamento: parseCentralServicosTextInput(row?.data_pagamento),
+  }
+}
+
+function parseCentralServicosPaymentPayload(payload) {
+  const tipo = parseCentralServicosTextInput(payload?.tipo)
+  const status = parseCentralServicosTextInput(payload?.status)
+
+  return {
+    titulo: parseCentralServicosTextInput(payload?.titulo),
+    nota: parseCentralServicosTextInput(payload?.nota),
+    emissao: parseCentralServicosNullableDateInput(payload?.emissao),
+    referencia: parseCentralServicosTextInput(payload?.referencia),
+    previsao_pagamento: parseCentralServicosNullableDateInput(payload?.previsao_pagamento ?? payload?.previsaoPagamento),
+    tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    contrato: parseCentralServicosTextInput(payload?.contrato),
+    descricao: parseCentralServicosTextInput(payload?.descricao),
+    valor: parseCentralServicosNullableNumberInput(payload?.valor),
+    status: CENTRAL_SERVICOS_PAYMENT_STATUS.includes(status) ? status : 'Pendente',
+    data_pagamento: parseCentralServicosNullableDateInput(payload?.data_pagamento ?? payload?.dataPagamento),
+  }
+}
+
+function validateCentralServicosPaymentPayload(parsed) {
+  if (!parsed.titulo) {
+    throw new Error('Informe o título do pagamento.')
+  }
+}
+
+async function listCentralServicosItems(tableName, columns, orderColumn, normalizeRow) {
+  const { client } = getSupabaseClient()
+
+  const { data: rows, error } = await client
+    .from(tableName)
+    .select(columns)
+    .order(orderColumn, { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeRow).filter(Boolean)
+}
+
+async function createCentralServicosItem(tableName, payload, selectColumns, parsePayload, validatePayload, normalizeRow) {
+  const parsed = parsePayload(payload)
+  validatePayload(parsed)
+
+  const { client } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(tableName)
+    .insert(parsed)
+    .select(selectColumns)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRow(row)
+}
+
+async function updateCentralServicosItem(tableName, id, payload, selectColumns, parsePayload, validatePayload, normalizeRow) {
+  const parsed = parsePayload(payload)
+  validatePayload(parsed)
+
+  const { client } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(tableName)
+    .update(parsed)
+    .eq('id', id)
+    .select(selectColumns)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeRow(row)
+}
+
+async function deleteCentralServicosItem(tableName, id) {
+  const { client } = getSupabaseClient()
+  const { error } = await client
+    .from(tableName)
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+async function listCentralServicosRecursos() {
+  const { centralServicosRecursosTable } = getSupabaseClient()
+  return listCentralServicosItems(
+    centralServicosRecursosTable,
+    'id, nome, cpf, cnpj, sexo, data_nascimento, email_pessoal, dados_pagamento, status',
+    'nome',
+    normalizeCentralServicosResourceRow,
+  )
+}
+
+async function createCentralServicosRecurso(payload) {
+  const { centralServicosRecursosTable } = getSupabaseClient()
+  return createCentralServicosItem(
+    centralServicosRecursosTable,
+    payload,
+    'id, nome, cpf, cnpj, sexo, data_nascimento, email_pessoal, dados_pagamento, status',
+    parseCentralServicosResourcePayload,
+    validateCentralServicosResourcePayload,
+    normalizeCentralServicosResourceRow,
+  )
+}
+
+async function updateCentralServicosRecurso(id, payload) {
+  const { centralServicosRecursosTable } = getSupabaseClient()
+  return updateCentralServicosItem(
+    centralServicosRecursosTable,
+    id,
+    payload,
+    'id, nome, cpf, cnpj, sexo, data_nascimento, email_pessoal, dados_pagamento, status',
+    parseCentralServicosResourcePayload,
+    validateCentralServicosResourcePayload,
+    normalizeCentralServicosResourceRow,
+  )
+}
+
+async function deleteCentralServicosRecurso(id) {
+  const { centralServicosRecursosTable } = getSupabaseClient()
+  await deleteCentralServicosItem(centralServicosRecursosTable, id)
+}
+
+async function listCentralServicosContratos() {
+  const { centralServicosContratosServicosTable } = getSupabaseClient()
+  return listCentralServicosItems(
+    centralServicosContratosServicosTable,
+    'id, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes, status',
+    'titulo',
+    normalizeCentralServicosContractRow,
+  )
+}
+
+async function createCentralServicosContrato(payload) {
+  const { centralServicosContratosServicosTable } = getSupabaseClient()
+  return createCentralServicosItem(
+    centralServicosContratosServicosTable,
+    payload,
+    'id, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes, status',
+    parseCentralServicosContractPayload,
+    validateCentralServicosContractPayload,
+    normalizeCentralServicosContractRow,
+  )
+}
+
+async function updateCentralServicosContrato(id, payload) {
+  const { centralServicosContratosServicosTable } = getSupabaseClient()
+  return updateCentralServicosItem(
+    centralServicosContratosServicosTable,
+    id,
+    payload,
+    'id, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes, status',
+    parseCentralServicosContractPayload,
+    validateCentralServicosContractPayload,
+    normalizeCentralServicosContractRow,
+  )
+}
+
+async function deleteCentralServicosContrato(id) {
+  const { centralServicosContratosServicosTable } = getSupabaseClient()
+  await deleteCentralServicosItem(centralServicosContratosServicosTable, id)
+}
+
+async function listCentralServicosDespesas() {
+  const { centralServicosDespesasTable } = getSupabaseClient()
+  return listCentralServicosItems(
+    centralServicosDespesasTable,
+    'id, titulo, tipo, relaciona, descricao, tipo_despesa, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes',
+    'titulo',
+    normalizeCentralServicosExpenseRow,
+  )
+}
+
+async function createCentralServicosDespesa(payload) {
+  const { centralServicosDespesasTable } = getSupabaseClient()
+  return createCentralServicosItem(
+    centralServicosDespesasTable,
+    payload,
+    'id, titulo, tipo, relaciona, descricao, tipo_despesa, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes',
+    parseCentralServicosExpensePayload,
+    validateCentralServicosExpensePayload,
+    normalizeCentralServicosExpenseRow,
+  )
+}
+
+async function updateCentralServicosDespesa(id, payload) {
+  const { centralServicosDespesasTable } = getSupabaseClient()
+  return updateCentralServicosItem(
+    centralServicosDespesasTable,
+    id,
+    payload,
+    'id, titulo, tipo, relaciona, descricao, tipo_despesa, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes',
+    parseCentralServicosExpensePayload,
+    validateCentralServicosExpensePayload,
+    normalizeCentralServicosExpenseRow,
+  )
+}
+
+async function deleteCentralServicosDespesa(id) {
+  const { centralServicosDespesasTable } = getSupabaseClient()
+  await deleteCentralServicosItem(centralServicosDespesasTable, id)
+}
+
+async function listCentralServicosFaturamentos() {
+  const { centralServicosFaturamentosTable } = getSupabaseClient()
+  return listCentralServicosItems(
+    centralServicosFaturamentosTable,
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, valor, status, data_pagamento',
+    'titulo',
+    normalizeCentralServicosInvoiceRow,
+  )
+}
+
+async function createCentralServicosFaturamento(payload) {
+  const { centralServicosFaturamentosTable } = getSupabaseClient()
+  return createCentralServicosItem(
+    centralServicosFaturamentosTable,
+    payload,
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, valor, status, data_pagamento',
+    parseCentralServicosInvoicePayload,
+    validateCentralServicosInvoicePayload,
+    normalizeCentralServicosInvoiceRow,
+  )
+}
+
+async function updateCentralServicosFaturamento(id, payload) {
+  const { centralServicosFaturamentosTable } = getSupabaseClient()
+  return updateCentralServicosItem(
+    centralServicosFaturamentosTable,
+    id,
+    payload,
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, valor, status, data_pagamento',
+    parseCentralServicosInvoicePayload,
+    validateCentralServicosInvoicePayload,
+    normalizeCentralServicosInvoiceRow,
+  )
+}
+
+async function deleteCentralServicosFaturamento(id) {
+  const { centralServicosFaturamentosTable } = getSupabaseClient()
+  await deleteCentralServicosItem(centralServicosFaturamentosTable, id)
+}
+
+async function listCentralServicosPagamentos() {
+  const { centralServicosPagamentosTable } = getSupabaseClient()
+  return listCentralServicosItems(
+    centralServicosPagamentosTable,
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, contrato, descricao, valor, status, data_pagamento',
+    'titulo',
+    normalizeCentralServicosPaymentRow,
+  )
+}
+
+async function createCentralServicosPagamento(payload) {
+  const { centralServicosPagamentosTable } = getSupabaseClient()
+  return createCentralServicosItem(
+    centralServicosPagamentosTable,
+    payload,
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, contrato, descricao, valor, status, data_pagamento',
+    parseCentralServicosPaymentPayload,
+    validateCentralServicosPaymentPayload,
+    normalizeCentralServicosPaymentRow,
+  )
+}
+
+async function updateCentralServicosPagamento(id, payload) {
+  const { centralServicosPagamentosTable } = getSupabaseClient()
+  return updateCentralServicosItem(
+    centralServicosPagamentosTable,
+    id,
+    payload,
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, contrato, descricao, valor, status, data_pagamento',
+    parseCentralServicosPaymentPayload,
+    validateCentralServicosPaymentPayload,
+    normalizeCentralServicosPaymentRow,
+  )
+}
+
+async function deleteCentralServicosPagamento(id) {
+  const { centralServicosPagamentosTable } = getSupabaseClient()
+  await deleteCentralServicosItem(centralServicosPagamentosTable, id)
 }
 
 function parseDataDictionarySyncPayload(payload) {
@@ -2651,6 +3188,216 @@ app.delete('/api/projeto-dev/projects/:id/items/:itemId', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir item do projeto dev: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/recursos', async (_req, res) => {
+  try {
+    const items = await listCentralServicosRecursos()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar recursos: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/recursos', async (req, res) => {
+  try {
+    const item = await createCentralServicosRecurso(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar recurso: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/recursos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do recurso')
+    const item = await updateCentralServicosRecurso(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar recurso: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/recursos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do recurso')
+    await deleteCentralServicosRecurso(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir recurso: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/contratos-servicos', async (_req, res) => {
+  try {
+    const items = await listCentralServicosContratos()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar contratos: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/contratos-servicos', async (req, res) => {
+  try {
+    const item = await createCentralServicosContrato(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar contrato: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/contratos-servicos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do contrato')
+    const item = await updateCentralServicosContrato(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar contrato: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/contratos-servicos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do contrato')
+    await deleteCentralServicosContrato(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir contrato: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/despesas', async (_req, res) => {
+  try {
+    const items = await listCentralServicosDespesas()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar despesas: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/despesas', async (req, res) => {
+  try {
+    const item = await createCentralServicosDespesa(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar despesa: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/despesas/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID da despesa')
+    const item = await updateCentralServicosDespesa(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar despesa: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/despesas/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID da despesa')
+    await deleteCentralServicosDespesa(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir despesa: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/faturamentos', async (_req, res) => {
+  try {
+    const items = await listCentralServicosFaturamentos()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar faturamentos: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/faturamentos', async (req, res) => {
+  try {
+    const item = await createCentralServicosFaturamento(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar faturamento: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/faturamentos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do faturamento')
+    const item = await updateCentralServicosFaturamento(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar faturamento: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/faturamentos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do faturamento')
+    await deleteCentralServicosFaturamento(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir faturamento: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/pagamentos', async (_req, res) => {
+  try {
+    const items = await listCentralServicosPagamentos()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar pagamentos: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/pagamentos', async (req, res) => {
+  try {
+    const item = await createCentralServicosPagamento(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar pagamento: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/pagamentos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do pagamento')
+    const item = await updateCentralServicosPagamento(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar pagamento: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/pagamentos/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do pagamento')
+    await deleteCentralServicosPagamento(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir pagamento: ${detail}` })
   }
 })
 

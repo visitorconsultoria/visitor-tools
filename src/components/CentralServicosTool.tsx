@@ -1,0 +1,2414 @@
+import { createPortal } from 'react-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { apiUrl } from '../lib/api'
+
+export type CentralServicosPage = 'dashboard' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos'
+
+type ApiListResponse = {
+  items?: unknown[]
+}
+
+type ResourceStatus = 'Ativo' | 'Inativo' | 'Bloqueado'
+type RelationType = 'Cliente' | 'Recurso'
+type ContractType = 'Recorrente' | 'Banco de Horas' | 'Delivery' | 'Projeto'
+type ValueType = 'Hora' | 'Valor' | 'Tarefa'
+type ExpenseType = 'Fixa' | 'Avulsa'
+type InvoiceStatus = 'Pendente' | 'Faturado' | 'Pago'
+type PaymentStatus = 'Pendente' | 'Pago'
+type SortDirection = 'asc' | 'desc'
+type ResourceSortKey = 'nome' | 'cpf' | 'cnpj' | 'sexo' | 'status'
+type ContractSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoContrato' | 'valorUnitario' | 'status'
+type ExpenseSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoDespesa' | 'valorUnitario'
+type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'valor' | 'status'
+type PaymentSortKey = 'titulo' | 'tipo' | 'contrato' | 'emissao' | 'valor' | 'status'
+
+type ResourceItem = {
+  id: number
+  nome: string
+  cpf: string
+  cnpj: string
+  sexo: string
+  dataNascimento: string
+  emailPessoal: string
+  dadosPagamento: string
+  status: ResourceStatus
+}
+
+type ResourceForm = {
+  nome: string
+  cpf: string
+  cnpj: string
+  sexo: string
+  dataNascimento: string
+  emailPessoal: string
+  dadosPagamento: string
+  status: ResourceStatus
+}
+
+type ContractItem = {
+  id: number
+  titulo: string
+  tipo: RelationType
+  relaciona: string
+  descricao: string
+  tipoContrato: ContractType
+  valorUnitario: number | null
+  tipoValor: ValueType
+  quantidade: number | null
+  dataInicio: string
+  vigenciaInicio: string
+  vigenciaTermino: string
+  observacoes: string
+  status: 'Ativo' | 'Encerrado'
+}
+
+type ContractForm = {
+  titulo: string
+  tipo: RelationType
+  relaciona: string
+  descricao: string
+  tipoContrato: ContractType
+  valorUnitario: string
+  tipoValor: ValueType
+  quantidade: string
+  dataInicio: string
+  vigenciaInicio: string
+  vigenciaTermino: string
+  observacoes: string
+  status: 'Ativo' | 'Encerrado'
+}
+
+type ExpenseItem = {
+  id: number
+  titulo: string
+  tipo: RelationType
+  relaciona: string
+  descricao: string
+  tipoDespesa: ExpenseType
+  valorUnitario: number | null
+  tipoValor: ValueType
+  quantidade: number | null
+  dataInicio: string
+  vigenciaInicio: string
+  vigenciaTermino: string
+  observacoes: string
+}
+
+type ExpenseForm = {
+  titulo: string
+  tipo: RelationType
+  relaciona: string
+  descricao: string
+  tipoDespesa: ExpenseType
+  valorUnitario: string
+  tipoValor: ValueType
+  quantidade: string
+  dataInicio: string
+  vigenciaInicio: string
+  vigenciaTermino: string
+  observacoes: string
+}
+
+type InvoiceItem = {
+  id: number
+  titulo: string
+  nota: string
+  emissao: string
+  referencia: string
+  previsaoPagamento: string
+  cliente: string
+  contrato: string
+  descricao: string
+  valor: number | null
+  status: InvoiceStatus
+  dataPagamento: string
+}
+
+type InvoiceForm = {
+  titulo: string
+  nota: string
+  emissao: string
+  referencia: string
+  previsaoPagamento: string
+  cliente: string
+  contrato: string
+  descricao: string
+  valor: string
+  status: InvoiceStatus
+  dataPagamento: string
+}
+
+type PaymentItem = {
+  id: number
+  titulo: string
+  nota: string
+  emissao: string
+  referencia: string
+  previsaoPagamento: string
+  tipo: RelationType
+  contrato: string
+  descricao: string
+  valor: number | null
+  status: PaymentStatus
+  dataPagamento: string
+}
+
+type PaymentForm = {
+  titulo: string
+  nota: string
+  emissao: string
+  referencia: string
+  previsaoPagamento: string
+  tipo: RelationType
+  contrato: string
+  descricao: string
+  valor: string
+  status: PaymentStatus
+  dataPagamento: string
+}
+
+const EMPTY_RESOURCE_FORM: ResourceForm = {
+  nome: '',
+  cpf: '',
+  cnpj: '',
+  sexo: 'Nao Informado',
+  dataNascimento: '',
+  emailPessoal: '',
+  dadosPagamento: '',
+  status: 'Ativo',
+}
+
+const EMPTY_CONTRACT_FORM: ContractForm = {
+  titulo: '',
+  tipo: 'Cliente',
+  relaciona: '',
+  descricao: '',
+  tipoContrato: 'Recorrente',
+  valorUnitario: '',
+  tipoValor: 'Hora',
+  quantidade: '',
+  dataInicio: '',
+  vigenciaInicio: '',
+  vigenciaTermino: '',
+  observacoes: '',
+  status: 'Ativo',
+}
+
+const EMPTY_EXPENSE_FORM: ExpenseForm = {
+  titulo: '',
+  tipo: 'Cliente',
+  relaciona: '',
+  descricao: '',
+  tipoDespesa: 'Fixa',
+  valorUnitario: '',
+  tipoValor: 'Hora',
+  quantidade: '',
+  dataInicio: '',
+  vigenciaInicio: '',
+  vigenciaTermino: '',
+  observacoes: '',
+}
+
+const EMPTY_INVOICE_FORM: InvoiceForm = {
+  titulo: '',
+  nota: '',
+  emissao: '',
+  referencia: '',
+  previsaoPagamento: '',
+  cliente: '',
+  contrato: '',
+  descricao: '',
+  valor: '',
+  status: 'Pendente',
+  dataPagamento: '',
+}
+
+const EMPTY_PAYMENT_FORM: PaymentForm = {
+  titulo: '',
+  nota: '',
+  emissao: '',
+  referencia: '',
+  previsaoPagamento: '',
+  tipo: 'Cliente',
+  contrato: '',
+  descricao: '',
+  valor: '',
+  status: 'Pendente',
+  dataPagamento: '',
+}
+
+const RESOURCE_SEX_OPTIONS = ['Nao Informado', 'Masculino', 'Feminino', 'Outro'] as const
+const RESOURCE_STATUS_OPTIONS: ResourceStatus[] = ['Ativo', 'Inativo', 'Bloqueado']
+const RELATION_TYPE_OPTIONS: RelationType[] = ['Cliente', 'Recurso']
+const CONTRACT_TYPE_OPTIONS: ContractType[] = ['Recorrente', 'Banco de Horas', 'Delivery', 'Projeto']
+const VALUE_TYPE_OPTIONS: ValueType[] = ['Hora', 'Valor', 'Tarefa']
+const EXPENSE_TYPE_OPTIONS: ExpenseType[] = ['Fixa', 'Avulsa']
+const INVOICE_STATUS_OPTIONS: InvoiceStatus[] = ['Pendente', 'Faturado', 'Pago']
+const PAYMENT_STATUS_OPTIONS: PaymentStatus[] = ['Pendente', 'Pago']
+const RESOURCE_DEFAULT_SORT: { key: ResourceSortKey; direction: SortDirection } = { key: 'nome', direction: 'asc' }
+const CONTRACT_DEFAULT_SORT: { key: ContractSortKey; direction: SortDirection } = { key: 'titulo', direction: 'asc' }
+const EXPENSE_DEFAULT_SORT: { key: ExpenseSortKey; direction: SortDirection } = { key: 'titulo', direction: 'asc' }
+const INVOICE_DEFAULT_SORT: { key: InvoiceSortKey; direction: SortDirection } = { key: 'emissao', direction: 'desc' }
+const PAYMENT_DEFAULT_SORT: { key: PaymentSortKey; direction: SortDirection } = { key: 'emissao', direction: 'desc' }
+
+const PAGE_META: Record<CentralServicosPage, { title: string; description: string; emptyLabel: string; searchPlaceholder: string }> = {
+  dashboard: {
+    title: 'Dashboard de Faturamento',
+    description: 'Acompanhe indicadores de faturamento, status e evolução mensal.',
+    emptyLabel: 'Faturamento',
+    searchPlaceholder: 'Buscar por título, cliente, contrato ou status',
+  },
+  recursos: {
+    title: 'Cadastro de Recursos',
+    description: 'Cadastre recursos com dados pessoais, documentação, e-mail e status operacional.',
+    emptyLabel: 'Recurso',
+    searchPlaceholder: 'Buscar por nome, CPF, CNPJ ou e-mail',
+  },
+  'contratos-servicos': {
+    title: 'Cadastro de Contratos e Serviços',
+    description: 'Registre contratos, vínculos com cliente ou recurso, valores, vigência e observações.',
+    emptyLabel: 'Contrato',
+    searchPlaceholder: 'Buscar por título, relação, tipo ou status',
+  },
+  despesas: {
+    title: 'Cadastro de Despesa',
+    description: 'Controle despesas fixas ou avulsas vinculadas a cliente ou recurso.',
+    emptyLabel: 'Despesa',
+    searchPlaceholder: 'Buscar por título, relação, tipo ou observações',
+  },
+  faturamento: {
+    title: 'Cadastro de Faturamento',
+    description: 'Consolide notas, emissões, previsões de pagamento e status de faturamento.',
+    emptyLabel: 'Faturamento',
+    searchPlaceholder: 'Buscar por título, cliente, contrato ou status',
+  },
+  pagamentos: {
+    title: 'Cadastro de Pagamentos',
+    description: 'Organize pagamentos previstos e realizados para cliente ou recurso vinculado ao contrato.',
+    emptyLabel: 'Pagamento',
+    searchPlaceholder: 'Buscar por título, tipo, contrato ou status',
+  },
+}
+
+function readApiError(response: Response, fallback: string): Promise<never> {
+  return response
+    .json()
+    .then((payload) => {
+      const detail = (payload as { error?: string })?.error ?? fallback
+      throw new Error(detail)
+    })
+    .catch(() => {
+      throw new Error(response.statusText || fallback)
+    })
+}
+
+function formatDateDisplay(value: string): string {
+  const text = String(value || '').trim()
+  if (!text) return '-'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const [year, month, day] = text.split('-')
+    return `${day}/${month}/${year}`
+  }
+  return text
+}
+
+function formatCurrencyDisplay(value: number | null): string {
+  if (value === null || Number.isNaN(value)) return '-'
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function parseNullableDate(value: string): string | null {
+  const text = String(value || '').trim()
+  return text || null
+}
+
+function parseNullableNumber(value: string): number | null {
+  const text = String(value || '').trim().replace(',', '.')
+  if (!text) return null
+  const parsed = Number(text)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function formatMonthKeyLabel(value: string): string {
+  const text = String(value || '').trim()
+  const match = text.match(/^(\d{4})-(\d{2})$/)
+  if (!match) return text || '-'
+  const [, year, month] = match
+  const date = new Date(Number(year), Number(month) - 1, 1)
+  return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+}
+
+function compareText(a: string, b: string): number {
+  return a.localeCompare(b, 'pt-BR', { sensitivity: 'base' })
+}
+
+function compareNullableNumber(a: number | null, b: number | null): number {
+  if (a === null && b === null) return 0
+  if (a === null) return -1
+  if (b === null) return 1
+  return a - b
+}
+
+function toSortableDate(value: string): number {
+  const text = String(value || '').trim()
+  if (!text) return Number.NEGATIVE_INFINITY
+  if (/^\d{4}-\d{2}$/.test(text)) {
+    const asMonth = `${text}-01`
+    const stamp = Date.parse(asMonth)
+    return Number.isFinite(stamp) ? stamp : Number.NEGATIVE_INFINITY
+  }
+  const stamp = Date.parse(text)
+  return Number.isFinite(stamp) ? stamp : Number.NEGATIVE_INFINITY
+}
+
+function applyDirection(result: number, direction: SortDirection): number {
+  return direction === 'asc' ? result : -result
+}
+
+function getNextDirection(currentKey: string, nextKey: string, currentDirection: SortDirection): SortDirection {
+  if (currentKey !== nextKey) return 'asc'
+  return currentDirection === 'asc' ? 'desc' : 'asc'
+}
+
+function formatCurrencyInputBrl(rawValue: string): string {
+  const text = String(rawValue || '').trim()
+  if (!text) return ''
+  const numeric = Number(text.replace(',', '.'))
+  if (!Number.isFinite(numeric)) return ''
+  return numeric.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function parseCurrencyInputBrl(maskedValue: string): string {
+  const digits = String(maskedValue || '').replace(/\D/g, '')
+  if (!digits) return ''
+  const numeric = Number(digits) / 100
+  return numeric.toFixed(2)
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function normalizeResource(input: unknown): ResourceItem | null {
+  const item = input as Partial<ResourceItem>
+  const id = Number(item.id)
+  const nome = normalizeText(item.nome)
+  if (!Number.isFinite(id) || id <= 0 || !nome) return null
+
+  return {
+    id,
+    nome,
+    cpf: normalizeText(item.cpf),
+    cnpj: normalizeText(item.cnpj),
+    sexo: RESOURCE_SEX_OPTIONS.includes(normalizeText(item.sexo) as typeof RESOURCE_SEX_OPTIONS[number]) ? normalizeText(item.sexo) : 'Nao Informado',
+    dataNascimento: normalizeText(item.dataNascimento ?? (item as { data_nascimento?: unknown }).data_nascimento),
+    emailPessoal: normalizeText(item.emailPessoal ?? (item as { email_pessoal?: unknown }).email_pessoal),
+    dadosPagamento: normalizeText(item.dadosPagamento ?? (item as { dados_pagamento?: unknown }).dados_pagamento),
+    status: RESOURCE_STATUS_OPTIONS.includes(normalizeText(item.status) as ResourceStatus) ? normalizeText(item.status) as ResourceStatus : 'Ativo',
+  }
+}
+
+function normalizeContract(input: unknown): ContractItem | null {
+  const item = input as Partial<ContractItem>
+  const id = Number(item.id)
+  const titulo = normalizeText(item.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  return {
+    id,
+    titulo,
+    tipo: RELATION_TYPE_OPTIONS.includes(normalizeText(item.tipo) as RelationType) ? normalizeText(item.tipo) as RelationType : 'Cliente',
+    relaciona: normalizeText(item.relaciona),
+    descricao: normalizeText(item.descricao),
+    tipoContrato: CONTRACT_TYPE_OPTIONS.includes(normalizeText(item.tipoContrato) as ContractType)
+      ? normalizeText(item.tipoContrato) as ContractType
+      : 'Recorrente',
+    valorUnitario: parseNullableNumber(normalizeText(item.valorUnitario ?? (item as { valor_unitario?: unknown }).valor_unitario)),
+    tipoValor: VALUE_TYPE_OPTIONS.includes(normalizeText(item.tipoValor) as ValueType)
+      ? normalizeText(item.tipoValor) as ValueType
+      : 'Hora',
+    quantidade: parseNullableNumber(normalizeText(item.quantidade)),
+    dataInicio: normalizeText(item.dataInicio ?? (item as { data_inicio?: unknown }).data_inicio),
+    vigenciaInicio: normalizeText(item.vigenciaInicio ?? (item as { vigencia_inicio?: unknown }).vigencia_inicio),
+    vigenciaTermino: normalizeText(item.vigenciaTermino ?? (item as { vigencia_termino?: unknown }).vigencia_termino),
+    observacoes: normalizeText(item.observacoes),
+    status: normalizeText(item.status) === 'Encerrado' ? 'Encerrado' : 'Ativo',
+  }
+}
+
+function normalizeExpense(input: unknown): ExpenseItem | null {
+  const item = input as Partial<ExpenseItem>
+  const id = Number(item.id)
+  const titulo = normalizeText(item.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  return {
+    id,
+    titulo,
+    tipo: RELATION_TYPE_OPTIONS.includes(normalizeText(item.tipo) as RelationType) ? normalizeText(item.tipo) as RelationType : 'Cliente',
+    relaciona: normalizeText(item.relaciona),
+    descricao: normalizeText(item.descricao),
+    tipoDespesa: EXPENSE_TYPE_OPTIONS.includes(normalizeText(item.tipoDespesa) as ExpenseType)
+      ? normalizeText(item.tipoDespesa) as ExpenseType
+      : 'Fixa',
+    valorUnitario: parseNullableNumber(normalizeText(item.valorUnitario ?? (item as { valor_unitario?: unknown }).valor_unitario)),
+    tipoValor: VALUE_TYPE_OPTIONS.includes(normalizeText(item.tipoValor) as ValueType)
+      ? normalizeText(item.tipoValor) as ValueType
+      : 'Hora',
+    quantidade: parseNullableNumber(normalizeText(item.quantidade)),
+    dataInicio: normalizeText(item.dataInicio ?? (item as { data_inicio?: unknown }).data_inicio),
+    vigenciaInicio: normalizeText(item.vigenciaInicio ?? (item as { vigencia_inicio?: unknown }).vigencia_inicio),
+    vigenciaTermino: normalizeText(item.vigenciaTermino ?? (item as { vigencia_termino?: unknown }).vigencia_termino),
+    observacoes: normalizeText(item.observacoes),
+  }
+}
+
+function normalizeInvoice(input: unknown): InvoiceItem | null {
+  const item = input as Partial<InvoiceItem>
+  const id = Number(item.id)
+  const titulo = normalizeText(item.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  return {
+    id,
+    titulo,
+    nota: normalizeText(item.nota),
+    emissao: normalizeText(item.emissao),
+    referencia: normalizeText(item.referencia),
+    previsaoPagamento: normalizeText(item.previsaoPagamento ?? (item as { previsao_pagamento?: unknown }).previsao_pagamento),
+    cliente: normalizeText(item.cliente),
+    contrato: normalizeText(item.contrato),
+    descricao: normalizeText(item.descricao),
+    valor: parseNullableNumber(normalizeText(item.valor)),
+    status: INVOICE_STATUS_OPTIONS.includes(normalizeText(item.status) as InvoiceStatus)
+      ? normalizeText(item.status) as InvoiceStatus
+      : 'Pendente',
+    dataPagamento: normalizeText(item.dataPagamento ?? (item as { data_pagamento?: unknown }).data_pagamento),
+  }
+}
+
+function normalizePayment(input: unknown): PaymentItem | null {
+  const item = input as Partial<PaymentItem>
+  const id = Number(item.id)
+  const titulo = normalizeText(item.titulo)
+  if (!Number.isFinite(id) || id <= 0 || !titulo) return null
+
+  return {
+    id,
+    titulo,
+    nota: normalizeText(item.nota),
+    emissao: normalizeText(item.emissao),
+    referencia: normalizeText(item.referencia),
+    previsaoPagamento: normalizeText(item.previsaoPagamento ?? (item as { previsao_pagamento?: unknown }).previsao_pagamento),
+    tipo: RELATION_TYPE_OPTIONS.includes(normalizeText(item.tipo) as RelationType) ? normalizeText(item.tipo) as RelationType : 'Cliente',
+    contrato: normalizeText(item.contrato),
+    descricao: normalizeText(item.descricao),
+    valor: parseNullableNumber(normalizeText(item.valor)),
+    status: PAYMENT_STATUS_OPTIONS.includes(normalizeText(item.status) as PaymentStatus)
+      ? normalizeText(item.status) as PaymentStatus
+      : 'Pendente',
+    dataPagamento: normalizeText(item.dataPagamento ?? (item as { data_pagamento?: unknown }).data_pagamento),
+  }
+}
+
+function useCatalogState<TItem, TForm>(initial: TForm) {
+  const [items, setItems] = useState<TItem[]>([])
+  const [search, setSearch] = useState('')
+  const [form, setForm] = useState<TForm>(initial)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  return {
+    items,
+    setItems,
+    search,
+    setSearch,
+    form,
+    setForm,
+    editingId,
+    setEditingId,
+    isLoading,
+    setIsLoading,
+    isSaving,
+    setIsSaving,
+    error,
+    setError,
+    success,
+    setSuccess,
+  }
+}
+
+async function loadCatalogItems<T>(endpoint: string, normalize: (item: unknown) => T | null): Promise<T[]> {
+  const response = await fetch(apiUrl(endpoint))
+  if (!response.ok) {
+    await readApiError(response, 'Falha ao carregar registros.')
+  }
+
+  const data = await response.json() as ApiListResponse
+  return Array.isArray(data.items) ? data.items.map(normalize).filter((item): item is T => Boolean(item)) : []
+}
+
+export default function CentralServicosTool({ subPage }: { subPage: CentralServicosPage }) {
+  const meta = PAGE_META[subPage]
+
+  const resourceState = useCatalogState<ResourceItem, ResourceForm>(EMPTY_RESOURCE_FORM)
+  const [resourceEditorOpen, setResourceEditorOpen] = useState(false)
+  const [resourceIsViewMode, setResourceIsViewMode] = useState(false)
+  const [resourceSort, setResourceSort] = useState<{ key: ResourceSortKey; direction: SortDirection }>(RESOURCE_DEFAULT_SORT)
+  const contractState = useCatalogState<ContractItem, ContractForm>(EMPTY_CONTRACT_FORM)
+  const [contractEditorOpen, setContractEditorOpen] = useState(false)
+  const [contractIsViewMode, setContractIsViewMode] = useState(false)
+  const [contractSort, setContractSort] = useState<{ key: ContractSortKey; direction: SortDirection }>(CONTRACT_DEFAULT_SORT)
+  const expenseState = useCatalogState<ExpenseItem, ExpenseForm>(EMPTY_EXPENSE_FORM)
+  const [expenseEditorOpen, setExpenseEditorOpen] = useState(false)
+  const [expenseIsViewMode, setExpenseIsViewMode] = useState(false)
+  const [expenseSort, setExpenseSort] = useState<{ key: ExpenseSortKey; direction: SortDirection }>(EXPENSE_DEFAULT_SORT)
+  const invoiceState = useCatalogState<InvoiceItem, InvoiceForm>(EMPTY_INVOICE_FORM)
+  const [invoiceEditorOpen, setInvoiceEditorOpen] = useState(false)
+  const [invoiceIsViewMode, setInvoiceIsViewMode] = useState(false)
+  const [invoiceSort, setInvoiceSort] = useState<{ key: InvoiceSortKey; direction: SortDirection }>(INVOICE_DEFAULT_SORT)
+  const paymentState = useCatalogState<PaymentItem, PaymentForm>(EMPTY_PAYMENT_FORM)
+  const [paymentEditorOpen, setPaymentEditorOpen] = useState(false)
+  const [paymentIsViewMode, setPaymentIsViewMode] = useState(false)
+  const [paymentSort, setPaymentSort] = useState<{ key: PaymentSortKey; direction: SortDirection }>(PAYMENT_DEFAULT_SORT)
+  const [monthlyHoverIndex, setMonthlyHoverIndex] = useState<number | null>(null)
+  const [competencyHoverIndex, setCompetencyHoverIndex] = useState<number | null>(null)
+  const [competencyYear, setCompetencyYear] = useState<number | null>(null)
+
+  const renderSortableHeader = (
+    label: string,
+    isActive: boolean,
+    direction: SortDirection,
+    onClick: () => void,
+  ) => (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+        border: 'none',
+        background: 'transparent',
+        font: 'inherit',
+        color: 'inherit',
+        padding: 0,
+        cursor: 'pointer',
+      }}
+      title={`Ordenar por ${label}`}
+    >
+      <span>{label}</span>
+      <span aria-hidden="true" style={{ opacity: isActive ? 1 : 0.45 }}>{isActive ? (direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+    </button>
+  )
+
+  const resetState = () => {
+    resourceState.setItems([])
+    resourceState.setSearch('')
+    resourceState.setForm(EMPTY_RESOURCE_FORM)
+    resourceState.setEditingId(null)
+    setResourceEditorOpen(false)
+    setResourceIsViewMode(false)
+    setResourceSort(RESOURCE_DEFAULT_SORT)
+    resourceState.setError(null)
+    resourceState.setSuccess(null)
+    contractState.setItems([])
+    contractState.setSearch('')
+    contractState.setForm(EMPTY_CONTRACT_FORM)
+    contractState.setEditingId(null)
+    setContractEditorOpen(false)
+    setContractIsViewMode(false)
+    setContractSort(CONTRACT_DEFAULT_SORT)
+    contractState.setError(null)
+    contractState.setSuccess(null)
+    expenseState.setItems([])
+    expenseState.setSearch('')
+    expenseState.setForm(EMPTY_EXPENSE_FORM)
+    expenseState.setEditingId(null)
+    setExpenseEditorOpen(false)
+    setExpenseIsViewMode(false)
+    setExpenseSort(EXPENSE_DEFAULT_SORT)
+    expenseState.setError(null)
+    expenseState.setSuccess(null)
+    invoiceState.setItems([])
+    invoiceState.setSearch('')
+    invoiceState.setForm(EMPTY_INVOICE_FORM)
+    invoiceState.setEditingId(null)
+    setInvoiceEditorOpen(false)
+    setInvoiceIsViewMode(false)
+    setInvoiceSort(INVOICE_DEFAULT_SORT)
+    setMonthlyHoverIndex(null)
+    setCompetencyHoverIndex(null)
+    setCompetencyYear(null)
+    invoiceState.setError(null)
+    invoiceState.setSuccess(null)
+    paymentState.setItems([])
+    paymentState.setSearch('')
+    paymentState.setForm(EMPTY_PAYMENT_FORM)
+    paymentState.setEditingId(null)
+    setPaymentEditorOpen(false)
+    setPaymentIsViewMode(false)
+    setPaymentSort(PAYMENT_DEFAULT_SORT)
+    paymentState.setError(null)
+    paymentState.setSuccess(null)
+  }
+
+  const closeResourceEditor = () => {
+    if (resourceState.isSaving) return
+    resourceState.setForm(EMPTY_RESOURCE_FORM)
+    resourceState.setEditingId(null)
+    setResourceIsViewMode(false)
+    setResourceEditorOpen(false)
+  }
+
+  const closeContractEditor = () => {
+    if (contractState.isSaving) return
+    contractState.setForm(EMPTY_CONTRACT_FORM)
+    contractState.setEditingId(null)
+    setContractIsViewMode(false)
+    setContractEditorOpen(false)
+  }
+
+  const closeExpenseEditor = () => {
+    if (expenseState.isSaving) return
+    expenseState.setForm(EMPTY_EXPENSE_FORM)
+    expenseState.setEditingId(null)
+    setExpenseIsViewMode(false)
+    setExpenseEditorOpen(false)
+  }
+
+  const closeInvoiceEditor = () => {
+    if (invoiceState.isSaving) return
+    invoiceState.setForm(EMPTY_INVOICE_FORM)
+    invoiceState.setEditingId(null)
+    setInvoiceIsViewMode(false)
+    setInvoiceEditorOpen(false)
+  }
+
+  const closePaymentEditor = () => {
+    if (paymentState.isSaving) return
+    paymentState.setForm(EMPTY_PAYMENT_FORM)
+    paymentState.setEditingId(null)
+    setPaymentIsViewMode(false)
+    setPaymentEditorOpen(false)
+  }
+
+  useEffect(() => {
+    resetState()
+
+    const load = async () => {
+      if (subPage === 'recursos') {
+        resourceState.setIsLoading(true)
+        try {
+          resourceState.setItems(await loadCatalogItems('/api/central-servicos/recursos', normalizeResource))
+        } catch (loadError) {
+          resourceState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar recursos.')
+        } finally {
+          resourceState.setIsLoading(false)
+        }
+        return
+      }
+
+      if (subPage === 'contratos-servicos') {
+        contractState.setIsLoading(true)
+        try {
+          contractState.setItems(await loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract))
+        } catch (loadError) {
+          contractState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar contratos.')
+        } finally {
+          contractState.setIsLoading(false)
+        }
+        return
+      }
+
+      if (subPage === 'despesas') {
+        expenseState.setIsLoading(true)
+        try {
+          expenseState.setItems(await loadCatalogItems('/api/central-servicos/despesas', normalizeExpense))
+        } catch (loadError) {
+          expenseState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar despesas.')
+        } finally {
+          expenseState.setIsLoading(false)
+        }
+        return
+      }
+
+      if (subPage === 'dashboard' || subPage === 'faturamento') {
+        invoiceState.setIsLoading(true)
+        try {
+          invoiceState.setItems(await loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice))
+        } catch (loadError) {
+          invoiceState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar faturamentos.')
+        } finally {
+          invoiceState.setIsLoading(false)
+        }
+        return
+      }
+
+      paymentState.setIsLoading(true)
+      try {
+        paymentState.setItems(await loadCatalogItems('/api/central-servicos/pagamentos', normalizePayment))
+      } catch (loadError) {
+        paymentState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pagamentos.')
+      } finally {
+        paymentState.setIsLoading(false)
+      }
+    }
+
+    void load()
+  }, [subPage])
+
+  const handleSaveResource = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (resourceIsViewMode) return
+    const { form, editingId } = resourceState
+    const nome = form.nome.trim()
+    if (!nome) {
+      resourceState.setError('Preencha o nome do recurso.')
+      return
+    }
+
+    resourceState.setIsSaving(true)
+    resourceState.setError(null)
+    resourceState.setSuccess(null)
+
+    const payload = {
+      nome,
+      cpf: form.cpf.trim(),
+      cnpj: form.cnpj.trim(),
+      sexo: form.sexo,
+      data_nascimento: parseNullableDate(form.dataNascimento),
+      email_pessoal: form.emailPessoal.trim(),
+      dados_pagamento: form.dadosPagamento.trim(),
+      status: form.status,
+    }
+
+    try {
+      const response = await fetch(apiUrl(editingId ? `/api/central-servicos/recursos/${editingId}` : '/api/central-servicos/recursos'), {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        await readApiError(response, 'Falha ao salvar recurso.')
+      }
+
+      resourceState.setItems(await loadCatalogItems('/api/central-servicos/recursos', normalizeResource))
+      resourceState.setForm(EMPTY_RESOURCE_FORM)
+      resourceState.setEditingId(null)
+      setResourceEditorOpen(false)
+      resourceState.setSuccess(editingId ? 'Recurso atualizado com sucesso.' : 'Recurso cadastrado com sucesso.')
+    } catch (saveError) {
+      resourceState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar recurso.')
+    } finally {
+      resourceState.setIsSaving(false)
+    }
+  }
+
+  const handleSaveContract = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (contractIsViewMode) return
+    const { form, editingId } = contractState
+    const titulo = form.titulo.trim()
+    if (!titulo) {
+      contractState.setError('Preencha o título do contrato.')
+      return
+    }
+
+    contractState.setIsSaving(true)
+    contractState.setError(null)
+    contractState.setSuccess(null)
+
+    const payload = {
+      titulo,
+      tipo: form.tipo,
+      relaciona: form.relaciona.trim(),
+      descricao: form.descricao.trim(),
+      tipo_contrato: form.tipoContrato,
+      valor_unitario: parseNullableNumber(form.valorUnitario),
+      tipo_valor: form.tipoValor,
+      quantidade: parseNullableNumber(form.quantidade),
+      data_inicio: parseNullableDate(form.dataInicio),
+      vigencia_inicio: parseNullableDate(form.vigenciaInicio),
+      vigencia_termino: parseNullableDate(form.vigenciaTermino),
+      observacoes: form.observacoes.trim(),
+      status: form.status,
+    }
+
+    try {
+      const response = await fetch(apiUrl(editingId ? `/api/central-servicos/contratos-servicos/${editingId}` : '/api/central-servicos/contratos-servicos'), {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        await readApiError(response, 'Falha ao salvar contrato.')
+      }
+
+      contractState.setItems(await loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract))
+      contractState.setForm(EMPTY_CONTRACT_FORM)
+      contractState.setEditingId(null)
+      setContractEditorOpen(false)
+      contractState.setSuccess(editingId ? 'Contrato atualizado com sucesso.' : 'Contrato cadastrado com sucesso.')
+    } catch (saveError) {
+      contractState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar contrato.')
+    } finally {
+      contractState.setIsSaving(false)
+    }
+  }
+
+  const handleSaveExpense = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (expenseIsViewMode) return
+    const { form, editingId } = expenseState
+    const titulo = form.titulo.trim()
+    if (!titulo) {
+      expenseState.setError('Preencha o título da despesa.')
+      return
+    }
+
+    expenseState.setIsSaving(true)
+    expenseState.setError(null)
+    expenseState.setSuccess(null)
+
+    const payload = {
+      titulo,
+      tipo: form.tipo,
+      relaciona: form.relaciona.trim(),
+      descricao: form.descricao.trim(),
+      tipo_despesa: form.tipoDespesa,
+      valor_unitario: parseNullableNumber(form.valorUnitario),
+      tipo_valor: form.tipoValor,
+      quantidade: parseNullableNumber(form.quantidade),
+      data_inicio: parseNullableDate(form.dataInicio),
+      vigencia_inicio: parseNullableDate(form.vigenciaInicio),
+      vigencia_termino: parseNullableDate(form.vigenciaTermino),
+      observacoes: form.observacoes.trim(),
+    }
+
+    try {
+      const response = await fetch(apiUrl(editingId ? `/api/central-servicos/despesas/${editingId}` : '/api/central-servicos/despesas'), {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        await readApiError(response, 'Falha ao salvar despesa.')
+      }
+
+      expenseState.setItems(await loadCatalogItems('/api/central-servicos/despesas', normalizeExpense))
+      expenseState.setForm(EMPTY_EXPENSE_FORM)
+      expenseState.setEditingId(null)
+      setExpenseEditorOpen(false)
+      expenseState.setSuccess(editingId ? 'Despesa atualizada com sucesso.' : 'Despesa cadastrada com sucesso.')
+    } catch (saveError) {
+      expenseState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar despesa.')
+    } finally {
+      expenseState.setIsSaving(false)
+    }
+  }
+
+  const handleSaveInvoice = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (invoiceIsViewMode) return
+    const { form, editingId } = invoiceState
+    const titulo = form.titulo.trim()
+    if (!titulo) {
+      invoiceState.setError('Preencha o título do faturamento.')
+      return
+    }
+
+    invoiceState.setIsSaving(true)
+    invoiceState.setError(null)
+    invoiceState.setSuccess(null)
+
+    const payload = {
+      titulo,
+      nota: form.nota.trim(),
+      emissao: parseNullableDate(form.emissao),
+      referencia: form.referencia.trim(),
+      previsao_pagamento: parseNullableDate(form.previsaoPagamento),
+      cliente: form.cliente.trim(),
+      contrato: form.contrato.trim(),
+      descricao: form.descricao.trim(),
+      valor: parseNullableNumber(form.valor),
+      status: form.status,
+      data_pagamento: parseNullableDate(form.dataPagamento),
+    }
+
+    try {
+      const response = await fetch(apiUrl(editingId ? `/api/central-servicos/faturamentos/${editingId}` : '/api/central-servicos/faturamentos'), {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        await readApiError(response, 'Falha ao salvar faturamento.')
+      }
+
+      invoiceState.setItems(await loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice))
+      invoiceState.setForm(EMPTY_INVOICE_FORM)
+      invoiceState.setEditingId(null)
+      setInvoiceEditorOpen(false)
+      invoiceState.setSuccess(editingId ? 'Faturamento atualizado com sucesso.' : 'Faturamento cadastrado com sucesso.')
+    } catch (saveError) {
+      invoiceState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar faturamento.')
+    } finally {
+      invoiceState.setIsSaving(false)
+    }
+  }
+
+  const handleSavePayment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (paymentIsViewMode) return
+    const { form, editingId } = paymentState
+    const titulo = form.titulo.trim()
+    if (!titulo) {
+      paymentState.setError('Preencha o título do pagamento.')
+      return
+    }
+
+    paymentState.setIsSaving(true)
+    paymentState.setError(null)
+    paymentState.setSuccess(null)
+
+    const payload = {
+      titulo,
+      nota: form.nota.trim(),
+      emissao: parseNullableDate(form.emissao),
+      referencia: form.referencia.trim(),
+      previsao_pagamento: parseNullableDate(form.previsaoPagamento),
+      tipo: form.tipo,
+      contrato: form.contrato.trim(),
+      descricao: form.descricao.trim(),
+      valor: parseNullableNumber(form.valor),
+      status: form.status,
+      data_pagamento: parseNullableDate(form.dataPagamento),
+    }
+
+    try {
+      const response = await fetch(apiUrl(editingId ? `/api/central-servicos/pagamentos/${editingId}` : '/api/central-servicos/pagamentos'), {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        await readApiError(response, 'Falha ao salvar pagamento.')
+      }
+
+      paymentState.setItems(await loadCatalogItems('/api/central-servicos/pagamentos', normalizePayment))
+      paymentState.setForm(EMPTY_PAYMENT_FORM)
+      paymentState.setEditingId(null)
+      setPaymentEditorOpen(false)
+      paymentState.setSuccess(editingId ? 'Pagamento atualizado com sucesso.' : 'Pagamento cadastrado com sucesso.')
+    } catch (saveError) {
+      paymentState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar pagamento.')
+    } finally {
+      paymentState.setIsSaving(false)
+    }
+  }
+
+  const handleDeleteItem = async (
+    endpoint: string,
+    id: number,
+    reload: () => Promise<void>,
+    successMessage: string,
+    setError: (value: string | null) => void,
+    setSuccess: (value: string | null) => void,
+  ) => {
+    try {
+      if (typeof window !== 'undefined' && !window.confirm('Confirma a exclusão deste registro?')) {
+        return
+      }
+
+      setError(null)
+      setSuccess(null)
+
+      const response = await fetch(apiUrl(`${endpoint}/${id}`), { method: 'DELETE' })
+      if (!response.ok) {
+        await readApiError(response, 'Falha ao excluir registro.')
+      }
+
+      await reload()
+      setSuccess(successMessage)
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Falha ao excluir registro.')
+    }
+  }
+
+  const renderDashboardSection = () => {
+    const invoices = invoiceState.items
+    const paidCount = invoices.filter((item) => item.status === 'Pago').length
+    const pendingCount = invoices.filter((item) => item.status === 'Pendente').length
+    const invoicedCount = invoices.filter((item) => item.status === 'Faturado').length
+    const paidValue = invoices.reduce((total, item) => total + (item.status === 'Pago' ? item.valor ?? 0 : 0), 0)
+    const totalValue = invoices.reduce((total, item) => total + (item.valor ?? 0), 0)
+    const averageTicket = invoices.length ? totalValue / invoices.length : 0
+
+    const monthlyMap = new Map<string, number>()
+    invoices.forEach((item) => {
+      const source = String(item.referencia || item.emissao || '').trim()
+      const monthKey = source.match(/^\d{4}-\d{2}/)?.[0] || ''
+      if (!monthKey) return
+      monthlyMap.set(monthKey, (monthlyMap.get(monthKey) ?? 0) + (item.valor ?? 0))
+    })
+
+    const monthlySeries = Array.from(monthlyMap.entries())
+      .sort(([a], [b]) => compareText(a, b))
+      .slice(-12)
+      .map(([month, value]) => ({
+        month,
+        label: formatMonthKeyLabel(month),
+        value,
+      }))
+
+    const highestMonthly = monthlySeries.reduce((max, item) => Math.max(max, item.value), 0)
+
+    const chartWidth = 760
+    const chartHeight = 250
+    const chartPadding = { top: 16, right: 16, bottom: 28, left: 44 }
+    const chartInnerWidth = chartWidth - chartPadding.left - chartPadding.right
+    const chartInnerHeight = chartHeight - chartPadding.top - chartPadding.bottom
+    const monthStep = monthlySeries.length > 1 ? chartInnerWidth / (monthlySeries.length - 1) : 0
+    const toY = (value: number, max: number) => {
+      if (max <= 0) return chartPadding.top + chartInnerHeight
+      const ratio = value / max
+      return chartPadding.top + chartInnerHeight - ratio * chartInnerHeight
+    }
+    const monthlyPoints = monthlySeries.map((item, index) => ({
+      ...item,
+      x: chartPadding.left + index * monthStep,
+      y: toY(item.value, highestMonthly),
+    }))
+    const monthlyPath = monthlyPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+
+    const competencyMap = new Map<string, number>()
+    invoices.forEach((item) => {
+      const source = String(item.referencia || item.emissao || '').trim()
+      const monthKey = source.match(/^\d{4}-\d{2}/)?.[0] || ''
+      if (!monthKey) return
+      competencyMap.set(monthKey, (competencyMap.get(monthKey) ?? 0) + (item.valor ?? 0))
+    })
+
+    const availableYears = Array.from(new Set(
+      Array.from(competencyMap.keys())
+        .map((key) => Number(key.slice(0, 4)))
+        .filter((year) => Number.isFinite(year)),
+    )).sort((a, b) => a - b)
+    const fallbackCurrentYear = availableYears.length ? availableYears[availableYears.length - 1] : new Date().getFullYear()
+    const currentYear = competencyYear !== null && availableYears.includes(competencyYear)
+      ? competencyYear
+      : fallbackCurrentYear
+    const previousYear = currentYear - 1
+    const monthLabels = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+    const fullCompetencySeries = monthLabels.map((label, index) => {
+      const month = String(index + 1).padStart(2, '0')
+      const currentKey = `${currentYear}-${month}`
+      const previousKey = `${previousYear}-${month}`
+      return {
+        label,
+        month,
+        hasCurrentData: competencyMap.has(currentKey),
+        currentValue: competencyMap.get(currentKey) ?? 0,
+        previousValue: competencyMap.get(previousKey) ?? 0,
+      }
+    })
+    const lastDataMonthIndex = fullCompetencySeries.reduce(
+      (maxIndex, item, index) => (item.hasCurrentData ? index : maxIndex),
+      -1,
+    )
+    const competencySeries = lastDataMonthIndex >= 0
+      ? fullCompetencySeries.slice(0, lastDataMonthIndex + 1)
+      : []
+    const competencyMax = competencySeries.reduce((max, item) => Math.max(max, item.currentValue, item.previousValue), 0)
+    const competencyStep = competencySeries.length > 1 ? chartInnerWidth / (competencySeries.length - 1) : 0
+    const competencyPoints = competencySeries.map((item, index) => ({
+      ...item,
+      x: chartPadding.left + index * competencyStep,
+      currentY: toY(item.currentValue, competencyMax),
+      previousY: toY(item.previousValue, competencyMax),
+    }))
+    const competencyCurrentPath = competencyPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.currentY}`).join(' ')
+    const competencyPreviousPath = competencyPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.previousY}`).join(' ')
+
+    const hoveredMonthlyPoint = monthlyHoverIndex === null ? null : (monthlyPoints[monthlyHoverIndex] ?? null)
+    const hoveredCompetencyPoint = competencyHoverIndex === null ? null : (competencyPoints[competencyHoverIndex] ?? null)
+
+    const statusDistribution = [
+      { label: 'Pendente', count: pendingCount, color: '#b07f08' },
+      { label: 'Faturado', count: invoicedCount, color: '#2f7a98' },
+      { label: 'Pago', count: paidCount, color: '#2b7a48' },
+    ]
+
+    const reload = async () => {
+      invoiceState.setIsLoading(true)
+      invoiceState.setError(null)
+      try {
+        invoiceState.setItems(await loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice))
+      } catch (loadError) {
+        invoiceState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar faturamentos.')
+      } finally {
+        invoiceState.setIsLoading(false)
+      }
+    }
+
+    return (
+      <div className="customer-hub central-servicos">
+        <section className="card">
+          <div className="ch-dashboard-header">
+            <div>
+              <h2>Dashboard de Faturamento</h2>
+              <p className="muted">Visão consolidada dos lançamentos de faturamento da central de serviços.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="ch-stats">
+          <article className="card ch-stat-card">
+            <p className="ch-stat-card__label">Valor Total</p>
+            <p className="ch-stat-card__value">{formatCurrencyDisplay(totalValue)}</p>
+            <p className="muted ch-stat-card__sub">{invoices.length} registro(s)</p>
+          </article>
+          <article className="card ch-stat-card">
+            <p className="ch-stat-card__label">Valor Recebido</p>
+            <p className="ch-stat-card__value">{formatCurrencyDisplay(paidValue)}</p>
+            <p className="muted ch-stat-card__sub">Status Pago</p>
+          </article>
+          <article className="card ch-stat-card">
+            <p className="ch-stat-card__label">Ticket Médio</p>
+            <p className="ch-stat-card__value">{formatCurrencyDisplay(averageTicket)}</p>
+            <p className="muted ch-stat-card__sub">Por lançamento</p>
+          </article>
+          <article className="card ch-stat-card">
+            <p className="ch-stat-card__label">Pendentes + Faturados</p>
+            <p className="ch-stat-card__value">{pendingCount + invoicedCount}</p>
+            <p className="muted ch-stat-card__sub">Em aberto</p>
+          </article>
+        </section>
+
+        <section className="ch-dashboard-grid">
+          <article className="card ch-chart-card">
+            <h3>Evolução Mensal</h3>
+            <p className="muted" style={{ marginTop: '0.35rem' }}>
+              {hoveredMonthlyPoint
+                ? `${hoveredMonthlyPoint.label}: ${formatCurrencyDisplay(hoveredMonthlyPoint.value)}`
+                : 'Passe o mouse sobre os pontos para ver os valores.'}
+            </p>
+            {monthlySeries.length ? (
+              <div className="ch-line-chart-wrap" style={{ marginTop: '0.75rem' }}>
+                <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="ch-line-chart" role="img" aria-label="Evolução mensal do faturamento">
+                  <line
+                    x1={chartPadding.left}
+                    x2={chartWidth - chartPadding.right}
+                    y1={chartHeight - chartPadding.bottom}
+                    y2={chartHeight - chartPadding.bottom}
+                    className="ch-line-chart__axis"
+                  />
+                  <path d={monthlyPath} className="ch-line-chart__line ch-line-chart__line--primary" />
+                  {monthlyPoints.map((point, index) => (
+                    <g key={point.month}>
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r={monthlyHoverIndex === index ? 5.5 : 4}
+                        className="ch-line-chart__point ch-line-chart__point--primary"
+                        onMouseEnter={() => setMonthlyHoverIndex(index)}
+                        onMouseLeave={() => setMonthlyHoverIndex(null)}
+                      />
+                      <text x={point.x} y={chartHeight - 8} textAnchor="middle" className="ch-line-chart__label">{point.label}</text>
+                    </g>
+                  ))}
+                </svg>
+              </div>
+            ) : (
+              <p className="muted">Sem dados mensais para exibir.</p>
+            )}
+          </article>
+
+          <article className="card ch-chart-card">
+            <div className="ch-dashboard-inline-toolbar">
+              <h3>Competências: {currentYear} vs {previousYear}</h3>
+              <label>
+                Ano de referência
+                <select
+                  value={String(currentYear)}
+                  onChange={(event) => {
+                    const selected = Number(event.target.value)
+                    setCompetencyYear(Number.isFinite(selected) ? selected : null)
+                    setCompetencyHoverIndex(null)
+                  }}
+                >
+                  {[...availableYears].reverse().map((year) => (
+                    <option key={year} value={String(year)}>{year}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="muted" style={{ marginTop: '0.35rem' }}>
+              {hoveredCompetencyPoint
+                ? `${hoveredCompetencyPoint.label}: ${currentYear} ${formatCurrencyDisplay(hoveredCompetencyPoint.currentValue)} | ${previousYear} ${formatCurrencyDisplay(hoveredCompetencyPoint.previousValue)}`
+                : `Comparação até ${competencySeries.length ? competencySeries[competencySeries.length - 1].label : '-'} (${currentYear} x ${previousYear}).`}
+            </p>
+            {competencySeries.length ? (
+              <div className="ch-line-chart-wrap" style={{ marginTop: '0.75rem' }}>
+                <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="ch-line-chart" role="img" aria-label="Comparativo anual de competências de faturamento">
+                  <line
+                    x1={chartPadding.left}
+                    x2={chartWidth - chartPadding.right}
+                    y1={chartHeight - chartPadding.bottom}
+                    y2={chartHeight - chartPadding.bottom}
+                    className="ch-line-chart__axis"
+                  />
+                  <path d={competencyPreviousPath} className="ch-line-chart__line ch-line-chart__line--secondary" />
+                  <path d={competencyCurrentPath} className="ch-line-chart__line ch-line-chart__line--primary" />
+                  {competencyPoints.map((point, index) => (
+                    <g key={`${point.month}-${point.label}`}>
+                      <circle
+                        cx={point.x}
+                        cy={point.previousY}
+                        r={competencyHoverIndex === index ? 5.5 : 4}
+                        className="ch-line-chart__point ch-line-chart__point--secondary"
+                        onMouseEnter={() => setCompetencyHoverIndex(index)}
+                        onMouseLeave={() => setCompetencyHoverIndex(null)}
+                      />
+                      <circle
+                        cx={point.x}
+                        cy={point.currentY}
+                        r={competencyHoverIndex === index ? 5.5 : 4}
+                        className="ch-line-chart__point ch-line-chart__point--primary"
+                        onMouseEnter={() => setCompetencyHoverIndex(index)}
+                        onMouseLeave={() => setCompetencyHoverIndex(null)}
+                      />
+                      <text x={point.x} y={chartHeight - 8} textAnchor="middle" className="ch-line-chart__label">{point.label}</text>
+                    </g>
+                  ))}
+                </svg>
+                <div className="ch-status-list" style={{ marginTop: '0.4rem' }}>
+                  <div className="ch-status-item">
+                    <span className="ch-status-dot" style={{ backgroundColor: '#2b7a48' }} />
+                    <span>{currentYear}</span>
+                  </div>
+                  <div className="ch-status-item">
+                    <span className="ch-status-dot" style={{ backgroundColor: '#2f7a98' }} />
+                    <span>{previousYear}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="muted">Sem competências com dados para o ano selecionado.</p>
+            )}
+          </article>
+        </section>
+
+        <section className="card">
+          <h3>Distribuição por Status</h3>
+          <div className="ch-status-list">
+            {statusDistribution.map((status) => (
+              <div key={status.label} className="ch-status-item">
+                <span className="ch-status-dot" style={{ backgroundColor: status.color }} />
+                <span>{status.label}</span>
+                <strong>{status.count}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {invoiceState.error && (
+          <div className="estimativas-actions" style={{ marginTop: '0.65rem' }}>
+            <p className="error" style={{ margin: 0 }}>{invoiceState.error}</p>
+            <button type="button" className="button-secondary" onClick={() => void reload()}>
+              Tentar novamente
+            </button>
+          </div>
+        )}
+        {invoiceState.isLoading && <p className="muted">Carregando dashboard...</p>}
+      </div>
+    )
+  }
+
+  const renderResourceSection = () => {
+    const term = resourceState.search.trim().toLowerCase()
+    const filteredItems = !term ? resourceState.items : resourceState.items.filter((item) => (
+        item.nome.toLowerCase().includes(term)
+        || item.cpf.toLowerCase().includes(term)
+        || item.cnpj.toLowerCase().includes(term)
+        || item.emailPessoal.toLowerCase().includes(term)
+        || item.status.toLowerCase().includes(term)
+      ))
+    const sortedItems = [...filteredItems].sort((a, b) => {
+      let result = 0
+      if (resourceSort.key === 'nome') result = compareText(a.nome, b.nome)
+      if (resourceSort.key === 'cpf') result = compareText(a.cpf, b.cpf)
+      if (resourceSort.key === 'cnpj') result = compareText(a.cnpj, b.cnpj)
+      if (resourceSort.key === 'sexo') result = compareText(a.sexo, b.sexo)
+      if (resourceSort.key === 'status') result = compareText(a.status, b.status)
+      return applyDirection(result, resourceSort.direction)
+    })
+
+    const reload = async () => {
+      resourceState.setItems(await loadCatalogItems('/api/central-servicos/recursos', normalizeResource))
+    }
+
+    return (
+      <div className="customer-hub central-servicos">
+        {resourceEditorOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={closeResourceEditor}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="resource-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="resource-modal-title">{resourceIsViewMode ? 'Visualizar Recurso' : resourceState.editingId ? 'Editar Recurso' : 'Novo Recurso'}</h3>
+                  <p className="muted">Informe os dados cadastrais do recurso e o status para disponibilidade interna.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={closeResourceEditor}>
+                  Fechar
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveResource} className="estimativas-form">
+                <label>
+                  Nome
+                  <input value={resourceState.form.nome} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, nome: event.target.value }))} readOnly={resourceIsViewMode} required />
+                </label>
+                <label>
+                  CPF
+                  <input value={resourceState.form.cpf} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, cpf: event.target.value }))} readOnly={resourceIsViewMode} />
+                </label>
+                <label>
+                  CNPJ
+                  <input value={resourceState.form.cnpj} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, cnpj: event.target.value }))} readOnly={resourceIsViewMode} />
+                </label>
+                <label>
+                  Sexo
+                  <select value={resourceState.form.sexo} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, sexo: event.target.value }))} disabled={resourceIsViewMode}>
+                    {RESOURCE_SEX_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option === 'Nao Informado' ? 'Não informado' : option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Data de Nascimento
+                  <input type="date" value={resourceState.form.dataNascimento} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, dataNascimento: event.target.value }))} disabled={resourceIsViewMode} />
+                </label>
+                <label>
+                  eMail Pessoal
+                  <input type="email" value={resourceState.form.emailPessoal} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, emailPessoal: event.target.value }))} readOnly={resourceIsViewMode} />
+                </label>
+                <label className="estimativas-form__full">
+                  Dados de Pagamento
+                  <textarea rows={3} value={resourceState.form.dadosPagamento} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, dadosPagamento: event.target.value }))} readOnly={resourceIsViewMode} />
+                </label>
+                <label>
+                  Status
+                  <select value={resourceState.form.status} onChange={(event) => resourceState.setForm((prev) => ({ ...prev, status: event.target.value as ResourceStatus }))} disabled={resourceIsViewMode}>
+                    {RESOURCE_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                {!resourceIsViewMode && (
+                  <div className="estimativas-actions estimativas-form__full">
+                    <button type="submit" className="button-primary" disabled={resourceState.isSaving}>
+                      {resourceState.editingId ? 'Salvar alterações' : 'Cadastrar recurso'}
+                    </button>
+                  </div>
+                )}
+              </form>
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        {resourceState.error && <p className="error">{resourceState.error}</p>}
+        {resourceState.success && <p className="success">{resourceState.success}</p>}
+
+        <section className="card">
+          <div className="ch-section-header">
+            <div>
+              <h2>{meta.title}</h2>
+              <p className="muted">{meta.description}</p>
+            </div>
+            <button type="button" className="button-primary" onClick={() => {
+              resourceState.setForm(EMPTY_RESOURCE_FORM)
+              resourceState.setEditingId(null)
+              setResourceIsViewMode(false)
+              setResourceEditorOpen(true)
+            }}>
+              + Novo Recurso
+            </button>
+          </div>
+          <div className="ch-table-toolbar ch-table-toolbar--single">
+            <label className="ch-table-search">
+              <span className="ch-table-search__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+              </span>
+              <input
+                type="search"
+                value={resourceState.search}
+                onChange={(event) => resourceState.setSearch(event.target.value)}
+                placeholder={meta.searchPlaceholder}
+                aria-label="Buscar recurso"
+              />
+            </label>
+          </div>
+          <div className="csv-table ch-table-theme">
+            <table>
+              <thead>
+                <tr>
+                  <th>{renderSortableHeader('Nome', resourceSort.key === 'nome', resourceSort.direction, () => setResourceSort((prev) => ({ key: 'nome', direction: getNextDirection(prev.key, 'nome', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('CPF', resourceSort.key === 'cpf', resourceSort.direction, () => setResourceSort((prev) => ({ key: 'cpf', direction: getNextDirection(prev.key, 'cpf', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('CNPJ', resourceSort.key === 'cnpj', resourceSort.direction, () => setResourceSort((prev) => ({ key: 'cnpj', direction: getNextDirection(prev.key, 'cnpj', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Sexo', resourceSort.key === 'sexo', resourceSort.direction, () => setResourceSort((prev) => ({ key: 'sexo', direction: getNextDirection(prev.key, 'sexo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Status', resourceSort.key === 'status', resourceSort.direction, () => setResourceSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.nome}</td>
+                    <td>{item.cpf || '-'}</td>
+                    <td>{item.cnpj || '-'}</td>
+                    <td>{item.sexo}</td>
+                    <td>
+                      <span className={`ch-badge ch-badge--${item.status === 'Ativo' ? 'ativo' : item.status === 'Inativo' ? 'inativo' : 'implantacao'}`}>
+                        {item.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="ch-row-actions ch-row-actions--icons">
+                        <button
+                          type="button"
+                          className="ch-icon-action"
+                          aria-label="Visualizar recurso"
+                          title="Visualizar"
+                          onClick={() => {
+                            resourceState.setForm({
+                              nome: item.nome,
+                              cpf: item.cpf,
+                              cnpj: item.cnpj,
+                              sexo: item.sexo,
+                              dataNascimento: item.dataNascimento,
+                              emailPessoal: item.emailPessoal,
+                              dadosPagamento: item.dadosPagamento,
+                              status: item.status,
+                            })
+                            resourceState.setEditingId(item.id)
+                            setResourceIsViewMode(true)
+                            setResourceEditorOpen(true)
+                          }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="ch-icon-action"
+                          aria-label="Editar recurso"
+                          title="Editar"
+                          onClick={() => {
+                            resourceState.setForm({
+                              nome: item.nome,
+                              cpf: item.cpf,
+                              cnpj: item.cnpj,
+                              sexo: item.sexo,
+                              dataNascimento: item.dataNascimento,
+                              emailPessoal: item.emailPessoal,
+                              dadosPagamento: item.dadosPagamento,
+                              status: item.status,
+                            })
+                            resourceState.setEditingId(item.id)
+                            setResourceIsViewMode(false)
+                            setResourceEditorOpen(true)
+                          }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="ch-icon-action ch-icon-action--danger"
+                          aria-label="Excluir recurso"
+                          title="Excluir"
+                          onClick={() => void handleDeleteItem('/api/central-servicos/recursos', item.id, reload, 'Recurso removido com sucesso.', resourceState.setError, resourceState.setSuccess)}
+                          disabled={resourceState.isSaving}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedItems.length === 0 && (
+                  <tr><td colSpan={6} className="ch-empty">Nenhum recurso cadastrado.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  const renderContractSection = () => {
+    const term = contractState.search.trim().toLowerCase()
+    const filteredItems = !term ? contractState.items : contractState.items.filter((item) => (
+        item.titulo.toLowerCase().includes(term)
+        || item.relaciona.toLowerCase().includes(term)
+        || item.tipoContrato.toLowerCase().includes(term)
+        || item.tipoValor.toLowerCase().includes(term)
+        || item.status.toLowerCase().includes(term)
+      ))
+    const sortedItems = [...filteredItems].sort((a, b) => {
+      let result = 0
+      if (contractSort.key === 'titulo') result = compareText(a.titulo, b.titulo)
+      if (contractSort.key === 'tipo') result = compareText(a.tipo, b.tipo)
+      if (contractSort.key === 'relaciona') result = compareText(a.relaciona, b.relaciona)
+      if (contractSort.key === 'tipoContrato') result = compareText(a.tipoContrato, b.tipoContrato)
+      if (contractSort.key === 'valorUnitario') result = compareNullableNumber(a.valorUnitario, b.valorUnitario)
+      if (contractSort.key === 'status') result = compareText(a.status, b.status)
+      return applyDirection(result, contractSort.direction)
+    })
+
+    const reload = async () => {
+      contractState.setItems(await loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract))
+    }
+
+    return (
+      <div className="customer-hub central-servicos">
+        {contractEditorOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={closeContractEditor}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="contract-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="contract-modal-title">{contractIsViewMode ? 'Visualizar Contrato' : contractState.editingId ? 'Editar Contrato' : 'Novo Contrato'}</h3>
+                  <p className="muted">Cadastre o vínculo, o tipo de contrato, o valor unitário e a vigência.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={closeContractEditor}>Fechar</button>
+              </div>
+
+              <form onSubmit={handleSaveContract} className="estimativas-form">
+                <label>
+                  Título
+                  <input value={contractState.form.titulo} onChange={(event) => contractState.setForm((prev) => ({ ...prev, titulo: event.target.value }))} readOnly={contractIsViewMode} required />
+                </label>
+                <label>
+                  Tipo
+                  <select value={contractState.form.tipo} onChange={(event) => contractState.setForm((prev) => ({ ...prev, tipo: event.target.value as RelationType }))} disabled={contractIsViewMode}>
+                    {RELATION_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Relaciona
+                  <input value={contractState.form.relaciona} onChange={(event) => contractState.setForm((prev) => ({ ...prev, relaciona: event.target.value }))} readOnly={contractIsViewMode} />
+                </label>
+                <label>
+                  Tipo de Contrato
+                  <select value={contractState.form.tipoContrato} onChange={(event) => contractState.setForm((prev) => ({ ...prev, tipoContrato: event.target.value as ContractType }))} disabled={contractIsViewMode}>
+                    {CONTRACT_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Tipo Valor
+                  <select value={contractState.form.tipoValor} onChange={(event) => contractState.setForm((prev) => ({ ...prev, tipoValor: event.target.value as ValueType }))} disabled={contractIsViewMode}>
+                    {VALUE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Valor Unitário
+                  <input type="number" step="0.01" value={contractState.form.valorUnitario} onChange={(event) => contractState.setForm((prev) => ({ ...prev, valorUnitario: event.target.value }))} readOnly={contractIsViewMode} />
+                </label>
+                <label>
+                  Quantidade
+                  <input type="number" step="0.01" value={contractState.form.quantidade} onChange={(event) => contractState.setForm((prev) => ({ ...prev, quantidade: event.target.value }))} readOnly={contractIsViewMode} />
+                </label>
+                <label>
+                  Data de Início
+                  <input type="date" value={contractState.form.dataInicio} onChange={(event) => contractState.setForm((prev) => ({ ...prev, dataInicio: event.target.value }))} disabled={contractIsViewMode} />
+                </label>
+                <label>
+                  Vigência - Início
+                  <input type="date" value={contractState.form.vigenciaInicio} onChange={(event) => contractState.setForm((prev) => ({ ...prev, vigenciaInicio: event.target.value }))} disabled={contractIsViewMode} />
+                </label>
+                <label>
+                  Vigência - Término
+                  <input type="date" value={contractState.form.vigenciaTermino} onChange={(event) => contractState.setForm((prev) => ({ ...prev, vigenciaTermino: event.target.value }))} disabled={contractIsViewMode} />
+                </label>
+                <label>
+                  Status
+                  <select value={contractState.form.status} onChange={(event) => contractState.setForm((prev) => ({ ...prev, status: event.target.value as 'Ativo' | 'Encerrado' }))} disabled={contractIsViewMode}>
+                    <option value="Ativo">Ativo</option>
+                    <option value="Encerrado">Encerrado</option>
+                  </select>
+                </label>
+                <label className="estimativas-form__full">
+                  Descrição
+                  <textarea rows={3} value={contractState.form.descricao} onChange={(event) => contractState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={contractIsViewMode} />
+                </label>
+                <label className="estimativas-form__full">
+                  Observações
+                  <textarea rows={3} value={contractState.form.observacoes} onChange={(event) => contractState.setForm((prev) => ({ ...prev, observacoes: event.target.value }))} readOnly={contractIsViewMode} />
+                </label>
+                {!contractIsViewMode && (
+                  <div className="estimativas-actions estimativas-form__full">
+                    <button type="submit" className="button-primary" disabled={contractState.isSaving}>
+                      {contractState.editingId ? 'Salvar alterações' : 'Cadastrar contrato'}
+                    </button>
+                  </div>
+                )}
+              </form>
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        {contractState.error && <p className="error">{contractState.error}</p>}
+        {contractState.success && <p className="success">{contractState.success}</p>}
+
+        <section className="card">
+          <div className="ch-section-header">
+            <div>
+              <h2>{meta.title}</h2>
+              <p className="muted">{meta.description}</p>
+            </div>
+            <button type="button" className="button-primary" onClick={() => {
+              contractState.setForm(EMPTY_CONTRACT_FORM)
+              contractState.setEditingId(null)
+              setContractIsViewMode(false)
+              setContractEditorOpen(true)
+            }}>
+              + Novo Contrato
+            </button>
+          </div>
+          <div className="ch-table-toolbar ch-table-toolbar--single">
+            <label className="ch-table-search">
+              <span className="ch-table-search__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+              </span>
+              <input type="search" value={contractState.search} onChange={(event) => contractState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar contrato" />
+            </label>
+          </div>
+          <div className="csv-table ch-table-theme">
+            <table>
+              <thead>
+                <tr>
+                  <th>{renderSortableHeader('Título', contractSort.key === 'titulo', contractSort.direction, () => setContractSort((prev) => ({ key: 'titulo', direction: getNextDirection(prev.key, 'titulo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Tipo', contractSort.key === 'tipo', contractSort.direction, () => setContractSort((prev) => ({ key: 'tipo', direction: getNextDirection(prev.key, 'tipo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Relaciona', contractSort.key === 'relaciona', contractSort.direction, () => setContractSort((prev) => ({ key: 'relaciona', direction: getNextDirection(prev.key, 'relaciona', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Tipo Contrato', contractSort.key === 'tipoContrato', contractSort.direction, () => setContractSort((prev) => ({ key: 'tipoContrato', direction: getNextDirection(prev.key, 'tipoContrato', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Valor', contractSort.key === 'valorUnitario', contractSort.direction, () => setContractSort((prev) => ({ key: 'valorUnitario', direction: getNextDirection(prev.key, 'valorUnitario', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Status', contractSort.key === 'status', contractSort.direction, () => setContractSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.titulo}</td>
+                    <td>{item.tipo}</td>
+                    <td>{item.relaciona || '-'}</td>
+                    <td>{item.tipoContrato}</td>
+                    <td>{formatCurrencyDisplay(item.valorUnitario)}</td>
+                    <td>
+                      <span className={`ch-badge ch-badge--${item.status === 'Ativo' ? 'ativo' : 'inativo'}`}>{item.status}</span>
+                    </td>
+                    <td>
+                      <div className="ch-row-actions ch-row-actions--icons">
+                        <button type="button" className="ch-icon-action" aria-label="Visualizar contrato" title="Visualizar" onClick={() => {
+                          contractState.setForm({
+                            titulo: item.titulo,
+                            tipo: item.tipo,
+                            relaciona: item.relaciona,
+                            descricao: item.descricao,
+                            tipoContrato: item.tipoContrato,
+                            valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
+                            tipoValor: item.tipoValor,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            dataInicio: item.dataInicio,
+                            vigenciaInicio: item.vigenciaInicio,
+                            vigenciaTermino: item.vigenciaTermino,
+                            observacoes: item.observacoes,
+                            status: item.status,
+                          })
+                          contractState.setEditingId(item.id)
+                          setContractIsViewMode(true)
+                          setContractEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action" aria-label="Editar contrato" title="Editar" onClick={() => {
+                          contractState.setForm({
+                            titulo: item.titulo,
+                            tipo: item.tipo,
+                            relaciona: item.relaciona,
+                            descricao: item.descricao,
+                            tipoContrato: item.tipoContrato,
+                            valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
+                            tipoValor: item.tipoValor,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            dataInicio: item.dataInicio,
+                            vigenciaInicio: item.vigenciaInicio,
+                            vigenciaTermino: item.vigenciaTermino,
+                            observacoes: item.observacoes,
+                            status: item.status,
+                          })
+                          contractState.setEditingId(item.id)
+                          setContractIsViewMode(false)
+                          setContractEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir contrato" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/contratos-servicos', item.id, reload, 'Contrato removido com sucesso.', contractState.setError, contractState.setSuccess)} disabled={contractState.isSaving}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedItems.length === 0 && <tr><td colSpan={7} className="ch-empty">Nenhum contrato cadastrado.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  const renderExpenseSection = () => {
+    const term = expenseState.search.trim().toLowerCase()
+    const filteredItems = !term ? expenseState.items : expenseState.items.filter((item) => (
+        item.titulo.toLowerCase().includes(term)
+        || item.relaciona.toLowerCase().includes(term)
+        || item.tipoDespesa.toLowerCase().includes(term)
+        || item.tipoValor.toLowerCase().includes(term)
+      ))
+    const sortedItems = [...filteredItems].sort((a, b) => {
+      let result = 0
+      if (expenseSort.key === 'titulo') result = compareText(a.titulo, b.titulo)
+      if (expenseSort.key === 'tipo') result = compareText(a.tipo, b.tipo)
+      if (expenseSort.key === 'relaciona') result = compareText(a.relaciona, b.relaciona)
+      if (expenseSort.key === 'tipoDespesa') result = compareText(a.tipoDespesa, b.tipoDespesa)
+      if (expenseSort.key === 'valorUnitario') result = compareNullableNumber(a.valorUnitario, b.valorUnitario)
+      return applyDirection(result, expenseSort.direction)
+    })
+
+    const reload = async () => {
+      expenseState.setItems(await loadCatalogItems('/api/central-servicos/despesas', normalizeExpense))
+    }
+
+    return (
+      <div className="customer-hub central-servicos">
+        {expenseEditorOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={closeExpenseEditor}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="expense-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="expense-modal-title">{expenseIsViewMode ? 'Visualizar Despesa' : expenseState.editingId ? 'Editar Despesa' : 'Nova Despesa'}</h3>
+                  <p className="muted">Cadastre despesas ligadas a cliente ou recurso com valores e vigência.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={closeExpenseEditor}>Fechar</button>
+              </div>
+
+              <form onSubmit={handleSaveExpense} className="estimativas-form">
+                <label>
+                  Título
+                  <input value={expenseState.form.titulo} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, titulo: event.target.value }))} readOnly={expenseIsViewMode} required />
+                </label>
+                <label>
+                  Tipo
+                  <select value={expenseState.form.tipo} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, tipo: event.target.value as RelationType }))} disabled={expenseIsViewMode}>
+                    {RELATION_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Relaciona
+                  <input value={expenseState.form.relaciona} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, relaciona: event.target.value }))} readOnly={expenseIsViewMode} />
+                </label>
+                <label>
+                  Tipo de Despesa
+                  <select value={expenseState.form.tipoDespesa} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, tipoDespesa: event.target.value as ExpenseType }))} disabled={expenseIsViewMode}>
+                    {EXPENSE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Tipo Valor
+                  <select value={expenseState.form.tipoValor} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, tipoValor: event.target.value as ValueType }))} disabled={expenseIsViewMode}>
+                    {VALUE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Valor Unitário
+                  <input type="number" step="0.01" value={expenseState.form.valorUnitario} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, valorUnitario: event.target.value }))} readOnly={expenseIsViewMode} />
+                </label>
+                <label>
+                  Quantidade
+                  <input type="number" step="0.01" value={expenseState.form.quantidade} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, quantidade: event.target.value }))} readOnly={expenseIsViewMode} />
+                </label>
+                <label>
+                  Data de Início
+                  <input type="date" value={expenseState.form.dataInicio} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, dataInicio: event.target.value }))} disabled={expenseIsViewMode} />
+                </label>
+                <label>
+                  Vigência - Início
+                  <input type="date" value={expenseState.form.vigenciaInicio} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, vigenciaInicio: event.target.value }))} disabled={expenseIsViewMode} />
+                </label>
+                <label>
+                  Vigência - Término
+                  <input type="date" value={expenseState.form.vigenciaTermino} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, vigenciaTermino: event.target.value }))} disabled={expenseIsViewMode} />
+                </label>
+                <label className="estimativas-form__full">
+                  Descrição
+                  <textarea rows={3} value={expenseState.form.descricao} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={expenseIsViewMode} />
+                </label>
+                <label className="estimativas-form__full">
+                  Observações
+                  <textarea rows={3} value={expenseState.form.observacoes} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, observacoes: event.target.value }))} readOnly={expenseIsViewMode} />
+                </label>
+                {!expenseIsViewMode && (
+                  <div className="estimativas-actions estimativas-form__full">
+                    <button type="submit" className="button-primary" disabled={expenseState.isSaving}>
+                      {expenseState.editingId ? 'Salvar alterações' : 'Cadastrar despesa'}
+                    </button>
+                  </div>
+                )}
+              </form>
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        {expenseState.error && <p className="error">{expenseState.error}</p>}
+        {expenseState.success && <p className="success">{expenseState.success}</p>}
+
+        <section className="card">
+          <div className="ch-section-header">
+            <div>
+              <h2>{meta.title}</h2>
+              <p className="muted">{meta.description}</p>
+            </div>
+            <button type="button" className="button-primary" onClick={() => {
+              expenseState.setForm(EMPTY_EXPENSE_FORM)
+              expenseState.setEditingId(null)
+              setExpenseIsViewMode(false)
+              setExpenseEditorOpen(true)
+            }}>
+              + Nova Despesa
+            </button>
+          </div>
+          <div className="ch-table-toolbar ch-table-toolbar--single">
+            <label className="ch-table-search">
+              <span className="ch-table-search__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+              </span>
+              <input type="search" value={expenseState.search} onChange={(event) => expenseState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar despesa" />
+            </label>
+          </div>
+          <div className="csv-table ch-table-theme">
+            <table>
+              <thead>
+                <tr>
+                  <th>{renderSortableHeader('Título', expenseSort.key === 'titulo', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'titulo', direction: getNextDirection(prev.key, 'titulo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Tipo', expenseSort.key === 'tipo', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'tipo', direction: getNextDirection(prev.key, 'tipo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Relaciona', expenseSort.key === 'relaciona', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'relaciona', direction: getNextDirection(prev.key, 'relaciona', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Tipo Despesa', expenseSort.key === 'tipoDespesa', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'tipoDespesa', direction: getNextDirection(prev.key, 'tipoDespesa', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Valor', expenseSort.key === 'valorUnitario', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'valorUnitario', direction: getNextDirection(prev.key, 'valorUnitario', prev.direction) })))}</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.titulo}</td>
+                    <td>{item.tipo}</td>
+                    <td>{item.relaciona || '-'}</td>
+                    <td>{item.tipoDespesa}</td>
+                    <td>{formatCurrencyDisplay(item.valorUnitario)}</td>
+                    <td>
+                      <div className="ch-row-actions ch-row-actions--icons">
+                        <button type="button" className="ch-icon-action" aria-label="Visualizar despesa" title="Visualizar" onClick={() => {
+                          expenseState.setForm({
+                            titulo: item.titulo,
+                            tipo: item.tipo,
+                            relaciona: item.relaciona,
+                            descricao: item.descricao,
+                            tipoDespesa: item.tipoDespesa,
+                            valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
+                            tipoValor: item.tipoValor,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            dataInicio: item.dataInicio,
+                            vigenciaInicio: item.vigenciaInicio,
+                            vigenciaTermino: item.vigenciaTermino,
+                            observacoes: item.observacoes,
+                          })
+                          expenseState.setEditingId(item.id)
+                          setExpenseIsViewMode(true)
+                          setExpenseEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action" aria-label="Editar despesa" title="Editar" onClick={() => {
+                          expenseState.setForm({
+                            titulo: item.titulo,
+                            tipo: item.tipo,
+                            relaciona: item.relaciona,
+                            descricao: item.descricao,
+                            tipoDespesa: item.tipoDespesa,
+                            valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
+                            tipoValor: item.tipoValor,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            dataInicio: item.dataInicio,
+                            vigenciaInicio: item.vigenciaInicio,
+                            vigenciaTermino: item.vigenciaTermino,
+                            observacoes: item.observacoes,
+                          })
+                          expenseState.setEditingId(item.id)
+                          setExpenseIsViewMode(false)
+                          setExpenseEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir despesa" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/despesas', item.id, reload, 'Despesa removida com sucesso.', expenseState.setError, expenseState.setSuccess)} disabled={expenseState.isSaving}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedItems.length === 0 && <tr><td colSpan={6} className="ch-empty">Nenhuma despesa cadastrada.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  const renderInvoiceSection = () => {
+    const term = invoiceState.search.trim().toLowerCase()
+    const filteredItems = !term ? invoiceState.items : invoiceState.items.filter((item) => (
+        item.titulo.toLowerCase().includes(term)
+        || item.nota.toLowerCase().includes(term)
+        || item.cliente.toLowerCase().includes(term)
+        || item.contrato.toLowerCase().includes(term)
+        || item.status.toLowerCase().includes(term)
+      ))
+    const sortedItems = [...filteredItems].sort((a, b) => {
+      let result = 0
+      if (invoiceSort.key === 'titulo') result = compareText(a.titulo, b.titulo)
+      if (invoiceSort.key === 'nota') result = compareText(a.nota, b.nota)
+      if (invoiceSort.key === 'cliente') result = compareText(a.cliente, b.cliente)
+      if (invoiceSort.key === 'contrato') result = compareText(a.contrato, b.contrato)
+      if (invoiceSort.key === 'emissao') result = toSortableDate(a.emissao) - toSortableDate(b.emissao)
+      if (invoiceSort.key === 'valor') result = compareNullableNumber(a.valor, b.valor)
+      if (invoiceSort.key === 'status') result = compareText(a.status, b.status)
+      return applyDirection(result, invoiceSort.direction)
+    })
+
+    const reload = async () => {
+      invoiceState.setItems(await loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice))
+    }
+
+    return (
+      <div className="customer-hub central-servicos">
+        {invoiceEditorOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={closeInvoiceEditor}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="invoice-modal-title">{invoiceIsViewMode ? 'Visualizar Faturamento' : invoiceState.editingId ? 'Editar Faturamento' : 'Novo Faturamento'}</h3>
+                  <p className="muted">Controle notas, emissão, referência, previsão de pagamento e status.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={closeInvoiceEditor}>Fechar</button>
+              </div>
+
+              <form onSubmit={handleSaveInvoice} className="estimativas-form">
+                <label>
+                  Título
+                  <input value={invoiceState.form.titulo} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, titulo: event.target.value }))} readOnly={invoiceIsViewMode} required />
+                </label>
+                <label>
+                  Nota
+                  <input value={invoiceState.form.nota} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, nota: event.target.value }))} readOnly={invoiceIsViewMode} />
+                </label>
+                <label>
+                  Emissão
+                  <input type="date" value={invoiceState.form.emissao} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, emissao: event.target.value }))} disabled={invoiceIsViewMode} />
+                </label>
+                <label>
+                  Referência
+                  <input type="month" value={invoiceState.form.referencia} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, referencia: event.target.value }))} disabled={invoiceIsViewMode} />
+                </label>
+                <label>
+                  Previsão de Pagamento
+                  <input type="date" value={invoiceState.form.previsaoPagamento} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, previsaoPagamento: event.target.value }))} disabled={invoiceIsViewMode} />
+                </label>
+                <label>
+                  Cliente
+                  <input value={invoiceState.form.cliente} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, cliente: event.target.value }))} readOnly={invoiceIsViewMode} />
+                </label>
+                <label>
+                  Contrato
+                  <input value={invoiceState.form.contrato} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} readOnly={invoiceIsViewMode} />
+                </label>
+                <label>
+                  Valor
+                  <input type="text" inputMode="decimal" value={formatCurrencyInputBrl(invoiceState.form.valor)} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, valor: parseCurrencyInputBrl(event.target.value) }))} readOnly={invoiceIsViewMode} placeholder="R$ 0,00" />
+                </label>
+                <label>
+                  Status
+                  <select value={invoiceState.form.status} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, status: event.target.value as InvoiceStatus }))} disabled={invoiceIsViewMode}>
+                    {INVOICE_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Data de Pagamento
+                  <input type="date" value={invoiceState.form.dataPagamento} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, dataPagamento: event.target.value }))} disabled={invoiceIsViewMode} />
+                </label>
+                <label className="estimativas-form__full">
+                  Descrição
+                  <textarea rows={3} value={invoiceState.form.descricao} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={invoiceIsViewMode} />
+                </label>
+                {!invoiceIsViewMode && (
+                  <div className="estimativas-actions estimativas-form__full">
+                    <button type="submit" className="button-primary" disabled={invoiceState.isSaving}>
+                      {invoiceState.editingId ? 'Salvar alterações' : 'Cadastrar faturamento'}
+                    </button>
+                  </div>
+                )}
+              </form>
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        {invoiceState.error && <p className="error">{invoiceState.error}</p>}
+        {invoiceState.success && <p className="success">{invoiceState.success}</p>}
+
+        <section className="card">
+          <div className="ch-section-header">
+            <div>
+              <h2>{meta.title}</h2>
+              <p className="muted">{meta.description}</p>
+            </div>
+            <button type="button" className="button-primary" onClick={() => {
+              invoiceState.setForm(EMPTY_INVOICE_FORM)
+              invoiceState.setEditingId(null)
+              setInvoiceIsViewMode(false)
+              setInvoiceEditorOpen(true)
+            }}>
+              + Novo Faturamento
+            </button>
+          </div>
+          <div className="ch-table-toolbar ch-table-toolbar--single">
+            <label className="ch-table-search">
+              <span className="ch-table-search__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+              </span>
+              <input type="search" value={invoiceState.search} onChange={(event) => invoiceState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar faturamento" />
+            </label>
+          </div>
+          <div className="csv-table ch-table-theme">
+            <table>
+              <thead>
+                <tr>
+                  <th>{renderSortableHeader('Título', invoiceSort.key === 'titulo', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'titulo', direction: getNextDirection(prev.key, 'titulo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Nota', invoiceSort.key === 'nota', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'nota', direction: getNextDirection(prev.key, 'nota', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Cliente', invoiceSort.key === 'cliente', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'cliente', direction: getNextDirection(prev.key, 'cliente', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Contrato', invoiceSort.key === 'contrato', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'contrato', direction: getNextDirection(prev.key, 'contrato', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Emissão', invoiceSort.key === 'emissao', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'emissao', direction: getNextDirection(prev.key, 'emissao', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Valor', invoiceSort.key === 'valor', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'valor', direction: getNextDirection(prev.key, 'valor', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Status', invoiceSort.key === 'status', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.titulo}</td>
+                    <td>{item.nota || '-'}</td>
+                    <td>{item.cliente || '-'}</td>
+                    <td>{item.contrato || '-'}</td>
+                    <td>{formatDateDisplay(item.emissao)}</td>
+                    <td>{formatCurrencyDisplay(item.valor)}</td>
+                    <td>
+                      <span className={`ch-badge ch-badge--${item.status === 'Pago' ? 'ativo' : 'implantacao'}`}>{item.status}</span>
+                    </td>
+                    <td>
+                      <div className="ch-row-actions ch-row-actions--icons">
+                        <button type="button" className="ch-icon-action" aria-label="Visualizar faturamento" title="Visualizar" onClick={() => {
+                          invoiceState.setForm({
+                            titulo: item.titulo,
+                            nota: item.nota,
+                            emissao: item.emissao,
+                            referencia: item.referencia,
+                            previsaoPagamento: item.previsaoPagamento,
+                            cliente: item.cliente,
+                            contrato: item.contrato,
+                            descricao: item.descricao,
+                            valor: item.valor === null ? '' : String(item.valor),
+                            status: item.status,
+                            dataPagamento: item.dataPagamento,
+                          })
+                          invoiceState.setEditingId(item.id)
+                          setInvoiceIsViewMode(true)
+                          setInvoiceEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action" aria-label="Editar faturamento" title="Editar" onClick={() => {
+                          invoiceState.setForm({
+                            titulo: item.titulo,
+                            nota: item.nota,
+                            emissao: item.emissao,
+                            referencia: item.referencia,
+                            previsaoPagamento: item.previsaoPagamento,
+                            cliente: item.cliente,
+                            contrato: item.contrato,
+                            descricao: item.descricao,
+                            valor: item.valor === null ? '' : String(item.valor),
+                            status: item.status,
+                            dataPagamento: item.dataPagamento,
+                          })
+                          invoiceState.setEditingId(item.id)
+                          setInvoiceIsViewMode(false)
+                          setInvoiceEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir faturamento" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/faturamentos', item.id, reload, 'Faturamento removido com sucesso.', invoiceState.setError, invoiceState.setSuccess)} disabled={invoiceState.isSaving}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedItems.length === 0 && <tr><td colSpan={8} className="ch-empty">Nenhum faturamento cadastrado.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  const renderPaymentSection = () => {
+    const term = paymentState.search.trim().toLowerCase()
+    const filteredItems = !term ? paymentState.items : paymentState.items.filter((item) => (
+        item.titulo.toLowerCase().includes(term)
+        || item.nota.toLowerCase().includes(term)
+        || item.tipo.toLowerCase().includes(term)
+        || item.contrato.toLowerCase().includes(term)
+        || item.status.toLowerCase().includes(term)
+      ))
+    const sortedItems = [...filteredItems].sort((a, b) => {
+      let result = 0
+      if (paymentSort.key === 'titulo') result = compareText(a.titulo, b.titulo)
+      if (paymentSort.key === 'tipo') result = compareText(a.tipo, b.tipo)
+      if (paymentSort.key === 'contrato') result = compareText(a.contrato, b.contrato)
+      if (paymentSort.key === 'emissao') result = toSortableDate(a.emissao) - toSortableDate(b.emissao)
+      if (paymentSort.key === 'valor') result = compareNullableNumber(a.valor, b.valor)
+      if (paymentSort.key === 'status') result = compareText(a.status, b.status)
+      return applyDirection(result, paymentSort.direction)
+    })
+
+    const reload = async () => {
+      paymentState.setItems(await loadCatalogItems('/api/central-servicos/pagamentos', normalizePayment))
+    }
+
+    return (
+      <div className="customer-hub central-servicos">
+        {paymentEditorOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={closePaymentEditor}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="payment-modal-title">{paymentIsViewMode ? 'Visualizar Pagamento' : paymentState.editingId ? 'Editar Pagamento' : 'Novo Pagamento'}</h3>
+                  <p className="muted">Registre pagamentos previstos e realizados com referência e status.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={closePaymentEditor}>Fechar</button>
+              </div>
+
+              <form onSubmit={handleSavePayment} className="estimativas-form">
+                <label>
+                  Título
+                  <input value={paymentState.form.titulo} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, titulo: event.target.value }))} readOnly={paymentIsViewMode} required />
+                </label>
+                <label>
+                  Nota
+                  <input value={paymentState.form.nota} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, nota: event.target.value }))} readOnly={paymentIsViewMode} />
+                </label>
+                <label>
+                  Emissão
+                  <input type="date" value={paymentState.form.emissao} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, emissao: event.target.value }))} disabled={paymentIsViewMode} />
+                </label>
+                <label>
+                  Referência
+                  <input type="month" value={paymentState.form.referencia} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, referencia: event.target.value }))} disabled={paymentIsViewMode} />
+                </label>
+                <label>
+                  Previsão de Pagamento
+                  <input type="date" value={paymentState.form.previsaoPagamento} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, previsaoPagamento: event.target.value }))} disabled={paymentIsViewMode} />
+                </label>
+                <label>
+                  Tipo
+                  <select value={paymentState.form.tipo} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, tipo: event.target.value as RelationType }))} disabled={paymentIsViewMode}>
+                    {RELATION_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Contrato
+                  <input value={paymentState.form.contrato} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} readOnly={paymentIsViewMode} />
+                </label>
+                <label>
+                  Valor
+                  <input type="text" inputMode="decimal" value={formatCurrencyInputBrl(paymentState.form.valor)} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, valor: parseCurrencyInputBrl(event.target.value) }))} readOnly={paymentIsViewMode} placeholder="R$ 0,00" />
+                </label>
+                <label>
+                  Status
+                  <select value={paymentState.form.status} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, status: event.target.value as PaymentStatus }))} disabled={paymentIsViewMode}>
+                    {PAYMENT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Data de Pagamento
+                  <input type="date" value={paymentState.form.dataPagamento} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, dataPagamento: event.target.value }))} disabled={paymentIsViewMode} />
+                </label>
+                <label className="estimativas-form__full">
+                  Descrição
+                  <textarea rows={3} value={paymentState.form.descricao} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={paymentIsViewMode} />
+                </label>
+                {!paymentIsViewMode && (
+                  <div className="estimativas-actions estimativas-form__full">
+                    <button type="submit" className="button-primary" disabled={paymentState.isSaving}>
+                      {paymentState.editingId ? 'Salvar alterações' : 'Cadastrar pagamento'}
+                    </button>
+                  </div>
+                )}
+              </form>
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        {paymentState.error && <p className="error">{paymentState.error}</p>}
+        {paymentState.success && <p className="success">{paymentState.success}</p>}
+
+        <section className="card">
+          <div className="ch-section-header">
+            <div>
+              <h2>{meta.title}</h2>
+              <p className="muted">{meta.description}</p>
+            </div>
+            <button type="button" className="button-primary" onClick={() => {
+              paymentState.setForm(EMPTY_PAYMENT_FORM)
+              paymentState.setEditingId(null)
+              setPaymentIsViewMode(false)
+              setPaymentEditorOpen(true)
+            }}>
+              + Novo Pagamento
+            </button>
+          </div>
+          <div className="ch-table-toolbar ch-table-toolbar--single">
+            <label className="ch-table-search">
+              <span className="ch-table-search__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+              </span>
+              <input type="search" value={paymentState.search} onChange={(event) => paymentState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar pagamento" />
+            </label>
+          </div>
+          <div className="csv-table ch-table-theme">
+            <table>
+              <thead>
+                <tr>
+                  <th>{renderSortableHeader('Título', paymentSort.key === 'titulo', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'titulo', direction: getNextDirection(prev.key, 'titulo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Tipo', paymentSort.key === 'tipo', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'tipo', direction: getNextDirection(prev.key, 'tipo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Contrato', paymentSort.key === 'contrato', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'contrato', direction: getNextDirection(prev.key, 'contrato', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Emissão', paymentSort.key === 'emissao', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'emissao', direction: getNextDirection(prev.key, 'emissao', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Valor', paymentSort.key === 'valor', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'valor', direction: getNextDirection(prev.key, 'valor', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Status', paymentSort.key === 'status', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.titulo}</td>
+                    <td>{item.tipo}</td>
+                    <td>{item.contrato || '-'}</td>
+                    <td>{formatDateDisplay(item.emissao)}</td>
+                    <td>{formatCurrencyDisplay(item.valor)}</td>
+                    <td>
+                      <span className={`ch-badge ch-badge--${item.status === 'Pago' ? 'ativo' : 'implantacao'}`}>{item.status}</span>
+                    </td>
+                    <td>
+                      <div className="ch-row-actions ch-row-actions--icons">
+                        <button type="button" className="ch-icon-action" aria-label="Visualizar pagamento" title="Visualizar" onClick={() => {
+                          paymentState.setForm({
+                            titulo: item.titulo,
+                            nota: item.nota,
+                            emissao: item.emissao,
+                            referencia: item.referencia,
+                            previsaoPagamento: item.previsaoPagamento,
+                            tipo: item.tipo,
+                            contrato: item.contrato,
+                            descricao: item.descricao,
+                            valor: item.valor === null ? '' : String(item.valor),
+                            status: item.status,
+                            dataPagamento: item.dataPagamento,
+                          })
+                          paymentState.setEditingId(item.id)
+                          setPaymentIsViewMode(true)
+                          setPaymentEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action" aria-label="Editar pagamento" title="Editar" onClick={() => {
+                          paymentState.setForm({
+                            titulo: item.titulo,
+                            nota: item.nota,
+                            emissao: item.emissao,
+                            referencia: item.referencia,
+                            previsaoPagamento: item.previsaoPagamento,
+                            tipo: item.tipo,
+                            contrato: item.contrato,
+                            descricao: item.descricao,
+                            valor: item.valor === null ? '' : String(item.valor),
+                            status: item.status,
+                            dataPagamento: item.dataPagamento,
+                          })
+                          paymentState.setEditingId(item.id)
+                          setPaymentIsViewMode(false)
+                          setPaymentEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir pagamento" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/pagamentos', item.id, reload, 'Pagamento removido com sucesso.', paymentState.setError, paymentState.setSuccess)} disabled={paymentState.isSaving}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedItems.length === 0 && <tr><td colSpan={7} className="ch-empty">Nenhum pagamento cadastrado.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  if (subPage === 'dashboard') return renderDashboardSection()
+  if (subPage === 'recursos') return renderResourceSection()
+  if (subPage === 'contratos-servicos') return renderContractSection()
+  if (subPage === 'despesas') return renderExpenseSection()
+  if (subPage === 'faturamento') return renderInvoiceSection()
+  return renderPaymentSection()
+}

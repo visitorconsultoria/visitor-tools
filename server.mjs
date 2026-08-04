@@ -1339,6 +1339,7 @@ function normalizeCentralServicosPaymentRow(row) {
     referencia: parseCentralServicosTextInput(row?.referencia),
     previsaoPagamento: parseCentralServicosTextInput(row?.previsao_pagamento),
     tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    relaciona: parseCentralServicosTextInput(row?.relaciona),
     contrato: parseCentralServicosTextInput(row?.contrato),
     descricao: parseCentralServicosTextInput(row?.descricao),
     valor: row?.valor === null || row?.valor === undefined ? null : Number(row.valor),
@@ -1358,6 +1359,7 @@ function parseCentralServicosPaymentPayload(payload) {
     referencia: parseCentralServicosTextInput(payload?.referencia),
     previsao_pagamento: parseCentralServicosNullableDateInput(payload?.previsao_pagamento ?? payload?.previsaoPagamento),
     tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
+    relaciona: parseCentralServicosTextInput(payload?.relaciona),
     contrato: parseCentralServicosTextInput(payload?.contrato),
     descricao: parseCentralServicosTextInput(payload?.descricao),
     valor: parseCentralServicosNullableNumberInput(payload?.valor),
@@ -1589,7 +1591,7 @@ async function listCentralServicosPagamentos() {
   const { centralServicosPagamentosTable } = getSupabaseClient()
   return listCentralServicosItems(
     centralServicosPagamentosTable,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, contrato, descricao, valor, status, data_pagamento',
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
     'titulo',
     normalizeCentralServicosPaymentRow,
   )
@@ -1600,7 +1602,7 @@ async function createCentralServicosPagamento(payload) {
   return createCentralServicosItem(
     centralServicosPagamentosTable,
     payload,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, contrato, descricao, valor, status, data_pagamento',
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
     parseCentralServicosPaymentPayload,
     validateCentralServicosPaymentPayload,
     normalizeCentralServicosPaymentRow,
@@ -1613,7 +1615,7 @@ async function updateCentralServicosPagamento(id, payload) {
     centralServicosPagamentosTable,
     id,
     payload,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, contrato, descricao, valor, status, data_pagamento',
+    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
     parseCentralServicosPaymentPayload,
     validateCentralServicosPaymentPayload,
     normalizeCentralServicosPaymentRow,

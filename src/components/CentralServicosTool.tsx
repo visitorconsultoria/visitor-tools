@@ -20,7 +20,7 @@ type ResourceSortKey = 'nome' | 'cpf' | 'cnpj' | 'sexo' | 'status'
 type ContractSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoContrato' | 'valorUnitario' | 'status'
 type ExpenseSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoDespesa' | 'valorUnitario'
 type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'valor' | 'status'
-type PaymentSortKey = 'titulo' | 'tipo' | 'contrato' | 'emissao' | 'valor' | 'status'
+type PaymentSortKey = 'titulo' | 'tipo' | 'relaciona' | 'contrato' | 'emissao' | 'valor' | 'status'
 
 type ResourceItem = {
   id: number
@@ -146,6 +146,7 @@ type PaymentItem = {
   referencia: string
   previsaoPagamento: string
   tipo: RelationType
+  relaciona: string
   contrato: string
   descricao: string
   valor: number | null
@@ -160,6 +161,7 @@ type PaymentForm = {
   referencia: string
   previsaoPagamento: string
   tipo: RelationType
+  relaciona: string
   contrato: string
   descricao: string
   valor: string
@@ -230,6 +232,7 @@ const EMPTY_PAYMENT_FORM: PaymentForm = {
   referencia: '',
   previsaoPagamento: '',
   tipo: 'Cliente',
+  relaciona: '',
   contrato: '',
   descricao: '',
   valor: '',
@@ -501,6 +504,7 @@ function normalizePayment(input: unknown): PaymentItem | null {
     referencia: normalizeText(item.referencia),
     previsaoPagamento: normalizeText(item.previsaoPagamento ?? (item as { previsao_pagamento?: unknown }).previsao_pagamento),
     tipo: RELATION_TYPE_OPTIONS.includes(normalizeText(item.tipo) as RelationType) ? normalizeText(item.tipo) as RelationType : 'Cliente',
+    relaciona: normalizeText((item as { relaciona?: unknown }).relaciona),
     contrato: normalizeText(item.contrato),
     descricao: normalizeText(item.descricao),
     valor: parseNullableNumber(normalizeText(item.valor)),
@@ -577,6 +581,9 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
   const [monthlyHoverIndex, setMonthlyHoverIndex] = useState<number | null>(null)
   const [competencyHoverIndex, setCompetencyHoverIndex] = useState<number | null>(null)
   const [competencyYear, setCompetencyYear] = useState<number | null>(null)
+  const [clientOptions, setClientOptions] = useState<string[]>([])
+  const [resourceOptions, setResourceOptions] = useState<string[]>([])
+  const [contractsForLinking, setContractsForLinking] = useState<ContractItem[]>([])
 
   const renderSortableHeader = (
     label: string,
@@ -715,7 +722,14 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       if (subPage === 'contratos-servicos') {
         contractState.setIsLoading(true)
         try {
-          contractState.setItems(await loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract))
+          const [contracts, clients, resources] = await Promise.all([
+            loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract),
+            loadCatalogItems('/api/customer-hub/clients', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+            loadCatalogItems('/api/central-servicos/recursos', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+          ])
+          contractState.setItems(contracts)
+          setClientOptions(clients)
+          setResourceOptions(resources)
         } catch (loadError) {
           contractState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar contratos.')
         } finally {
@@ -727,7 +741,14 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       if (subPage === 'despesas') {
         expenseState.setIsLoading(true)
         try {
-          expenseState.setItems(await loadCatalogItems('/api/central-servicos/despesas', normalizeExpense))
+          const [expenses, clients, resources] = await Promise.all([
+            loadCatalogItems('/api/central-servicos/despesas', normalizeExpense),
+            loadCatalogItems('/api/customer-hub/clients', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+            loadCatalogItems('/api/central-servicos/recursos', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+          ])
+          expenseState.setItems(expenses)
+          setClientOptions(clients)
+          setResourceOptions(resources)
         } catch (loadError) {
           expenseState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar despesas.')
         } finally {
@@ -739,7 +760,14 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       if (subPage === 'dashboard' || subPage === 'faturamento') {
         invoiceState.setIsLoading(true)
         try {
-          invoiceState.setItems(await loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice))
+          const [invoices, clients, contracts] = await Promise.all([
+            loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice),
+            loadCatalogItems('/api/customer-hub/clients', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+            loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract),
+          ])
+          invoiceState.setItems(invoices)
+          setClientOptions(clients)
+          setContractsForLinking(contracts)
         } catch (loadError) {
           invoiceState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar faturamentos.')
         } finally {
@@ -750,7 +778,16 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
 
       paymentState.setIsLoading(true)
       try {
-        paymentState.setItems(await loadCatalogItems('/api/central-servicos/pagamentos', normalizePayment))
+        const [payments, clients, resources, contracts] = await Promise.all([
+          loadCatalogItems('/api/central-servicos/pagamentos', normalizePayment),
+          loadCatalogItems('/api/customer-hub/clients', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+          loadCatalogItems('/api/central-servicos/recursos', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+          loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract),
+        ])
+        paymentState.setItems(payments)
+        setClientOptions(clients)
+        setResourceOptions(resources)
+        setContractsForLinking(contracts)
       } catch (loadError) {
         paymentState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pagamentos.')
       } finally {
@@ -986,6 +1023,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       referencia: form.referencia.trim(),
       previsao_pagamento: parseNullableDate(form.previsaoPagamento),
       tipo: form.tipo,
+      relaciona: form.relaciona.trim(),
       contrato: form.contrato.trim(),
       descricao: form.descricao.trim(),
       valor: parseNullableNumber(form.valor),
@@ -1607,7 +1645,10 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label>
                   Relaciona
-                  <input value={contractState.form.relaciona} onChange={(event) => contractState.setForm((prev) => ({ ...prev, relaciona: event.target.value }))} readOnly={contractIsViewMode} />
+                  <select value={contractState.form.relaciona} onChange={(event) => contractState.setForm((prev) => ({ ...prev, relaciona: event.target.value }))} disabled={contractIsViewMode}>
+                    <option value="">— Selecione —</option>
+                    {(contractState.form.tipo === 'Cliente' ? clientOptions : resourceOptions).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 </label>
                 <label>
                   Tipo de Contrato
@@ -1829,7 +1870,10 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label>
                   Relaciona
-                  <input value={expenseState.form.relaciona} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, relaciona: event.target.value }))} readOnly={expenseIsViewMode} />
+                  <select value={expenseState.form.relaciona} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, relaciona: event.target.value }))} disabled={expenseIsViewMode}>
+                    <option value="">— Selecione —</option>
+                    {(expenseState.form.tipo === 'Cliente' ? clientOptions : resourceOptions).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 </label>
                 <label>
                   Tipo de Despesa
@@ -2051,11 +2095,19 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label>
                   Cliente
-                  <input value={invoiceState.form.cliente} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, cliente: event.target.value }))} readOnly={invoiceIsViewMode} />
+                  <select value={invoiceState.form.cliente} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, cliente: event.target.value, contrato: '' }))} disabled={invoiceIsViewMode}>
+                    <option value="">— Selecione —</option>
+                    {clientOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                 </label>
                 <label>
                   Contrato
-                  <input value={invoiceState.form.contrato} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} readOnly={invoiceIsViewMode} />
+                  <select value={invoiceState.form.contrato} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} disabled={invoiceIsViewMode || !invoiceState.form.cliente}>
+                    <option value="">— Selecione —</option>
+                    {contractsForLinking
+                      .filter((c) => c.status === 'Ativo' && c.tipo === 'Cliente' && c.relaciona === invoiceState.form.cliente)
+                      .map((c) => <option key={c.id} value={c.titulo}>{c.titulo}</option>)}
+                  </select>
                 </label>
                 <label>
                   Valor
@@ -2204,6 +2256,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
         item.titulo.toLowerCase().includes(term)
         || item.nota.toLowerCase().includes(term)
         || item.tipo.toLowerCase().includes(term)
+        || item.relaciona.toLowerCase().includes(term)
         || item.contrato.toLowerCase().includes(term)
         || item.status.toLowerCase().includes(term)
       ))
@@ -2211,6 +2264,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       let result = 0
       if (paymentSort.key === 'titulo') result = compareText(a.titulo, b.titulo)
       if (paymentSort.key === 'tipo') result = compareText(a.tipo, b.tipo)
+      if (paymentSort.key === 'relaciona') result = compareText(a.relaciona, b.relaciona)
       if (paymentSort.key === 'contrato') result = compareText(a.contrato, b.contrato)
       if (paymentSort.key === 'emissao') result = toSortableDate(a.emissao) - toSortableDate(b.emissao)
       if (paymentSort.key === 'valor') result = compareNullableNumber(a.valor, b.valor)
@@ -2258,13 +2312,25 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label>
                   Tipo
-                  <select value={paymentState.form.tipo} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, tipo: event.target.value as RelationType }))} disabled={paymentIsViewMode}>
+                  <select value={paymentState.form.tipo} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, tipo: event.target.value as RelationType, relaciona: '', contrato: '' }))} disabled={paymentIsViewMode}>
                     {RELATION_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                 </label>
                 <label>
+                  Relaciona
+                  <select value={paymentState.form.relaciona} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, relaciona: event.target.value, contrato: '' }))} disabled={paymentIsViewMode}>
+                    <option value="">— Selecione —</option>
+                    {(paymentState.form.tipo === 'Cliente' ? clientOptions : resourceOptions).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </label>
+                <label>
                   Contrato
-                  <input value={paymentState.form.contrato} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} readOnly={paymentIsViewMode} />
+                  <select value={paymentState.form.contrato} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} disabled={paymentIsViewMode || !paymentState.form.relaciona}>
+                    <option value="">— Nenhum —</option>
+                    {contractsForLinking
+                      .filter((c) => c.status === 'Ativo' && c.tipo === paymentState.form.tipo && c.relaciona === paymentState.form.relaciona)
+                      .map((c) => <option key={c.id} value={c.titulo}>{c.titulo}</option>)}
+                  </select>
                 </label>
                 <label>
                   Valor
@@ -2329,6 +2395,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 <tr>
                   <th>{renderSortableHeader('Título', paymentSort.key === 'titulo', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'titulo', direction: getNextDirection(prev.key, 'titulo', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Tipo', paymentSort.key === 'tipo', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'tipo', direction: getNextDirection(prev.key, 'tipo', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Relaciona', paymentSort.key === 'relaciona', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'relaciona', direction: getNextDirection(prev.key, 'relaciona', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Contrato', paymentSort.key === 'contrato', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'contrato', direction: getNextDirection(prev.key, 'contrato', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Emissão', paymentSort.key === 'emissao', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'emissao', direction: getNextDirection(prev.key, 'emissao', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Valor', paymentSort.key === 'valor', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'valor', direction: getNextDirection(prev.key, 'valor', prev.direction) })))}</th>
@@ -2341,6 +2408,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                   <tr key={item.id}>
                     <td>{item.titulo}</td>
                     <td>{item.tipo}</td>
+                    <td>{item.relaciona || '-'}</td>
                     <td>{item.contrato || '-'}</td>
                     <td>{formatDateDisplay(item.emissao)}</td>
                     <td>{formatCurrencyDisplay(item.valor)}</td>
@@ -2357,6 +2425,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                             referencia: item.referencia,
                             previsaoPagamento: item.previsaoPagamento,
                             tipo: item.tipo,
+                            relaciona: item.relaciona,
                             contrato: item.contrato,
                             descricao: item.descricao,
                             valor: item.valor === null ? '' : String(item.valor),
@@ -2377,6 +2446,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                             referencia: item.referencia,
                             previsaoPagamento: item.previsaoPagamento,
                             tipo: item.tipo,
+                            relaciona: item.relaciona,
                             contrato: item.contrato,
                             descricao: item.descricao,
                             valor: item.valor === null ? '' : String(item.valor),
@@ -2396,7 +2466,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                     </td>
                   </tr>
                 ))}
-                {sortedItems.length === 0 && <tr><td colSpan={7} className="ch-empty">Nenhum pagamento cadastrado.</td></tr>}
+                {sortedItems.length === 0 && <tr><td colSpan={8} className="ch-empty">Nenhum pagamento cadastrado.</td></tr>}
               </tbody>
             </table>
           </div>

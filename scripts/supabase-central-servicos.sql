@@ -77,6 +77,7 @@ create table if not exists public.central_servicos_pagamentos (
   referencia text not null default '',
   previsao_pagamento date,
   tipo text not null default 'Cliente' check (tipo in ('Cliente', 'Recurso')),
+  relaciona text not null default '',
   contrato text not null default '',
   descricao text not null default '',
   valor numeric(14,2),
@@ -118,3 +119,7 @@ create index if not exists idx_central_servicos_pagamentos_titulo
 
 create index if not exists idx_central_servicos_pagamentos_contrato
   on public.central_servicos_pagamentos (contrato);
+
+-- migration: add relaciona to existing installations
+alter table public.central_servicos_pagamentos
+  add column if not exists relaciona text not null default '';

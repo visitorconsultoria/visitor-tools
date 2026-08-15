@@ -1133,6 +1133,7 @@ function normalizeCentralServicosResourceRow(row) {
 
   return {
     id,
+    contratoId: Number(row?.contrato_id) || null,
     nome,
     cpf: parseCentralServicosTextInput(row?.cpf),
     cnpj: parseCentralServicosTextInput(row?.cnpj),
@@ -1178,6 +1179,8 @@ function normalizeCentralServicosContractRow(row) {
 
   return {
     id,
+    contratoBaseId: Number(row?.contrato_base_id) || id,
+    versao: Number(row?.versao) > 0 ? Number(row.versao) : 1,
     titulo,
     tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
     relaciona: parseCentralServicosTextInput(row?.relaciona),
@@ -1186,10 +1189,17 @@ function normalizeCentralServicosContractRow(row) {
     valorUnitario: row?.valor_unitario === null || row?.valor_unitario === undefined ? null : Number(row.valor_unitario),
     tipoValor: CENTRAL_SERVICOS_VALUE_TYPES.includes(tipoValor) ? tipoValor : 'Hora',
     quantidade: row?.quantidade === null || row?.quantidade === undefined ? null : Number(row.quantidade),
+    saldoQuantidade: row?.saldo_quantidade === null || row?.saldo_quantidade === undefined ? null : Number(row.saldo_quantidade),
+    saldoValor: row?.saldo_valor === null || row?.saldo_valor === undefined ? null : Number(row.saldo_valor),
     dataInicio: parseCentralServicosTextInput(row?.data_inicio),
     vigenciaInicio: parseCentralServicosTextInput(row?.vigencia_inicio),
     vigenciaTermino: parseCentralServicosTextInput(row?.vigencia_termino),
     observacoes: parseCentralServicosTextInput(row?.observacoes),
+    faturamentoCorpoNota: parseCentralServicosTextInput(row?.faturamento_corpo_nota),
+    faturamentoDocumentos: parseCentralServicosTextInput(row?.faturamento_documentos),
+    faturamentoPrazoEmissao: parseCentralServicosTextInput(row?.faturamento_prazo_emissao),
+    faturamentoDataVencimento: parseCentralServicosTextInput(row?.faturamento_data_vencimento),
+    faturamentoCodigoServico: parseCentralServicosTextInput(row?.faturamento_codigo_servico),
     status: status === 'Encerrado' ? 'Encerrado' : 'Ativo',
   }
 }
@@ -1201,6 +1211,8 @@ function parseCentralServicosContractPayload(payload) {
   const status = parseCentralServicosTextInput(payload?.status)
 
   return {
+    contrato_base_id: Number(payload?.contrato_base_id) > 0 ? Number(payload.contrato_base_id) : null,
+    versao: Number(payload?.versao) > 0 ? Number(payload.versao) : 1,
     titulo: parseCentralServicosTextInput(payload?.titulo),
     tipo: CENTRAL_SERVICOS_RELATION_TYPES.includes(tipo) ? tipo : 'Cliente',
     relaciona: parseCentralServicosTextInput(payload?.relaciona),
@@ -1209,10 +1221,17 @@ function parseCentralServicosContractPayload(payload) {
     valor_unitario: parseCentralServicosNullableNumberInput(payload?.valor_unitario ?? payload?.valorUnitario),
     tipo_valor: CENTRAL_SERVICOS_VALUE_TYPES.includes(tipoValor) ? tipoValor : 'Hora',
     quantidade: parseCentralServicosNullableNumberInput(payload?.quantidade),
+    saldo_quantidade: parseCentralServicosNullableNumberInput(payload?.saldo_quantidade),
+    saldo_valor: parseCentralServicosNullableNumberInput(payload?.saldo_valor),
     data_inicio: parseCentralServicosNullableDateInput(payload?.data_inicio ?? payload?.dataInicio),
     vigencia_inicio: parseCentralServicosNullableDateInput(payload?.vigencia_inicio ?? payload?.vigenciaInicio),
     vigencia_termino: parseCentralServicosNullableDateInput(payload?.vigencia_termino ?? payload?.vigenciaTermino),
     observacoes: parseCentralServicosTextInput(payload?.observacoes),
+    faturamento_corpo_nota: parseCentralServicosTextInput(payload?.faturamento_corpo_nota ?? payload?.faturamentoCorpoNota),
+    faturamento_documentos: parseCentralServicosTextInput(payload?.faturamento_documentos ?? payload?.faturamentoDocumentos),
+    faturamento_prazo_emissao: parseCentralServicosTextInput(payload?.faturamento_prazo_emissao ?? payload?.faturamentoPrazoEmissao),
+    faturamento_data_vencimento: parseCentralServicosNullableDateInput(payload?.faturamento_data_vencimento ?? payload?.faturamentoDataVencimento),
+    faturamento_codigo_servico: parseCentralServicosTextInput(payload?.faturamento_codigo_servico ?? payload?.faturamentoCodigoServico),
     status: status === 'Encerrado' ? 'Encerrado' : 'Ativo',
   }
 }
@@ -1220,6 +1239,14 @@ function parseCentralServicosContractPayload(payload) {
 function validateCentralServicosContractPayload(parsed) {
   if (!parsed.titulo) {
     throw new Error('Informe o título do contrato.')
+  }
+  if (parsed.tipo_contrato === 'Banco de Horas') {
+    if (parsed.saldo_quantidade !== null && parsed.saldo_quantidade < 0) {
+      throw new Error('O saldo de quantidade não pode ser negativo.')
+    }
+    if (parsed.saldo_valor !== null && parsed.saldo_valor < 0) {
+      throw new Error('O saldo de valor não pode ser negativo.')
+    }
   }
 }
 
@@ -1293,6 +1320,7 @@ function normalizeCentralServicosInvoiceRow(row) {
     cliente: parseCentralServicosTextInput(row?.cliente),
     contrato: parseCentralServicosTextInput(row?.contrato),
     descricao: parseCentralServicosTextInput(row?.descricao),
+    quantidade: row?.quantidade === null || row?.quantidade === undefined ? null : Number(row.quantidade),
     valor: row?.valor === null || row?.valor === undefined ? null : Number(row.valor),
     status: CENTRAL_SERVICOS_INVOICE_STATUS.includes(status) ? status : 'Pendente',
     dataPagamento: parseCentralServicosTextInput(row?.data_pagamento),
@@ -1303,6 +1331,7 @@ function parseCentralServicosInvoicePayload(payload) {
   const status = parseCentralServicosTextInput(payload?.status)
 
   return {
+    contrato_id: Number(payload?.contrato_id) > 0 ? Number(payload.contrato_id) : null,
     titulo: parseCentralServicosTextInput(payload?.titulo),
     nota: parseCentralServicosTextInput(payload?.nota),
     emissao: parseCentralServicosNullableDateInput(payload?.emissao),
@@ -1311,6 +1340,7 @@ function parseCentralServicosInvoicePayload(payload) {
     cliente: parseCentralServicosTextInput(payload?.cliente),
     contrato: parseCentralServicosTextInput(payload?.contrato),
     descricao: parseCentralServicosTextInput(payload?.descricao),
+    quantidade: parseCentralServicosNullableNumberInput(payload?.quantidade),
     valor: parseCentralServicosNullableNumberInput(payload?.valor),
     status: CENTRAL_SERVICOS_INVOICE_STATUS.includes(status) ? status : 'Pendente',
     data_pagamento: parseCentralServicosNullableDateInput(payload?.data_pagamento ?? payload?.dataPagamento),
@@ -1321,6 +1351,40 @@ function validateCentralServicosInvoicePayload(parsed) {
   if (!parsed.titulo) {
     throw new Error('Informe o título do faturamento.')
   }
+}
+
+async function getBancoDeHorasContractForInvoice(invoice) {
+  const contractId = Number(invoice?.contrato_id)
+  if (!Number.isFinite(contractId) || contractId <= 0) return null
+  const { client, centralServicosContratosServicosTable } = getSupabaseClient()
+  const { data: contract, error } = await client.from(centralServicosContratosServicosTable)
+    .select('id, tipo_contrato, saldo_quantidade, saldo_valor, valor_unitario')
+    .eq('id', contractId).single()
+  if (error) throw new Error(error.message)
+  return contract?.tipo_contrato === 'Banco de Horas' ? contract : null
+}
+
+function validateBancoDeHorasBalance(contract, invoice) {
+  const quantity = Number(invoice.quantidade)
+  const value = Number(invoice.valor)
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Faturamento de Banco de Horas exige quantidade maior que zero.')
+  if (!Number.isFinite(value) || value <= 0) throw new Error('Faturamento de Banco de Horas exige valor maior que zero.')
+  if (Number(contract.saldo_quantidade) < quantity) throw new Error('A quantidade faturada excede o saldo de horas do contrato.')
+  if (Number(contract.saldo_valor) < value) throw new Error('O valor faturado excede o saldo financeiro do contrato.')
+}
+
+async function adjustBancoDeHorasBalance(contract, invoice, direction) {
+  const quantity = Number(invoice.quantidade)
+  const value = Number(invoice.valor)
+  if (!Number.isFinite(quantity) || !Number.isFinite(value)) return
+  const nextQuantity = Number(contract.saldo_quantidade) + (direction * quantity)
+  const nextValue = Number(contract.saldo_valor) + (direction * value)
+  const { client, centralServicosContratosServicosTable } = getSupabaseClient()
+  const { error } = await client.from(centralServicosContratosServicosTable).update({
+    saldo_quantidade: Number(nextQuantity.toFixed(2)),
+    saldo_valor: Number(nextValue.toFixed(2)),
+  }).eq('id', contract.id)
+  if (error) throw new Error(error.message)
 }
 
 function normalizeCentralServicosPaymentRow(row) {
@@ -1471,7 +1535,7 @@ async function listCentralServicosContratos() {
   const { centralServicosContratosServicosTable } = getSupabaseClient()
   return listCentralServicosItems(
     centralServicosContratosServicosTable,
-    'id, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes, status',
+    'id, contrato_base_id, versao, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, saldo_quantidade, saldo_valor, data_inicio, vigencia_inicio, vigencia_termino, observacoes, faturamento_corpo_nota, faturamento_documentos, faturamento_prazo_emissao, faturamento_data_vencimento, faturamento_codigo_servico, status',
     'titulo',
     normalizeCentralServicosContractRow,
   )
@@ -1479,10 +1543,19 @@ async function listCentralServicosContratos() {
 
 async function createCentralServicosContrato(payload) {
   const { centralServicosContratosServicosTable } = getSupabaseClient()
+  const parsed = parseCentralServicosContractPayload(payload)
+  validateCentralServicosContractPayload(parsed)
+  if (parsed.tipo_contrato === 'Banco de Horas') {
+    if (!Number.isFinite(parsed.quantidade) || parsed.quantidade <= 0 || !Number.isFinite(parsed.valor_unitario) || parsed.valor_unitario <= 0) {
+      throw new Error('Banco de Horas exige quantidade e valor unitário maiores que zero.')
+    }
+    parsed.saldo_quantidade = parsed.quantidade
+    parsed.saldo_valor = parsed.quantidade * parsed.valor_unitario
+  }
   return createCentralServicosItem(
     centralServicosContratosServicosTable,
-    payload,
-    'id, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes, status',
+    parsed,
+    'id, contrato_base_id, versao, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, saldo_quantidade, saldo_valor, data_inicio, vigencia_inicio, vigencia_termino, observacoes, faturamento_corpo_nota, faturamento_documentos, faturamento_prazo_emissao, faturamento_data_vencimento, faturamento_codigo_servico, status',
     parseCentralServicosContractPayload,
     validateCentralServicosContractPayload,
     normalizeCentralServicosContractRow,
@@ -1495,7 +1568,7 @@ async function updateCentralServicosContrato(id, payload) {
     centralServicosContratosServicosTable,
     id,
     payload,
-    'id, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, data_inicio, vigencia_inicio, vigencia_termino, observacoes, status',
+    'id, contrato_base_id, versao, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, saldo_quantidade, saldo_valor, data_inicio, vigencia_inicio, vigencia_termino, observacoes, faturamento_corpo_nota, faturamento_documentos, faturamento_prazo_emissao, faturamento_data_vencimento, faturamento_codigo_servico, status',
     parseCentralServicosContractPayload,
     validateCentralServicosContractPayload,
     normalizeCentralServicosContractRow,
@@ -1505,6 +1578,46 @@ async function updateCentralServicosContrato(id, payload) {
 async function deleteCentralServicosContrato(id) {
   const { centralServicosContratosServicosTable } = getSupabaseClient()
   await deleteCentralServicosItem(centralServicosContratosServicosTable, id)
+}
+
+async function versionarCentralServicosContrato(id, payload) {
+  const { client, centralServicosContratosServicosTable } = getSupabaseClient()
+  const { data: current, error: currentError } = await client
+    .from(centralServicosContratosServicosTable)
+    .select('id, contrato_base_id, versao, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, saldo_quantidade, saldo_valor, data_inicio, vigencia_inicio, vigencia_termino, observacoes, faturamento_corpo_nota, faturamento_documentos, faturamento_prazo_emissao, faturamento_data_vencimento, faturamento_codigo_servico, status')
+    .eq('id', id)
+    .single()
+
+  if (currentError) throw new Error(currentError.message)
+  if (current.status === 'Encerrado') throw new Error('A versão selecionada já está encerrada.')
+
+  const parsed = parseCentralServicosContractPayload({ ...current, ...payload })
+  validateCentralServicosContractPayload(parsed)
+  const baseId = Number(current.contrato_base_id) > 0 ? Number(current.contrato_base_id) : id
+  const nextVersion = Number(current.versao) > 0 ? Number(current.versao) + 1 : 2
+  if (parsed.tipo_contrato === 'Banco de Horas') {
+    if (!Number.isFinite(parsed.quantidade) || parsed.quantidade <= 0 || !Number.isFinite(parsed.valor_unitario) || parsed.valor_unitario <= 0) {
+      throw new Error('Banco de Horas exige quantidade e valor unitário maiores que zero.')
+    }
+    parsed.saldo_quantidade = parsed.quantidade
+    parsed.saldo_valor = parsed.quantidade * parsed.valor_unitario
+  }
+
+  const { error: closeError } = await client
+    .from(centralServicosContratosServicosTable)
+    .update({ status: 'Encerrado' })
+    .eq('id', id)
+
+  if (closeError) throw new Error(closeError.message)
+
+  const { data: row, error } = await client
+    .from(centralServicosContratosServicosTable)
+    .insert({ ...parsed, contrato_base_id: baseId, versao: nextVersion, status: 'Ativo' })
+    .select('id, contrato_base_id, versao, titulo, tipo, relaciona, descricao, tipo_contrato, valor_unitario, tipo_valor, quantidade, saldo_quantidade, saldo_valor, data_inicio, vigencia_inicio, vigencia_termino, observacoes, faturamento_corpo_nota, faturamento_documentos, faturamento_prazo_emissao, faturamento_data_vencimento, faturamento_codigo_servico, status')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCentralServicosContractRow(row)
 }
 
 async function listCentralServicosDespesas() {
@@ -1551,40 +1664,61 @@ async function listCentralServicosFaturamentos() {
   const { centralServicosFaturamentosTable } = getSupabaseClient()
   return listCentralServicosItems(
     centralServicosFaturamentosTable,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, valor, status, data_pagamento',
+    'id, contrato_id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, quantidade, valor, status, data_pagamento',
     'titulo',
     normalizeCentralServicosInvoiceRow,
   )
 }
 
 async function createCentralServicosFaturamento(payload) {
-  const { centralServicosFaturamentosTable } = getSupabaseClient()
-  return createCentralServicosItem(
-    centralServicosFaturamentosTable,
-    payload,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, valor, status, data_pagamento',
-    parseCentralServicosInvoicePayload,
-    validateCentralServicosInvoicePayload,
-    normalizeCentralServicosInvoiceRow,
-  )
+  const parsed = parseCentralServicosInvoicePayload(payload)
+  validateCentralServicosInvoicePayload(parsed)
+  const contract = await getBancoDeHorasContractForInvoice(parsed)
+  const { client, centralServicosFaturamentosTable } = getSupabaseClient()
+  if (contract) validateBancoDeHorasBalance(contract, parsed)
+  const { data: row, error } = await client
+    .from(centralServicosFaturamentosTable)
+    .insert(parsed)
+    .select('id, contrato_id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, quantidade, valor, status, data_pagamento')
+    .single()
+  if (error) throw new Error(error.message)
+  if (contract) await adjustBancoDeHorasBalance(contract, parsed, -1)
+  return normalizeCentralServicosInvoiceRow(row)
 }
 
 async function updateCentralServicosFaturamento(id, payload) {
-  const { centralServicosFaturamentosTable } = getSupabaseClient()
-  return updateCentralServicosItem(
-    centralServicosFaturamentosTable,
-    id,
-    payload,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, valor, status, data_pagamento',
-    parseCentralServicosInvoicePayload,
-    validateCentralServicosInvoicePayload,
-    normalizeCentralServicosInvoiceRow,
-  )
+  const parsed = parseCentralServicosInvoicePayload(payload)
+  validateCentralServicosInvoicePayload(parsed)
+  const { client, centralServicosFaturamentosTable } = getSupabaseClient()
+  const { data: previous, error: previousError } = await client.from(centralServicosFaturamentosTable).select('id, contrato_id, quantidade, valor').eq('id', id).single()
+  if (previousError) throw new Error(previousError.message)
+  const previousContract = await getBancoDeHorasContractForInvoice(previous)
+  let nextContract = await getBancoDeHorasContractForInvoice(parsed)
+  if (previousContract) await adjustBancoDeHorasBalance(previousContract, previous, 1)
+  try {
+    if (nextContract && previousContract?.id === nextContract.id) {
+      nextContract = await getBancoDeHorasContractForInvoice(parsed)
+    }
+    if (nextContract) validateBancoDeHorasBalance(nextContract, parsed)
+    const { data: row, error } = await client.from(centralServicosFaturamentosTable).update(parsed).eq('id', id)
+      .select('id, contrato_id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, quantidade, valor, status, data_pagamento').single()
+    if (error) throw new Error(error.message)
+    if (nextContract) await adjustBancoDeHorasBalance(nextContract, parsed, -1)
+    return normalizeCentralServicosInvoiceRow(row)
+  } catch (error) {
+    if (previousContract) await adjustBancoDeHorasBalance(previousContract, previous, -1)
+    throw error
+  }
 }
 
 async function deleteCentralServicosFaturamento(id) {
-  const { centralServicosFaturamentosTable } = getSupabaseClient()
-  await deleteCentralServicosItem(centralServicosFaturamentosTable, id)
+  const { client, centralServicosFaturamentosTable } = getSupabaseClient()
+  const { data: previous, error: previousError } = await client.from(centralServicosFaturamentosTable).select('id, contrato_id, quantidade, valor').eq('id', id).single()
+  if (previousError) throw new Error(previousError.message)
+  const contract = await getBancoDeHorasContractForInvoice(previous)
+  const { error } = await client.from(centralServicosFaturamentosTable).delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  if (contract) await adjustBancoDeHorasBalance(contract, previous, 1)
 }
 
 async function listCentralServicosPagamentos() {
@@ -3263,6 +3397,17 @@ app.put('/api/central-servicos/contratos-servicos/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(400).json({ error: `Falha ao atualizar contrato: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/contratos-servicos/:id/versionar', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do contrato')
+    const item = await versionarCentralServicosContrato(id, req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao versionar contrato: ${detail}` })
   }
 })
 

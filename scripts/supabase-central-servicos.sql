@@ -17,6 +17,8 @@ create table if not exists public.central_servicos_recursos (
 
 create table if not exists public.central_servicos_contratos_servicos (
   id bigint generated always as identity primary key,
+  contrato_base_id bigint,
+  versao integer not null default 1 check (versao > 0),
   titulo text not null default '',
   tipo text not null default 'Cliente' check (tipo in ('Cliente', 'Recurso')),
   relaciona text not null default '',
@@ -25,14 +27,58 @@ create table if not exists public.central_servicos_contratos_servicos (
   valor_unitario numeric(14,2),
   tipo_valor text not null default 'Hora' check (tipo_valor in ('Hora', 'Valor', 'Tarefa')),
   quantidade numeric(14,2),
+  saldo_quantidade numeric(14,2),
+  saldo_valor numeric(14,2),
   data_inicio date,
   vigencia_inicio date,
   vigencia_termino date,
   observacoes text not null default '',
+  faturamento_corpo_nota text not null default '',
+  faturamento_documentos text not null default '',
+  faturamento_prazo_emissao text not null default '',
+  faturamento_data_vencimento date,
+  faturamento_codigo_servico text not null default '',
   status text not null default 'Ativo' check (status in ('Ativo', 'Encerrado')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists contrato_base_id bigint;
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists versao integer not null default 1;
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists saldo_quantidade numeric(14,2);
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists saldo_valor numeric(14,2);
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists faturamento_corpo_nota text not null default '';
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists faturamento_documentos text not null default '';
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists faturamento_prazo_emissao text not null default '';
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists faturamento_data_vencimento date;
+
+alter table public.central_servicos_contratos_servicos
+  add column if not exists faturamento_codigo_servico text not null default '';
+
+update public.central_servicos_contratos_servicos
+set contrato_base_id = id
+where contrato_base_id is null;
+
+update public.central_servicos_contratos_servicos
+set saldo_quantidade = quantidade,
+    saldo_valor = case when quantidade is not null and valor_unitario is not null then quantidade * valor_unitario else null end
+where tipo_contrato = 'Banco de Horas'
+  and saldo_quantidade is null;
 
 create table if not exists public.central_servicos_despesas (
   id bigint generated always as identity primary key,
@@ -54,6 +100,7 @@ create table if not exists public.central_servicos_despesas (
 
 create table if not exists public.central_servicos_faturamentos (
   id bigint generated always as identity primary key,
+  contrato_id bigint,
   titulo text not null default '',
   nota text not null default '',
   emissao date,
@@ -62,12 +109,19 @@ create table if not exists public.central_servicos_faturamentos (
   cliente text not null default '',
   contrato text not null default '',
   descricao text not null default '',
+  quantidade numeric(14,2),
   valor numeric(14,2),
   status text not null default 'Pendente' check (status in ('Pendente', 'Faturado', 'Pago')),
   data_pagamento date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.central_servicos_faturamentos
+  add column if not exists contrato_id bigint;
+
+alter table public.central_servicos_faturamentos
+  add column if not exists quantidade numeric(14,2);
 
 create table if not exists public.central_servicos_pagamentos (
   id bigint generated always as identity primary key,
@@ -101,6 +155,9 @@ create index if not exists idx_central_servicos_contratos_servicos_titulo
 
 create index if not exists idx_central_servicos_contratos_servicos_relaciona
   on public.central_servicos_contratos_servicos (relaciona);
+
+create index if not exists idx_central_servicos_contratos_servicos_base
+  on public.central_servicos_contratos_servicos (contrato_base_id, versao);
 
 create index if not exists idx_central_servicos_despesas_titulo
   on public.central_servicos_despesas (titulo);

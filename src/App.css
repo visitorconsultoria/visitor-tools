@@ -3673,6 +3673,30 @@ button:disabled {
 }
 
 /* ── Rich Text Editor ────────────────────────────────────── */
+.central-servicos-tabs {
+  display: flex;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 0.35rem;
+}
+
+.central-servicos-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ink-secondary);
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.central-servicos-tab:hover,
+.central-servicos-tab--active {
+  color: var(--brand-900);
+  border-bottom-color: var(--brand-900);
+}
+
 .rich-editor {
   border: 1px solid var(--line-strong);
   border-radius: 6px;

@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
+import RichTextEditor from './RichTextEditor'
 
 export type CentralServicosPage = 'dashboard' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos'
 
@@ -47,6 +48,8 @@ type ResourceForm = {
 
 type ContractItem = {
   id: number
+  contratoBaseId: number
+  versao: number
   titulo: string
   tipo: RelationType
   relaciona: string
@@ -55,10 +58,17 @@ type ContractItem = {
   valorUnitario: number | null
   tipoValor: ValueType
   quantidade: number | null
+  saldoQuantidade: number | null
+  saldoValor: number | null
   dataInicio: string
   vigenciaInicio: string
   vigenciaTermino: string
   observacoes: string
+  faturamentoCorpoNota: string
+  faturamentoDocumentos: string
+  faturamentoPrazoEmissao: string
+  faturamentoDataVencimento: string
+  faturamentoCodigoServico: string
   status: 'Ativo' | 'Encerrado'
 }
 
@@ -71,10 +81,17 @@ type ContractForm = {
   valorUnitario: string
   tipoValor: ValueType
   quantidade: string
+  saldoQuantidade: string
+  saldoValor: string
   dataInicio: string
   vigenciaInicio: string
   vigenciaTermino: string
   observacoes: string
+  faturamentoCorpoNota: string
+  faturamentoDocumentos: string
+  faturamentoPrazoEmissao: string
+  faturamentoDataVencimento: string
+  faturamentoCodigoServico: string
   status: 'Ativo' | 'Encerrado'
 }
 
@@ -111,6 +128,7 @@ type ExpenseForm = {
 
 type InvoiceItem = {
   id: number
+  contratoId: number | null
   titulo: string
   nota: string
   emissao: string
@@ -119,12 +137,14 @@ type InvoiceItem = {
   cliente: string
   contrato: string
   descricao: string
+  quantidade: number | null
   valor: number | null
   status: InvoiceStatus
   dataPagamento: string
 }
 
 type InvoiceForm = {
+  contratoId: string
   titulo: string
   nota: string
   emissao: string
@@ -133,6 +153,7 @@ type InvoiceForm = {
   cliente: string
   contrato: string
   descricao: string
+  quantidade: string
   valor: string
   status: InvoiceStatus
   dataPagamento: string
@@ -189,10 +210,17 @@ const EMPTY_CONTRACT_FORM: ContractForm = {
   valorUnitario: '',
   tipoValor: 'Hora',
   quantidade: '',
+  saldoQuantidade: '',
+  saldoValor: '',
   dataInicio: '',
   vigenciaInicio: '',
   vigenciaTermino: '',
   observacoes: '',
+  faturamentoCorpoNota: '',
+  faturamentoDocumentos: '',
+  faturamentoPrazoEmissao: '',
+  faturamentoDataVencimento: '',
+  faturamentoCodigoServico: '',
   status: 'Ativo',
 }
 
@@ -212,6 +240,7 @@ const EMPTY_EXPENSE_FORM: ExpenseForm = {
 }
 
 const EMPTY_INVOICE_FORM: InvoiceForm = {
+  contratoId: '',
   titulo: '',
   nota: '',
   emissao: '',
@@ -220,6 +249,7 @@ const EMPTY_INVOICE_FORM: InvoiceForm = {
   cliente: '',
   contrato: '',
   descricao: '',
+  quantidade: '',
   valor: '',
   status: 'Pendente',
   dataPagamento: '',
@@ -419,6 +449,8 @@ function normalizeContract(input: unknown): ContractItem | null {
 
   return {
     id,
+    contratoBaseId: Number(item.contratoBaseId ?? (item as { contrato_base_id?: unknown }).contrato_base_id) || id,
+    versao: Number(item.versao) > 0 ? Number(item.versao) : 1,
     titulo,
     tipo: RELATION_TYPE_OPTIONS.includes(normalizeText(item.tipo) as RelationType) ? normalizeText(item.tipo) as RelationType : 'Cliente',
     relaciona: normalizeText(item.relaciona),
@@ -431,10 +463,17 @@ function normalizeContract(input: unknown): ContractItem | null {
       ? normalizeText(item.tipoValor) as ValueType
       : 'Hora',
     quantidade: parseNullableNumber(normalizeText(item.quantidade)),
+    saldoQuantidade: parseNullableNumber(normalizeText(item.saldoQuantidade ?? (item as { saldo_quantidade?: unknown }).saldo_quantidade)),
+    saldoValor: parseNullableNumber(normalizeText(item.saldoValor ?? (item as { saldo_valor?: unknown }).saldo_valor)),
     dataInicio: normalizeText(item.dataInicio ?? (item as { data_inicio?: unknown }).data_inicio),
     vigenciaInicio: normalizeText(item.vigenciaInicio ?? (item as { vigencia_inicio?: unknown }).vigencia_inicio),
     vigenciaTermino: normalizeText(item.vigenciaTermino ?? (item as { vigencia_termino?: unknown }).vigencia_termino),
     observacoes: normalizeText(item.observacoes),
+    faturamentoCorpoNota: normalizeText(item.faturamentoCorpoNota),
+    faturamentoDocumentos: normalizeText(item.faturamentoDocumentos),
+    faturamentoPrazoEmissao: normalizeText(item.faturamentoPrazoEmissao),
+    faturamentoDataVencimento: normalizeText(item.faturamentoDataVencimento),
+    faturamentoCodigoServico: normalizeText(item.faturamentoCodigoServico),
     status: normalizeText(item.status) === 'Encerrado' ? 'Encerrado' : 'Ativo',
   }
 }
@@ -474,6 +513,7 @@ function normalizeInvoice(input: unknown): InvoiceItem | null {
 
   return {
     id,
+    contratoId: Number(item.contratoId ?? (item as { contrato_id?: unknown }).contrato_id) || null,
     titulo,
     nota: normalizeText(item.nota),
     emissao: normalizeText(item.emissao),
@@ -482,6 +522,7 @@ function normalizeInvoice(input: unknown): InvoiceItem | null {
     cliente: normalizeText(item.cliente),
     contrato: normalizeText(item.contrato),
     descricao: normalizeText(item.descricao),
+    quantidade: parseNullableNumber(normalizeText(item.quantidade)),
     valor: parseNullableNumber(normalizeText(item.valor)),
     status: INVOICE_STATUS_OPTIONS.includes(normalizeText(item.status) as InvoiceStatus)
       ? normalizeText(item.status) as InvoiceStatus
@@ -565,6 +606,8 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
   const contractState = useCatalogState<ContractItem, ContractForm>(EMPTY_CONTRACT_FORM)
   const [contractEditorOpen, setContractEditorOpen] = useState(false)
   const [contractIsViewMode, setContractIsViewMode] = useState(false)
+  const [contractEditorTab, setContractEditorTab] = useState<'dados' | 'faturamento'>('dados')
+  const [contractVersioningFromId, setContractVersioningFromId] = useState<number | null>(null)
   const [contractSort, setContractSort] = useState<{ key: ContractSortKey; direction: SortDirection }>(CONTRACT_DEFAULT_SORT)
   const expenseState = useCatalogState<ExpenseItem, ExpenseForm>(EMPTY_EXPENSE_FORM)
   const [expenseEditorOpen, setExpenseEditorOpen] = useState(false)
@@ -628,6 +671,8 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     contractState.setEditingId(null)
     setContractEditorOpen(false)
     setContractIsViewMode(false)
+    setContractEditorTab('dados')
+    setContractVersioningFromId(null)
     setContractSort(CONTRACT_DEFAULT_SORT)
     contractState.setError(null)
     contractState.setSuccess(null)
@@ -676,6 +721,8 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     contractState.setForm(EMPTY_CONTRACT_FORM)
     contractState.setEditingId(null)
     setContractIsViewMode(false)
+    setContractEditorTab('dados')
+    setContractVersioningFromId(null)
     setContractEditorOpen(false)
   }
 
@@ -856,11 +903,15 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       return
     }
 
+    const currentContract = editingId === null ? null : contractState.items.find((item) => item.id === editingId) ?? null
+
     contractState.setIsSaving(true)
     contractState.setError(null)
     contractState.setSuccess(null)
 
     const payload = {
+      contrato_base_id: currentContract?.contratoBaseId ?? null,
+      versao: currentContract?.versao ?? 1,
       titulo,
       tipo: form.tipo,
       relaciona: form.relaciona.trim(),
@@ -869,16 +920,26 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       valor_unitario: parseNullableNumber(form.valorUnitario),
       tipo_valor: form.tipoValor,
       quantidade: parseNullableNumber(form.quantidade),
+      saldo_quantidade: parseNullableNumber(form.saldoQuantidade),
+      saldo_valor: parseNullableNumber(form.saldoValor),
       data_inicio: parseNullableDate(form.dataInicio),
       vigencia_inicio: parseNullableDate(form.vigenciaInicio),
       vigencia_termino: parseNullableDate(form.vigenciaTermino),
       observacoes: form.observacoes.trim(),
+      faturamento_corpo_nota: form.faturamentoCorpoNota,
+      faturamento_documentos: form.faturamentoDocumentos,
+      faturamento_prazo_emissao: form.faturamentoPrazoEmissao.trim(),
+      faturamento_data_vencimento: parseNullableDate(form.faturamentoDataVencimento),
+      faturamento_codigo_servico: form.faturamentoCodigoServico.trim(),
       status: form.status,
     }
 
     try {
-      const response = await fetch(apiUrl(editingId ? `/api/central-servicos/contratos-servicos/${editingId}` : '/api/central-servicos/contratos-servicos'), {
-        method: editingId ? 'PUT' : 'POST',
+      const versioning = contractVersioningFromId !== null
+      const response = await fetch(apiUrl(versioning
+        ? `/api/central-servicos/contratos-servicos/${contractVersioningFromId}/versionar`
+        : editingId ? `/api/central-servicos/contratos-servicos/${editingId}` : '/api/central-servicos/contratos-servicos'), {
+        method: versioning ? 'POST' : editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
@@ -890,8 +951,9 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       contractState.setItems(await loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract))
       contractState.setForm(EMPTY_CONTRACT_FORM)
       contractState.setEditingId(null)
+      setContractVersioningFromId(null)
       setContractEditorOpen(false)
-      contractState.setSuccess(editingId ? 'Contrato atualizado com sucesso.' : 'Contrato cadastrado com sucesso.')
+      contractState.setSuccess(versioning ? 'Contrato versionado com sucesso.' : editingId ? 'Contrato atualizado com sucesso.' : 'Contrato cadastrado com sucesso.')
     } catch (saveError) {
       contractState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar contrato.')
     } finally {
@@ -960,12 +1022,18 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       invoiceState.setError('Preencha o título do faturamento.')
       return
     }
+    const linkedContract = contractsForLinking.find((contract) => String(contract.id) === invoiceState.form.contratoId)
+    if (linkedContract?.tipoContrato === 'Banco de Horas' && (!invoiceState.form.quantidade || Number(invoiceState.form.quantidade) <= 0)) {
+      invoiceState.setError('Informe a quantidade faturada para contratos de Banco de Horas.')
+      return
+    }
 
     invoiceState.setIsSaving(true)
     invoiceState.setError(null)
     invoiceState.setSuccess(null)
 
     const payload = {
+      contrato_id: linkedContract?.id ?? null,
       titulo,
       nota: form.nota.trim(),
       emissao: parseNullableDate(form.emissao),
@@ -974,6 +1042,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       cliente: form.cliente.trim(),
       contrato: form.contrato.trim(),
       descricao: form.descricao.trim(),
+      quantidade: linkedContract?.tipoContrato === 'Banco de Horas' ? parseNullableNumber(form.quantidade) : null,
       valor: parseNullableNumber(form.valor),
       status: form.status,
       data_pagamento: parseNullableDate(form.dataPagamento),
@@ -1572,6 +1641,29 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                         </button>
                         <button
                           type="button"
+                          className="ch-icon-action"
+                          aria-label="Duplicar recurso"
+                          title="Duplicar"
+                          onClick={() => {
+                            resourceState.setForm({
+                              nome: item.nome,
+                              cpf: item.cpf,
+                              cnpj: item.cnpj,
+                              sexo: item.sexo,
+                              dataNascimento: item.dataNascimento,
+                              emailPessoal: item.emailPessoal,
+                              dadosPagamento: item.dadosPagamento,
+                              status: item.status,
+                            })
+                            resourceState.setEditingId(null)
+                            setResourceIsViewMode(false)
+                            setResourceEditorOpen(true)
+                          }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
+                        </button>
+                        <button
+                          type="button"
                           className="ch-icon-action ch-icon-action--danger"
                           aria-label="Excluir recurso"
                           title="Excluir"
@@ -1633,6 +1725,12 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
               </div>
 
               <form onSubmit={handleSaveContract} className="estimativas-form">
+                <div className="central-servicos-tabs estimativas-form__full" role="tablist" aria-label="Seções do contrato">
+                  <button type="button" className={contractEditorTab === 'dados' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setContractEditorTab('dados')} role="tab" aria-selected={contractEditorTab === 'dados'}>Dados do contrato</button>
+                  <button type="button" className={contractEditorTab === 'faturamento' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setContractEditorTab('faturamento')} role="tab" aria-selected={contractEditorTab === 'faturamento'}>Detalhes do faturamento</button>
+                </div>
+                {contractEditorTab === 'dados' && (
+                  <>
                 <label>
                   Título
                   <input value={contractState.form.titulo} onChange={(event) => contractState.setForm((prev) => ({ ...prev, titulo: event.target.value }))} readOnly={contractIsViewMode} required />
@@ -1670,6 +1768,18 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                   Quantidade
                   <input type="number" step="0.01" value={contractState.form.quantidade} onChange={(event) => contractState.setForm((prev) => ({ ...prev, quantidade: event.target.value }))} readOnly={contractIsViewMode} />
                 </label>
+                {contractState.form.tipoContrato === 'Banco de Horas' && (
+                  <>
+                    <label>
+                      Saldo de Quantidade
+                      <input type="number" min="0" step="0.01" value={contractState.form.saldoQuantidade} onChange={(event) => contractState.setForm((prev) => ({ ...prev, saldoQuantidade: event.target.value }))} readOnly={contractIsViewMode} />
+                    </label>
+                    <label>
+                      Saldo de Valor
+                      <input type="number" min="0" step="0.01" value={contractState.form.saldoValor} onChange={(event) => contractState.setForm((prev) => ({ ...prev, saldoValor: event.target.value }))} readOnly={contractIsViewMode} />
+                    </label>
+                  </>
+                )}
                 <label>
                   Data de Início
                   <input type="date" value={contractState.form.dataInicio} onChange={(event) => contractState.setForm((prev) => ({ ...prev, dataInicio: event.target.value }))} disabled={contractIsViewMode} />
@@ -1691,12 +1801,38 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label className="estimativas-form__full">
                   Descrição
-                  <textarea rows={3} value={contractState.form.descricao} onChange={(event) => contractState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={contractIsViewMode} />
+                  <RichTextEditor value={contractState.form.descricao} onChange={(value) => contractState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva o contrato." rows={4} disabled={contractIsViewMode} />
                 </label>
                 <label className="estimativas-form__full">
                   Observações
-                  <textarea rows={3} value={contractState.form.observacoes} onChange={(event) => contractState.setForm((prev) => ({ ...prev, observacoes: event.target.value }))} readOnly={contractIsViewMode} />
+                  <RichTextEditor value={contractState.form.observacoes} onChange={(value) => contractState.setForm((prev) => ({ ...prev, observacoes: value }))} placeholder="Adicione observações do contrato." rows={4} disabled={contractIsViewMode} />
                 </label>
+                  </>
+                )}
+                {contractEditorTab === 'faturamento' && (
+                  <>
+                    <label className="estimativas-form__full">
+                      Corpo da Nota
+                      <RichTextEditor value={contractState.form.faturamentoCorpoNota} onChange={(value) => contractState.setForm((prev) => ({ ...prev, faturamentoCorpoNota: value }))} placeholder="Texto que deverá constar no corpo da nota fiscal." rows={6} disabled={contractIsViewMode} />
+                    </label>
+                    <label className="estimativas-form__full">
+                      Documentos para Anexar
+                      <RichTextEditor value={contractState.form.faturamentoDocumentos} onChange={(value) => contractState.setForm((prev) => ({ ...prev, faturamentoDocumentos: value }))} placeholder="Liste os documentos necessários para anexar à nota." rows={5} disabled={contractIsViewMode} />
+                    </label>
+                    <label>
+                      Prazo de Emissão
+                      <input value={contractState.form.faturamentoPrazoEmissao} onChange={(event) => contractState.setForm((prev) => ({ ...prev, faturamentoPrazoEmissao: event.target.value }))} readOnly={contractIsViewMode} placeholder="Ex.: até o 5º dia útil" />
+                    </label>
+                    <label>
+                      Data de Vencimento
+                      <input type="date" value={contractState.form.faturamentoDataVencimento} onChange={(event) => contractState.setForm((prev) => ({ ...prev, faturamentoDataVencimento: event.target.value }))} disabled={contractIsViewMode} />
+                    </label>
+                    <label>
+                      Código de Serviço
+                      <input value={contractState.form.faturamentoCodigoServico} onChange={(event) => contractState.setForm((prev) => ({ ...prev, faturamentoCodigoServico: event.target.value }))} readOnly={contractIsViewMode} />
+                    </label>
+                  </>
+                )}
                 {!contractIsViewMode && (
                   <div className="estimativas-actions estimativas-form__full">
                     <button type="submit" className="button-primary" disabled={contractState.isSaving}>
@@ -1722,6 +1858,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
             <button type="button" className="button-primary" onClick={() => {
               contractState.setForm(EMPTY_CONTRACT_FORM)
               contractState.setEditingId(null)
+              setContractVersioningFromId(null)
               setContractIsViewMode(false)
               setContractEditorOpen(true)
             }}>
@@ -1752,7 +1889,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
               <tbody>
                 {sortedItems.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.titulo}</td>
+                    <td>{item.titulo} <span className="muted" style={{ fontSize: '0.78rem' }}>v{item.versao}</span></td>
                     <td>{item.tipo}</td>
                     <td>{item.relaciona || '-'}</td>
                     <td>{item.tipoContrato}</td>
@@ -1772,13 +1909,21 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                             valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
                             tipoValor: item.tipoValor,
                             quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            saldoQuantidade: item.saldoQuantidade === null ? '' : String(item.saldoQuantidade),
+                            saldoValor: item.saldoValor === null ? '' : String(item.saldoValor),
                             dataInicio: item.dataInicio,
                             vigenciaInicio: item.vigenciaInicio,
                             vigenciaTermino: item.vigenciaTermino,
                             observacoes: item.observacoes,
                             status: item.status,
+                            faturamentoCorpoNota: item.faturamentoCorpoNota ?? '',
+                            faturamentoDocumentos: item.faturamentoDocumentos ?? '',
+                            faturamentoPrazoEmissao: item.faturamentoPrazoEmissao ?? '',
+                            faturamentoDataVencimento: item.faturamentoDataVencimento ?? '',
+                            faturamentoCodigoServico: item.faturamentoCodigoServico ?? '',
                           })
                           contractState.setEditingId(item.id)
+                          setContractVersioningFromId(null)
                           setContractIsViewMode(true)
                           setContractEditorOpen(true)
                         }}>
@@ -1794,17 +1939,55 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                             valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
                             tipoValor: item.tipoValor,
                             quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            saldoQuantidade: item.saldoQuantidade === null ? '' : String(item.saldoQuantidade),
+                            saldoValor: item.saldoValor === null ? '' : String(item.saldoValor),
                             dataInicio: item.dataInicio,
                             vigenciaInicio: item.vigenciaInicio,
                             vigenciaTermino: item.vigenciaTermino,
                             observacoes: item.observacoes,
+                            faturamentoCorpoNota: item.faturamentoCorpoNota,
+                            faturamentoDocumentos: item.faturamentoDocumentos,
+                            faturamentoPrazoEmissao: item.faturamentoPrazoEmissao,
+                            faturamentoDataVencimento: item.faturamentoDataVencimento,
+                            faturamentoCodigoServico: item.faturamentoCodigoServico,
                             status: item.status,
                           })
                           contractState.setEditingId(item.id)
+                          setContractVersioningFromId(null)
                           setContractIsViewMode(false)
                           setContractEditorOpen(true)
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                        <button type="button" className="ch-icon-action" aria-label="Versionar contrato" title="Versionar" onClick={() => {
+                          contractState.setForm({
+                            titulo: `${item.titulo} - v${item.versao + 1}`,
+                            tipo: item.tipo,
+                            relaciona: item.relaciona,
+                            descricao: item.descricao,
+                            tipoContrato: item.tipoContrato,
+                            valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
+                            tipoValor: item.tipoValor,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            saldoQuantidade: item.saldoQuantidade === null ? '' : String(item.saldoQuantidade),
+                            saldoValor: item.saldoValor === null ? '' : String(item.saldoValor),
+                            dataInicio: item.dataInicio,
+                            vigenciaInicio: item.vigenciaInicio,
+                            vigenciaTermino: item.vigenciaTermino,
+                            observacoes: item.observacoes,
+                            faturamentoCorpoNota: item.faturamentoCorpoNota,
+                            faturamentoDocumentos: item.faturamentoDocumentos,
+                            faturamentoPrazoEmissao: item.faturamentoPrazoEmissao,
+                            faturamentoDataVencimento: item.faturamentoDataVencimento,
+                            faturamentoCodigoServico: item.faturamentoCodigoServico,
+                            status: 'Ativo',
+                          })
+                          contractState.setEditingId(null)
+                          setContractVersioningFromId(item.id)
+                          setContractIsViewMode(false)
+                          setContractEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
                         </button>
                         <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir contrato" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/contratos-servicos', item.id, reload, 'Contrato removido com sucesso.', contractState.setError, contractState.setSuccess)} disabled={contractState.isSaving}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
@@ -1909,11 +2092,11 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label className="estimativas-form__full">
                   Descrição
-                  <textarea rows={3} value={expenseState.form.descricao} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={expenseIsViewMode} />
+                  <RichTextEditor value={expenseState.form.descricao} onChange={(value) => expenseState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva a despesa." rows={4} disabled={expenseIsViewMode} />
                 </label>
                 <label className="estimativas-form__full">
                   Observações
-                  <textarea rows={3} value={expenseState.form.observacoes} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, observacoes: event.target.value }))} readOnly={expenseIsViewMode} />
+                  <RichTextEditor value={expenseState.form.observacoes} onChange={(value) => expenseState.setForm((prev) => ({ ...prev, observacoes: value }))} placeholder="Adicione observações da despesa." rows={4} disabled={expenseIsViewMode} />
                 </label>
                 {!expenseIsViewMode && (
                   <div className="estimativas-actions estimativas-form__full">
@@ -2018,6 +2201,27 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                         </button>
+                          <button type="button" className="ch-icon-action" aria-label="Duplicar despesa" title="Duplicar" onClick={() => {
+                            expenseState.setForm({
+                              titulo: item.titulo,
+                              tipo: item.tipo,
+                              relaciona: item.relaciona,
+                              descricao: item.descricao,
+                              tipoDespesa: item.tipoDespesa,
+                              valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
+                              tipoValor: item.tipoValor,
+                              quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                              dataInicio: item.dataInicio,
+                              vigenciaInicio: item.vigenciaInicio,
+                              vigenciaTermino: item.vigenciaTermino,
+                              observacoes: item.observacoes,
+                            })
+                            expenseState.setEditingId(null)
+                            setExpenseIsViewMode(false)
+                            setExpenseEditorOpen(true)
+                          }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
+                          </button>
                         <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir despesa" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/despesas', item.id, reload, 'Despesa removida com sucesso.', expenseState.setError, expenseState.setSuccess)} disabled={expenseState.isSaving}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
                         </button>
@@ -2095,20 +2299,29 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label>
                   Cliente
-                  <select value={invoiceState.form.cliente} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, cliente: event.target.value, contrato: '' }))} disabled={invoiceIsViewMode}>
+                  <select value={invoiceState.form.cliente} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, cliente: event.target.value, contrato: '', contratoId: '', quantidade: '' }))} disabled={invoiceIsViewMode}>
                     <option value="">— Selecione —</option>
                     {clientOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </label>
                 <label>
                   Contrato
-                  <select value={invoiceState.form.contrato} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} disabled={invoiceIsViewMode || !invoiceState.form.cliente}>
+                  <select value={invoiceState.form.contratoId} onChange={(event) => {
+                    const selected = contractsForLinking.find((contract) => String(contract.id) === event.target.value)
+                    invoiceState.setForm((prev) => ({ ...prev, contratoId: event.target.value, contrato: selected?.titulo ?? '', quantidade: selected?.tipoContrato === 'Banco de Horas' ? prev.quantidade : '' }))
+                  }} disabled={invoiceIsViewMode || !invoiceState.form.cliente}>
                     <option value="">— Selecione —</option>
                     {contractsForLinking
                       .filter((c) => c.status === 'Ativo' && c.tipo === 'Cliente' && c.relaciona === invoiceState.form.cliente)
-                      .map((c) => <option key={c.id} value={c.titulo}>{c.titulo}</option>)}
+                      .map((c) => <option key={c.id} value={String(c.id)}>{c.titulo} v{c.versao}{c.tipoContrato === 'Banco de Horas' ? ` (saldo: ${c.saldoQuantidade ?? 0} h)` : ''}</option>)}
                   </select>
                 </label>
+                {contractsForLinking.find((contract) => String(contract.id) === invoiceState.form.contratoId)?.tipoContrato === 'Banco de Horas' && (
+                  <label>
+                    Quantidade Faturada
+                    <input type="number" min="0.01" step="0.01" value={invoiceState.form.quantidade} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, quantidade: event.target.value }))} readOnly={invoiceIsViewMode} required />
+                  </label>
+                )}
                 <label>
                   Valor
                   <input type="text" inputMode="decimal" value={formatCurrencyInputBrl(invoiceState.form.valor)} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, valor: parseCurrencyInputBrl(event.target.value) }))} readOnly={invoiceIsViewMode} placeholder="R$ 0,00" />
@@ -2125,7 +2338,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label className="estimativas-form__full">
                   Descrição
-                  <textarea rows={3} value={invoiceState.form.descricao} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={invoiceIsViewMode} />
+                  <RichTextEditor value={invoiceState.form.descricao} onChange={(value) => invoiceState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva o faturamento." rows={4} disabled={invoiceIsViewMode} />
                 </label>
                 {!invoiceIsViewMode && (
                   <div className="estimativas-actions estimativas-form__full">
@@ -2175,6 +2388,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                   <th>{renderSortableHeader('Cliente', invoiceSort.key === 'cliente', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'cliente', direction: getNextDirection(prev.key, 'cliente', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Contrato', invoiceSort.key === 'contrato', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'contrato', direction: getNextDirection(prev.key, 'contrato', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Emissão', invoiceSort.key === 'emissao', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'emissao', direction: getNextDirection(prev.key, 'emissao', prev.direction) })))}</th>
+                  <th>Quantidade</th>
                   <th>{renderSortableHeader('Valor', invoiceSort.key === 'valor', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'valor', direction: getNextDirection(prev.key, 'valor', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Status', invoiceSort.key === 'status', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
                   <th>Ações</th>
@@ -2188,6 +2402,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                     <td>{item.cliente || '-'}</td>
                     <td>{item.contrato || '-'}</td>
                     <td>{formatDateDisplay(item.emissao)}</td>
+                    <td>{item.quantidade === null ? '-' : item.quantidade}</td>
                     <td>{formatCurrencyDisplay(item.valor)}</td>
                     <td>
                       <span className={`ch-badge ch-badge--${item.status === 'Pago' ? 'ativo' : 'implantacao'}`}>{item.status}</span>
@@ -2203,7 +2418,9 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                             previsaoPagamento: item.previsaoPagamento,
                             cliente: item.cliente,
                             contrato: item.contrato,
+                            contratoId: item.contratoId === null ? '' : String(item.contratoId),
                             descricao: item.descricao,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
                             valor: item.valor === null ? '' : String(item.valor),
                             status: item.status,
                             dataPagamento: item.dataPagamento,
@@ -2223,7 +2440,9 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                             previsaoPagamento: item.previsaoPagamento,
                             cliente: item.cliente,
                             contrato: item.contrato,
+                            contratoId: item.contratoId === null ? '' : String(item.contratoId),
                             descricao: item.descricao,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
                             valor: item.valor === null ? '' : String(item.valor),
                             status: item.status,
                             dataPagamento: item.dataPagamento,
@@ -2234,6 +2453,28 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                         </button>
+                          <button type="button" className="ch-icon-action" aria-label="Duplicar faturamento" title="Duplicar" onClick={() => {
+                            invoiceState.setForm({
+                              titulo: item.titulo,
+                              nota: item.nota,
+                              emissao: item.emissao,
+                              referencia: item.referencia,
+                              previsaoPagamento: item.previsaoPagamento,
+                              cliente: item.cliente,
+                              contrato: item.contrato,
+                              contratoId: item.contratoId === null ? '' : String(item.contratoId),
+                              descricao: item.descricao,
+                              quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                              valor: item.valor === null ? '' : String(item.valor),
+                              status: item.status,
+                              dataPagamento: item.dataPagamento,
+                            })
+                            invoiceState.setEditingId(null)
+                            setInvoiceIsViewMode(false)
+                            setInvoiceEditorOpen(true)
+                          }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
+                          </button>
                         <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir faturamento" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/faturamentos', item.id, reload, 'Faturamento removido com sucesso.', invoiceState.setError, invoiceState.setSuccess)} disabled={invoiceState.isSaving}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
                         </button>
@@ -2241,7 +2482,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                     </td>
                   </tr>
                 ))}
-                {sortedItems.length === 0 && <tr><td colSpan={8} className="ch-empty">Nenhum faturamento cadastrado.</td></tr>}
+                {sortedItems.length === 0 && <tr><td colSpan={9} className="ch-empty">Nenhum faturamento cadastrado.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -2348,7 +2589,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                 </label>
                 <label className="estimativas-form__full">
                   Descrição
-                  <textarea rows={3} value={paymentState.form.descricao} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, descricao: event.target.value }))} readOnly={paymentIsViewMode} />
+                  <RichTextEditor value={paymentState.form.descricao} onChange={(value) => paymentState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva o pagamento." rows={4} disabled={paymentIsViewMode} />
                 </label>
                 {!paymentIsViewMode && (
                   <div className="estimativas-actions estimativas-form__full">
@@ -2455,6 +2696,27 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                           })
                           paymentState.setEditingId(item.id)
                           setPaymentIsViewMode(false)
+                          setPaymentEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        </button>
+                          <button type="button" className="ch-icon-action" aria-label="Duplicar pagamento" title="Duplicar" onClick={() => {
+                            paymentState.setForm({
+                              titulo: item.titulo,
+                              nota: item.nota,
+                              emissao: item.emissao,
+                              referencia: item.referencia,
+                              previsaoPagamento: item.previsaoPagamento,
+                              tipo: item.tipo,
+                              relaciona: item.relaciona,
+                              contrato: item.contrato,
+                              descricao: item.descricao,
+                              valor: item.valor === null ? '' : String(item.valor),
+                              status: item.status,
+                              dataPagamento: item.dataPagamento,
+                            })
+                            paymentState.setEditingId(null)
+                            setPaymentIsViewMode(false)
                           setPaymentEditorOpen(true)
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>

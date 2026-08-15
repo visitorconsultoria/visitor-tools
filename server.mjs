@@ -5949,7 +5949,9 @@ function normalizeRubricaRuleItemRow(row) {
 
   for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
     if (field.key === 'rv_naturez') {
-      base[field.key] = String(row?.rv_naturez ?? row?.rv_origem ?? '')
+      const currentNature = String(row?.rv_naturez ?? '').trim()
+      const legacyNature = String(row?.rv_origem ?? '').trim()
+      base[field.key] = currentNature || legacyNature
       continue
     }
 

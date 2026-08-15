@@ -89,7 +89,7 @@ function getImportSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | undefined {
       blankrows: false,
     })
 
-    const headerRow = (rows[0] || []).map((cell) => normalizeHeader(cell))
+    const headerRow = findRuleHeaderRow(rows).headers
     if (!headerRow.length) continue
 
     let score = 0
@@ -107,6 +107,28 @@ function getImportSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | undefined {
   }
 
   return workbook.Sheets[bestSheetName]
+}
+
+function findRuleHeaderRow(matrix: (string | number | null)[][]) {
+  let bestRowIndex = 0
+  let bestScore = -1
+  let bestHeaders: string[] = []
+
+  for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
+    const headers = (matrix[rowIndex] || []).map((cell) => normalizeHeader(cell))
+    const score = RUBRICA_RULE_FIELD_DEFINITIONS.reduce((total, field) => {
+      const acceptedHeaders = getImportAcceptedHeaders(field)
+      return total + (acceptedHeaders.some((header) => headers.includes(header)) ? 1 : 0)
+    }, 0)
+
+    if (score > bestScore) {
+      bestRowIndex = rowIndex
+      bestScore = score
+      bestHeaders = headers
+    }
+  }
+
+  return { headerRowIndex: bestRowIndex, headers: bestHeaders }
 }
 
 function toFriendlyApiError(error: unknown, fallback: string): string {
@@ -164,7 +186,7 @@ async function parseWorkbookRows(file: File): Promise<RuleFormValues[]> {
     throw new Error('A planilha selecionada esta vazia.')
   }
 
-  const headerRow = (matrix[0] || []).map((cell) => normalizeHeader(cell))
+  const { headerRowIndex, headers: headerRow } = findRuleHeaderRow(matrix)
   const columnIndexByKey = new Map<RubricaRuleFieldKey, number>()
 
   for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {
@@ -179,7 +201,7 @@ async function parseWorkbookRows(file: File): Promise<RuleFormValues[]> {
   }
 
   return matrix
-    .slice(1)
+    .slice(headerRowIndex + 1)
     .map((row) => {
       const next = createEmptyRuleForm()
       for (const field of RUBRICA_RULE_FIELD_DEFINITIONS) {

@@ -361,7 +361,7 @@ const PAGE_META: Record<CentralServicosPage, { title: string; description: strin
     searchPlaceholder: 'Buscar por recurso, cliente ou status',
   },
   atendimentos: {
-    title: 'Relatórios de Atendimento',
+    title: 'Atendimentos',
     description: 'Registre e acompanhe os atendimentos prestados aos clientes, com editor de texto rico para descrições e observações.',
     emptyLabel: 'Atendimento',
     searchPlaceholder: 'Buscar por número, cliente, solicitante ou descrição',

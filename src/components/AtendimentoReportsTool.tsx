@@ -349,7 +349,7 @@ export default function AtendimentoReportsTool() {
       <section className="card">
         <div className="estimativas-header-row">
           <div>
-            <h2>Relatórios de Atendimento</h2>
+            <h2>Atendimentos</h2>
             <p className="muted">Registro e acompanhamento dos atendimentos prestados aos clientes.</p>
           </div>
           <button type="button" className="button-primary" onClick={openNew}>

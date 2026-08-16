@@ -84,6 +84,7 @@ const CUSTOMER_HUB_PAGES: Array<{ id: CustomerHubPage; label: string }> = [
 const CENTRAL_SERVICOS_PAGES: Array<{ id: CentralServicosPage; label: string }> = [
   { id: 'dashboard', label: 'Dashboards' },
   { id: 'agenda', label: 'Agenda e Produtividade' },
+  { id: 'atendimentos', label: 'Relatórios de Atendimento' },
   { id: 'recursos', label: 'Recursos' },
   { id: 'contratos-servicos', label: 'Contratos e Serviços' },
   { id: 'despesas', label: 'Despesas' },

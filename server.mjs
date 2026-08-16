@@ -67,6 +67,7 @@ function getSupabaseConfig() {
     centralServicosFaturamentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_FATURAMENTOS_TABLE || 'central_servicos_faturamentos',
     centralServicosPagamentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_PAGAMENTOS_TABLE || 'central_servicos_pagamentos',
     centralServicosAgendasTable: process.env.SUPABASE_CENTRAL_SERVICOS_AGENDAS_TABLE || 'central_servicos_agendas',
+    centralServicosAtendimentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_ATENDIMENTOS_TABLE || 'central_servicos_atendimentos',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
     devProjectsTable: process.env.SUPABASE_DEV_PROJECTS_TABLE || 'dev_projects',
@@ -125,6 +126,7 @@ function getSupabaseClient() {
     centralServicosFaturamentosTable: config.centralServicosFaturamentosTable,
     centralServicosPagamentosTable: config.centralServicosPagamentosTable,
     centralServicosAgendasTable: config.centralServicosAgendasTable,
+    centralServicosAtendimentosTable: config.centralServicosAtendimentosTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
     devProjectsTable: config.devProjectsTable,
@@ -3855,6 +3857,147 @@ app.delete('/api/digte-demands/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir demanda: ${detail}` })
+  }
+})
+
+// ---- Central de Serviços: Relatórios de Atendimento ----
+
+const CENTRAL_SERVICOS_ATENDIMENTO_STATUSES = ['open', 'in_progress', 'done', 'cancelled']
+
+function normalizeCentralServicosAtendimentoStatus(value) {
+  const s = String(value || '').trim()
+  return CENTRAL_SERVICOS_ATENDIMENTO_STATUSES.includes(s) ? s : 'open'
+}
+
+function parseCentralServicosAtendimentoIdInput(value) {
+  const id = Number(String(value ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('ID do atendimento invalido.')
+  }
+  return id
+}
+
+function normalizeCentralServicosAtendimentoRow(row) {
+  return {
+    id: Number(row.id ?? 0),
+    numero: String(row.numero ?? ''),
+    data: String(row.data ?? ''),
+    tipo: String(row.tipo ?? ''),
+    cliente: String(row.cliente ?? ''),
+    solicitante: String(row.solicitante ?? ''),
+    descricao: String(row.descricao ?? ''),
+    responsavel: String(row.responsavel ?? ''),
+    status: normalizeCentralServicosAtendimentoStatus(row.status),
+    observacoes: String(row.observacoes ?? ''),
+  }
+}
+
+function parseCentralServicosAtendimentoPayload(payload) {
+  return {
+    numero: parseCentralServicosTextInput(payload?.numero),
+    data: parseCentralServicosNullableDateInput(payload?.data),
+    tipo: parseCentralServicosTextInput(payload?.tipo),
+    cliente: parseCentralServicosTextInput(payload?.cliente),
+    solicitante: parseCentralServicosTextInput(payload?.solicitante),
+    descricao: parseCentralServicosTextInput(payload?.descricao),
+    responsavel: parseCentralServicosTextInput(payload?.responsavel),
+    status: normalizeCentralServicosAtendimentoStatus(payload?.status),
+    observacoes: parseCentralServicosTextInput(payload?.observacoes),
+  }
+}
+
+function validateCentralServicosAtendimentoPayload(parsed) {
+  const missing = []
+  if (!parsed.data) missing.push('data')
+  if (!parsed.solicitante) missing.push('solicitante')
+  if (!parsed.descricao) missing.push('descricao')
+  if (!parsed.responsavel) missing.push('responsavel')
+  if (missing.length) {
+    throw new Error(`Campos obrigatorios ausentes: ${missing.join(', ')}`)
+  }
+}
+
+async function listCentralServicosAtendimentos() {
+  const { client, centralServicosAtendimentosTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(centralServicosAtendimentosTable)
+    .select('id, numero, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes')
+    .order('data', { ascending: false })
+    .order('id', { ascending: false })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCentralServicosAtendimentoRow)
+}
+
+async function createCentralServicosAtendimento(payload) {
+  const { centralServicosAtendimentosTable } = getSupabaseClient()
+  return createCentralServicosItem(
+    centralServicosAtendimentosTable,
+    payload,
+    'id, numero, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
+    parseCentralServicosAtendimentoPayload,
+    validateCentralServicosAtendimentoPayload,
+    normalizeCentralServicosAtendimentoRow,
+  )
+}
+
+async function updateCentralServicosAtendimento(id, payload) {
+  const { centralServicosAtendimentosTable } = getSupabaseClient()
+  return updateCentralServicosItem(
+    centralServicosAtendimentosTable,
+    id,
+    payload,
+    'id, numero, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
+    parseCentralServicosAtendimentoPayload,
+    validateCentralServicosAtendimentoPayload,
+    normalizeCentralServicosAtendimentoRow,
+  )
+}
+
+async function deleteCentralServicosAtendimento(id) {
+  const { centralServicosAtendimentosTable } = getSupabaseClient()
+  await deleteCentralServicosItem(centralServicosAtendimentosTable, id)
+}
+
+app.get('/api/central-servicos/atendimentos', async (_req, res) => {
+  try {
+    const items = await listCentralServicosAtendimentos()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar atendimentos: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/atendimentos', async (req, res) => {
+  try {
+    const item = await createCentralServicosAtendimento(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar atendimento: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/atendimentos/:id', async (req, res) => {
+  try {
+    const id = parseCentralServicosAtendimentoIdInput(req.params.id)
+    const item = await updateCentralServicosAtendimento(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar atendimento: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/atendimentos/:id', async (req, res) => {
+  try {
+    const id = parseCentralServicosAtendimentoIdInput(req.params.id)
+    await deleteCentralServicosAtendimento(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir atendimento: ${detail}` })
   }
 })
 

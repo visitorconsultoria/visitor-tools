@@ -67,6 +67,8 @@ export default function RichTextEditor({ value, onChange, placeholder = '', rows
       case 'bold': editor.chain().focus().toggleBold().run(); break
       case 'italic': editor.chain().focus().toggleItalic().run(); break
       case 'strike': editor.chain().focus().toggleStrike().run(); break
+      case 'heading2': editor.chain().focus().toggleHeading({ level: 2 }).run(); break
+      case 'heading3': editor.chain().focus().toggleHeading({ level: 3 }).run(); break
       case 'bulletList': editor.chain().focus().toggleBulletList().run(); break
       case 'orderedList': editor.chain().focus().toggleOrderedList().run(); break
       case 'codeBlock': editor.chain().focus().toggleCodeBlock().run(); break
@@ -102,6 +104,23 @@ export default function RichTextEditor({ value, onChange, placeholder = '', rows
             title="Tachado"
           >
             <s>S</s>
+          </button>
+          <span className="rich-editor__separator" />
+          <button
+            type="button"
+            className={`rich-editor__btn${editor.isActive('heading', { level: 2 }) ? ' rich-editor__btn--active' : ''}`}
+            onMouseDown={(e) => { e.preventDefault(); handleToolbarAction('heading2') }}
+            title="Título"
+          >
+            H2
+          </button>
+          <button
+            type="button"
+            className={`rich-editor__btn${editor.isActive('heading', { level: 3 }) ? ' rich-editor__btn--active' : ''}`}
+            onMouseDown={(e) => { e.preventDefault(); handleToolbarAction('heading3') }}
+            title="Subtítulo"
+          >
+            H3
           </button>
           <span className="rich-editor__separator" />
           <button

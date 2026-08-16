@@ -225,6 +225,32 @@ values
   ('Erick', 'SGB', 'Parcial', '{SEG}', 'Ativo')
 on conflict (recurso, cliente) do nothing;
 
+create table if not exists public.central_servicos_atendimentos (
+  id bigint generated always as identity primary key,
+  numero text not null default '',
+  data date,
+  tipo text not null default '',
+  cliente text not null default '',
+  solicitante text not null default '',
+  descricao text not null default '',
+  responsavel text not null default '',
+  status text not null default 'open' check (status in ('open', 'in_progress', 'done', 'cancelled')),
+  observacoes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.central_servicos_atendimentos disable row level security;
+
+create index if not exists idx_central_servicos_atendimentos_cliente
+  on public.central_servicos_atendimentos (cliente);
+
+create index if not exists idx_central_servicos_atendimentos_data
+  on public.central_servicos_atendimentos (data);
+
+create index if not exists idx_central_servicos_atendimentos_status
+  on public.central_servicos_atendimentos (status);
+
 -- migration: add relaciona to existing installations
 alter table public.central_servicos_pagamentos
   add column if not exists relaciona text not null default '';

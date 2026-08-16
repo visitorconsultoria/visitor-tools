@@ -2,8 +2,9 @@ import { createPortal } from 'react-dom'
 import { useEffect, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
 import RichTextEditor from './RichTextEditor'
+import AtendimentoReportsTool from './AtendimentoReportsTool'
 
-export type CentralServicosPage = 'dashboard' | 'agenda' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos'
+export type CentralServicosPage = 'dashboard' | 'agenda' | 'atendimentos' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos'
 
 type ApiListResponse = {
   items?: unknown[]
@@ -358,6 +359,12 @@ const PAGE_META: Record<CentralServicosPage, { title: string; description: strin
     description: 'Visualize de forma centralizada as agendas programadas e a disponibilidade dos recursos, evitando conflitos de alocação.',
     emptyLabel: 'Planejamento',
     searchPlaceholder: 'Buscar por recurso, cliente ou status',
+  },
+  atendimentos: {
+    title: 'Relatórios de Atendimento',
+    description: 'Registre e acompanhe os atendimentos prestados aos clientes, com editor de texto rico para descrições e observações.',
+    emptyLabel: 'Atendimento',
+    searchPlaceholder: 'Buscar por número, cliente, solicitante ou descrição',
   },
   'contratos-servicos': {
     title: 'Cadastro de Contratos e Serviços',
@@ -901,6 +908,8 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     resetState()
 
     const load = async () => {
+      if (subPage === 'atendimentos') return
+
       if (subPage === 'agenda') {
         agendaState.setIsLoading(true)
         try {
@@ -3325,6 +3334,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
 
   if (subPage === 'dashboard') return renderDashboardSection()
   if (subPage === 'agenda') return renderAgendaSection()
+  if (subPage === 'atendimentos') return <AtendimentoReportsTool />
   if (subPage === 'recursos') return renderResourceSection()
   if (subPage === 'contratos-servicos') return renderContractSection()
   if (subPage === 'despesas') return renderExpenseSection()

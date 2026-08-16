@@ -66,6 +66,7 @@ function getSupabaseConfig() {
     centralServicosDespesasTable: process.env.SUPABASE_CENTRAL_SERVICOS_DESPESAS_TABLE || 'central_servicos_despesas',
     centralServicosFaturamentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_FATURAMENTOS_TABLE || 'central_servicos_faturamentos',
     centralServicosPagamentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_PAGAMENTOS_TABLE || 'central_servicos_pagamentos',
+    centralServicosAgendasTable: process.env.SUPABASE_CENTRAL_SERVICOS_AGENDAS_TABLE || 'central_servicos_agendas',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
     devProjectsTable: process.env.SUPABASE_DEV_PROJECTS_TABLE || 'dev_projects',
@@ -123,6 +124,7 @@ function getSupabaseClient() {
     centralServicosDespesasTable: config.centralServicosDespesasTable,
     centralServicosFaturamentosTable: config.centralServicosFaturamentosTable,
     centralServicosPagamentosTable: config.centralServicosPagamentosTable,
+    centralServicosAgendasTable: config.centralServicosAgendasTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
     devProjectsTable: config.devProjectsTable,
@@ -1106,6 +1108,9 @@ const CENTRAL_SERVICOS_VALUE_TYPES = ['Hora', 'Valor', 'Tarefa']
 const CENTRAL_SERVICOS_EXPENSE_TYPES = ['Fixa', 'Avulsa']
 const CENTRAL_SERVICOS_INVOICE_STATUS = ['Pendente', 'Faturado', 'Pago']
 const CENTRAL_SERVICOS_PAYMENT_STATUS = ['Pendente', 'Pago']
+const CENTRAL_SERVICOS_AGENDA_DEDICACOES = ['Full', 'Parcial']
+const CENTRAL_SERVICOS_AGENDA_STATUS = ['Ativo', 'Encerrado']
+const CENTRAL_SERVICOS_AGENDA_DAYS = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
 
 function parseCentralServicosTextInput(value) {
   return String(value ?? '').trim()
@@ -1759,6 +1764,106 @@ async function updateCentralServicosPagamento(id, payload) {
 async function deleteCentralServicosPagamento(id) {
   const { centralServicosPagamentosTable } = getSupabaseClient()
   await deleteCentralServicosItem(centralServicosPagamentosTable, id)
+}
+
+function normalizeCentralServicosAgendaRow(row) {
+  const id = Number(row?.id)
+  const recurso = parseCentralServicosTextInput(row?.recurso)
+  const cliente = parseCentralServicosTextInput(row?.cliente)
+  if (!Number.isFinite(id) || id <= 0 || !recurso || !cliente) return null
+
+  const dedicacao = parseCentralServicosTextInput(row?.dedicacao)
+  const status = parseCentralServicosTextInput(row?.status)
+  const diasSemana = Array.isArray(row?.dias_semana)
+    ? row.dias_semana.map((day) => parseCentralServicosTextInput(day)).filter((day) => CENTRAL_SERVICOS_AGENDA_DAYS.includes(day))
+    : []
+
+  return {
+    id,
+    recurso,
+    cliente,
+    contratoId: Number(row?.contrato_id) || null,
+    contrato: parseCentralServicosTextInput(row?.contrato),
+    dedicacao: CENTRAL_SERVICOS_AGENDA_DEDICACOES.includes(dedicacao) ? dedicacao : 'Full',
+    diasSemana,
+    vigenciaInicio: parseCentralServicosTextInput(row?.vigencia_inicio),
+    vigenciaTermino: parseCentralServicosTextInput(row?.vigencia_termino),
+    observacoes: parseCentralServicosTextInput(row?.observacoes),
+    status: CENTRAL_SERVICOS_AGENDA_STATUS.includes(status) ? status : 'Ativo',
+  }
+}
+
+function parseCentralServicosAgendaPayload(payload) {
+  const dedicacao = parseCentralServicosTextInput(payload?.dedicacao)
+  const status = parseCentralServicosTextInput(payload?.status)
+  const rawDias = Array.isArray(payload?.dias_semana ?? payload?.diasSemana) ? (payload?.dias_semana ?? payload?.diasSemana) : []
+  const diasSemana = rawDias.map((day) => parseCentralServicosTextInput(day)).filter((day) => CENTRAL_SERVICOS_AGENDA_DAYS.includes(day))
+  const isFull = CENTRAL_SERVICOS_AGENDA_DEDICACOES.includes(dedicacao) ? dedicacao === 'Full' : true
+
+  return {
+    recurso: parseCentralServicosTextInput(payload?.recurso),
+    cliente: parseCentralServicosTextInput(payload?.cliente),
+    contrato_id: Number(payload?.contrato_id ?? payload?.contratoId) > 0 ? Number(payload?.contrato_id ?? payload?.contratoId) : null,
+    contrato: parseCentralServicosTextInput(payload?.contrato),
+    dedicacao: isFull ? 'Full' : 'Parcial',
+    dias_semana: isFull ? ['SEG', 'TER', 'QUA', 'QUI', 'SEX'] : diasSemana,
+    vigencia_inicio: parseCentralServicosNullableDateInput(payload?.vigencia_inicio ?? payload?.vigenciaInicio),
+    vigencia_termino: parseCentralServicosNullableDateInput(payload?.vigencia_termino ?? payload?.vigenciaTermino),
+    observacoes: parseCentralServicosTextInput(payload?.observacoes),
+    status: CENTRAL_SERVICOS_AGENDA_STATUS.includes(status) ? status : 'Ativo',
+  }
+}
+
+function validateCentralServicosAgendaPayload(parsed) {
+  if (!parsed.recurso) {
+    throw new Error('Informe o recurso do planejamento.')
+  }
+  if (!parsed.cliente) {
+    throw new Error('Informe o cliente ou projeto do planejamento.')
+  }
+  if (parsed.dedicacao === 'Parcial' && parsed.dias_semana.length === 0) {
+    throw new Error('Selecione ao menos um dia da semana para dedicação parcial.')
+  }
+}
+
+async function listCentralServicosAgendas() {
+  const { centralServicosAgendasTable } = getSupabaseClient()
+  return listCentralServicosItems(
+    centralServicosAgendasTable,
+    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, vigencia_inicio, vigencia_termino, observacoes, status',
+    'recurso',
+    normalizeCentralServicosAgendaRow,
+  )
+}
+
+async function createCentralServicosAgenda(payload) {
+  const { centralServicosAgendasTable } = getSupabaseClient()
+  return createCentralServicosItem(
+    centralServicosAgendasTable,
+    payload,
+    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, vigencia_inicio, vigencia_termino, observacoes, status',
+    parseCentralServicosAgendaPayload,
+    validateCentralServicosAgendaPayload,
+    normalizeCentralServicosAgendaRow,
+  )
+}
+
+async function updateCentralServicosAgenda(id, payload) {
+  const { centralServicosAgendasTable } = getSupabaseClient()
+  return updateCentralServicosItem(
+    centralServicosAgendasTable,
+    id,
+    payload,
+    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, vigencia_inicio, vigencia_termino, observacoes, status',
+    parseCentralServicosAgendaPayload,
+    validateCentralServicosAgendaPayload,
+    normalizeCentralServicosAgendaRow,
+  )
+}
+
+async function deleteCentralServicosAgenda(id) {
+  const { centralServicosAgendasTable } = getSupabaseClient()
+  await deleteCentralServicosItem(centralServicosAgendasTable, id)
 }
 
 function parseDataDictionarySyncPayload(payload) {
@@ -3545,6 +3650,48 @@ app.delete('/api/central-servicos/pagamentos/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir pagamento: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/agendas', async (_req, res) => {
+  try {
+    const items = await listCentralServicosAgendas()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar agendas: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/agendas', async (req, res) => {
+  try {
+    const item = await createCentralServicosAgenda(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao criar agenda: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/agendas/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID da agenda')
+    const item = await updateCentralServicosAgenda(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar agenda: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/agendas/:id', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID da agenda')
+    await deleteCentralServicosAgenda(id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir agenda: ${detail}` })
   }
 })
 

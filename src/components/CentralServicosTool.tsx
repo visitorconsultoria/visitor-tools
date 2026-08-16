@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
 import RichTextEditor from './RichTextEditor'
 
-export type CentralServicosPage = 'dashboard' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos'
+export type CentralServicosPage = 'dashboard' | 'agenda' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos'
 
 type ApiListResponse = {
   items?: unknown[]
@@ -22,6 +22,10 @@ type ContractSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoContrato' | 'valor
 type ExpenseSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoDespesa' | 'valorUnitario'
 type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'valor' | 'status'
 type PaymentSortKey = 'titulo' | 'tipo' | 'relaciona' | 'contrato' | 'emissao' | 'valor' | 'status'
+type AgendaDedicacao = 'Full' | 'Parcial'
+type AgendaStatus = 'Ativo' | 'Encerrado'
+type AgendaWeekDay = 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'
+type AgendaSortKey = 'recurso' | 'cliente' | 'dedicacao' | 'vigenciaInicio' | 'status'
 
 type ResourceItem = {
   id: number
@@ -190,6 +194,33 @@ type PaymentForm = {
   dataPagamento: string
 }
 
+type AgendaItem = {
+  id: number
+  recurso: string
+  cliente: string
+  contratoId: number | null
+  contrato: string
+  dedicacao: AgendaDedicacao
+  diasSemana: AgendaWeekDay[]
+  vigenciaInicio: string
+  vigenciaTermino: string
+  observacoes: string
+  status: AgendaStatus
+}
+
+type AgendaForm = {
+  recurso: string
+  cliente: string
+  contratoId: string
+  contrato: string
+  dedicacao: AgendaDedicacao
+  diasSemana: AgendaWeekDay[]
+  vigenciaInicio: string
+  vigenciaTermino: string
+  observacoes: string
+  status: AgendaStatus
+}
+
 const EMPTY_RESOURCE_FORM: ResourceForm = {
   nome: '',
   cpf: '',
@@ -270,6 +301,19 @@ const EMPTY_PAYMENT_FORM: PaymentForm = {
   dataPagamento: '',
 }
 
+const EMPTY_AGENDA_FORM: AgendaForm = {
+  recurso: '',
+  cliente: '',
+  contratoId: '',
+  contrato: '',
+  dedicacao: 'Full',
+  diasSemana: [],
+  vigenciaInicio: '',
+  vigenciaTermino: '',
+  observacoes: '',
+  status: 'Ativo',
+}
+
 const RESOURCE_SEX_OPTIONS = ['Nao Informado', 'Masculino', 'Feminino', 'Outro'] as const
 const RESOURCE_STATUS_OPTIONS: ResourceStatus[] = ['Ativo', 'Inativo', 'Bloqueado']
 const RELATION_TYPE_OPTIONS: RelationType[] = ['Cliente', 'Recurso']
@@ -278,11 +322,23 @@ const VALUE_TYPE_OPTIONS: ValueType[] = ['Hora', 'Valor', 'Tarefa']
 const EXPENSE_TYPE_OPTIONS: ExpenseType[] = ['Fixa', 'Avulsa']
 const INVOICE_STATUS_OPTIONS: InvoiceStatus[] = ['Pendente', 'Faturado', 'Pago']
 const PAYMENT_STATUS_OPTIONS: PaymentStatus[] = ['Pendente', 'Pago']
+const AGENDA_DEDICACAO_OPTIONS: AgendaDedicacao[] = ['Full', 'Parcial']
+const AGENDA_STATUS_OPTIONS: AgendaStatus[] = ['Ativo', 'Encerrado']
+const AGENDA_WEEK_DAYS: Array<{ key: AgendaWeekDay; label: string }> = [
+  { key: 'SEG', label: 'Segunda' },
+  { key: 'TER', label: 'Terça' },
+  { key: 'QUA', label: 'Quarta' },
+  { key: 'QUI', label: 'Quinta' },
+  { key: 'SEX', label: 'Sexta' },
+]
+const AGENDA_FULL_WEEK_DAYS: AgendaWeekDay[] = AGENDA_WEEK_DAYS.map((day) => day.key)
+const AGENDA_ALL_WEEK_DAYS: AgendaWeekDay[] = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
 const RESOURCE_DEFAULT_SORT: { key: ResourceSortKey; direction: SortDirection } = { key: 'nome', direction: 'asc' }
 const CONTRACT_DEFAULT_SORT: { key: ContractSortKey; direction: SortDirection } = { key: 'titulo', direction: 'asc' }
 const EXPENSE_DEFAULT_SORT: { key: ExpenseSortKey; direction: SortDirection } = { key: 'titulo', direction: 'asc' }
 const INVOICE_DEFAULT_SORT: { key: InvoiceSortKey; direction: SortDirection } = { key: 'emissao', direction: 'desc' }
 const PAYMENT_DEFAULT_SORT: { key: PaymentSortKey; direction: SortDirection } = { key: 'emissao', direction: 'desc' }
+const AGENDA_DEFAULT_SORT: { key: AgendaSortKey; direction: SortDirection } = { key: 'recurso', direction: 'asc' }
 
 const PAGE_META: Record<CentralServicosPage, { title: string; description: string; emptyLabel: string; searchPlaceholder: string }> = {
   dashboard: {
@@ -296,6 +352,12 @@ const PAGE_META: Record<CentralServicosPage, { title: string; description: strin
     description: 'Cadastre recursos com dados pessoais, documentação, e-mail e status operacional.',
     emptyLabel: 'Recurso',
     searchPlaceholder: 'Buscar por nome, CPF, CNPJ ou e-mail',
+  },
+  agenda: {
+    title: 'Calendário de Apontamento e Produtividade',
+    description: 'Visualize de forma centralizada as agendas programadas e a disponibilidade dos recursos, evitando conflitos de alocação.',
+    emptyLabel: 'Planejamento',
+    searchPlaceholder: 'Buscar por recurso, cliente ou status',
   },
   'contratos-servicos': {
     title: 'Cadastro de Contratos e Serviços',
@@ -556,6 +618,69 @@ function normalizePayment(input: unknown): PaymentItem | null {
   }
 }
 
+function normalizeAgenda(input: unknown): AgendaItem | null {
+  const item = input as Partial<AgendaItem>
+  const id = Number(item.id)
+  const recurso = normalizeText(item.recurso)
+  const cliente = normalizeText(item.cliente)
+  if (!Number.isFinite(id) || id <= 0 || !recurso || !cliente) return null
+
+  const rawDias = Array.isArray(item.diasSemana ?? (item as { dias_semana?: unknown }).dias_semana)
+    ? (item.diasSemana ?? (item as { dias_semana?: unknown[] }).dias_semana) as unknown[]
+    : []
+
+  return {
+    id,
+    recurso,
+    cliente,
+    contratoId: Number(item.contratoId ?? (item as { contrato_id?: unknown }).contrato_id) || null,
+    contrato: normalizeText(item.contrato),
+    dedicacao: AGENDA_DEDICACAO_OPTIONS.includes(normalizeText(item.dedicacao) as AgendaDedicacao)
+      ? normalizeText(item.dedicacao) as AgendaDedicacao
+      : 'Full',
+    diasSemana: rawDias
+      .map((day) => normalizeText(day))
+      .filter((day): day is AgendaWeekDay => AGENDA_ALL_WEEK_DAYS.includes(day as AgendaWeekDay)) as AgendaWeekDay[],
+    vigenciaInicio: normalizeText(item.vigenciaInicio ?? (item as { vigencia_inicio?: unknown }).vigencia_inicio),
+    vigenciaTermino: normalizeText(item.vigenciaTermino ?? (item as { vigencia_termino?: unknown }).vigencia_termino),
+    observacoes: normalizeText(item.observacoes),
+    status: AGENDA_STATUS_OPTIONS.includes(normalizeText(item.status) as AgendaStatus)
+      ? normalizeText(item.status) as AgendaStatus
+      : 'Ativo',
+  }
+}
+
+function agendaVigenciasOverlap(a: AgendaItem, b: AgendaItem): boolean {
+  const aStart = a.vigenciaInicio ? Date.parse(a.vigenciaInicio) : Number.NEGATIVE_INFINITY
+  const aEnd = a.vigenciaTermino ? Date.parse(a.vigenciaTermino) : Number.POSITIVE_INFINITY
+  const bStart = b.vigenciaInicio ? Date.parse(b.vigenciaInicio) : Number.NEGATIVE_INFINITY
+  const bEnd = b.vigenciaTermino ? Date.parse(b.vigenciaTermino) : Number.POSITIVE_INFINITY
+  return aStart <= bEnd && bStart <= aEnd
+}
+
+function computeAgendaConflictIds(items: AgendaItem[]): Set<number> {
+  const conflicts = new Set<number>()
+  const activeItems = items.filter((item) => item.status === 'Ativo')
+
+  for (let i = 0; i < activeItems.length; i += 1) {
+    for (let j = i + 1; j < activeItems.length; j += 1) {
+      const a = activeItems[i]
+      const b = activeItems[j]
+      if (a.recurso.toLowerCase() !== b.recurso.toLowerCase()) continue
+      if (!agendaVigenciasOverlap(a, b)) continue
+      const daysA = a.dedicacao === 'Full' ? AGENDA_FULL_WEEK_DAYS : a.diasSemana
+      const daysB = b.dedicacao === 'Full' ? AGENDA_FULL_WEEK_DAYS : b.diasSemana
+      const hasCommonDay = daysA.some((day) => daysB.includes(day))
+      if (hasCommonDay) {
+        conflicts.add(a.id)
+        conflicts.add(b.id)
+      }
+    }
+  }
+
+  return conflicts
+}
+
 function useCatalogState<TItem, TForm>(initial: TForm) {
   const [items, setItems] = useState<TItem[]>([])
   const [search, setSearch] = useState('')
@@ -621,6 +746,11 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
   const [paymentEditorOpen, setPaymentEditorOpen] = useState(false)
   const [paymentIsViewMode, setPaymentIsViewMode] = useState(false)
   const [paymentSort, setPaymentSort] = useState<{ key: PaymentSortKey; direction: SortDirection }>(PAYMENT_DEFAULT_SORT)
+  const agendaState = useCatalogState<AgendaItem, AgendaForm>(EMPTY_AGENDA_FORM)
+  const [agendaEditorOpen, setAgendaEditorOpen] = useState(false)
+  const [agendaIsViewMode, setAgendaIsViewMode] = useState(false)
+  const [agendaSort, setAgendaSort] = useState<{ key: AgendaSortKey; direction: SortDirection }>(AGENDA_DEFAULT_SORT)
+  const [agendaViewMode, setAgendaViewMode] = useState<'grade' | 'lista'>('grade')
   const [monthlyHoverIndex, setMonthlyHoverIndex] = useState<number | null>(null)
   const [competencyHoverIndex, setCompetencyHoverIndex] = useState<number | null>(null)
   const [competencyYear, setCompetencyYear] = useState<number | null>(null)
@@ -706,6 +836,15 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     setPaymentSort(PAYMENT_DEFAULT_SORT)
     paymentState.setError(null)
     paymentState.setSuccess(null)
+    agendaState.setItems([])
+    agendaState.setSearch('')
+    agendaState.setForm(EMPTY_AGENDA_FORM)
+    agendaState.setEditingId(null)
+    setAgendaEditorOpen(false)
+    setAgendaIsViewMode(false)
+    setAgendaSort(AGENDA_DEFAULT_SORT)
+    agendaState.setError(null)
+    agendaState.setSuccess(null)
   }
 
   const closeResourceEditor = () => {
@@ -750,10 +889,39 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     setPaymentEditorOpen(false)
   }
 
+  const closeAgendaEditor = () => {
+    if (agendaState.isSaving) return
+    agendaState.setForm(EMPTY_AGENDA_FORM)
+    agendaState.setEditingId(null)
+    setAgendaIsViewMode(false)
+    setAgendaEditorOpen(false)
+  }
+
   useEffect(() => {
     resetState()
 
     const load = async () => {
+      if (subPage === 'agenda') {
+        agendaState.setIsLoading(true)
+        try {
+          const [agendas, resources, clients, contracts] = await Promise.all([
+            loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda),
+            loadCatalogItems('/api/central-servicos/recursos', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+            loadCatalogItems('/api/customer-hub/clients', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
+            loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract),
+          ])
+          agendaState.setItems(agendas)
+          setResourceOptions(resources)
+          setClientOptions(clients)
+          setContractsForLinking(contracts)
+        } catch (loadError) {
+          agendaState.setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar agendas.')
+        } finally {
+          agendaState.setIsLoading(false)
+        }
+        return
+      }
+
       if (subPage === 'recursos') {
         resourceState.setIsLoading(true)
         try {
@@ -844,6 +1012,65 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
 
     void load()
   }, [subPage])
+
+  const handleSaveAgenda = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (agendaIsViewMode) return
+    const { form, editingId } = agendaState
+    const recurso = form.recurso.trim()
+    const cliente = form.cliente.trim()
+    if (!recurso) {
+      agendaState.setError('Selecione o recurso do planejamento.')
+      return
+    }
+    if (!cliente) {
+      agendaState.setError('Selecione o cliente do planejamento.')
+      return
+    }
+    if (form.dedicacao === 'Parcial' && form.diasSemana.length === 0) {
+      agendaState.setError('Selecione ao menos um dia da semana para dedicação parcial.')
+      return
+    }
+
+    agendaState.setIsSaving(true)
+    agendaState.setError(null)
+    agendaState.setSuccess(null)
+
+    const payload = {
+      recurso,
+      cliente,
+      contrato_id: form.contratoId ? Number(form.contratoId) : null,
+      contrato: form.contrato.trim(),
+      dedicacao: form.dedicacao,
+      dias_semana: form.dedicacao === 'Full' ? AGENDA_FULL_WEEK_DAYS : form.diasSemana,
+      vigencia_inicio: parseNullableDate(form.vigenciaInicio),
+      vigencia_termino: parseNullableDate(form.vigenciaTermino),
+      observacoes: form.observacoes.trim(),
+      status: form.status,
+    }
+
+    try {
+      const response = await fetch(apiUrl(editingId ? `/api/central-servicos/agendas/${editingId}` : '/api/central-servicos/agendas'), {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        await readApiError(response, 'Falha ao salvar planejamento de agenda.')
+      }
+
+      agendaState.setItems(await loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda))
+      agendaState.setForm(EMPTY_AGENDA_FORM)
+      agendaState.setEditingId(null)
+      setAgendaEditorOpen(false)
+      agendaState.setSuccess(editingId ? 'Planejamento atualizado com sucesso.' : 'Planejamento cadastrado com sucesso.')
+    } catch (saveError) {
+      agendaState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar planejamento de agenda.')
+    } finally {
+      agendaState.setIsSaving(false)
+    }
+  }
 
   const handleSaveResource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1441,6 +1668,335 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     )
   }
 
+  const renderAgendaSection = () => {
+    const term = agendaState.search.trim().toLowerCase()
+    const filteredItems = !term ? agendaState.items : agendaState.items.filter((item) => (
+        item.recurso.toLowerCase().includes(term)
+        || item.cliente.toLowerCase().includes(term)
+        || item.dedicacao.toLowerCase().includes(term)
+        || item.status.toLowerCase().includes(term)
+      ))
+    const sortedItems = [...filteredItems].sort((a, b) => {
+      let result = 0
+      if (agendaSort.key === 'recurso') result = compareText(a.recurso, b.recurso)
+      if (agendaSort.key === 'cliente') result = compareText(a.cliente, b.cliente)
+      if (agendaSort.key === 'dedicacao') result = compareText(a.dedicacao, b.dedicacao)
+      if (agendaSort.key === 'vigenciaInicio') result = toSortableDate(a.vigenciaInicio) - toSortableDate(b.vigenciaInicio)
+      if (agendaSort.key === 'status') result = compareText(a.status, b.status)
+      return applyDirection(result, agendaSort.direction)
+    })
+
+    const conflictIds = computeAgendaConflictIds(agendaState.items)
+    const activeItems = agendaState.items.filter((item) => item.status === 'Ativo')
+    const recursos = Array.from(new Set(activeItems.map((item) => item.recurso))).sort((a, b) => compareText(a, b))
+
+    const reload = async () => {
+      agendaState.setItems(await loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda))
+    }
+
+    const openNewAgendaEditor = () => {
+      agendaState.setForm(EMPTY_AGENDA_FORM)
+      agendaState.setEditingId(null)
+      setAgendaIsViewMode(false)
+      setAgendaEditorOpen(true)
+    }
+
+    const openEditAgendaEditor = (item: AgendaItem, viewOnly: boolean) => {
+      agendaState.setForm({
+        recurso: item.recurso,
+        cliente: item.cliente,
+        contratoId: item.contratoId === null ? '' : String(item.contratoId),
+        contrato: item.contrato,
+        dedicacao: item.dedicacao,
+        diasSemana: item.diasSemana,
+        vigenciaInicio: item.vigenciaInicio,
+        vigenciaTermino: item.vigenciaTermino,
+        observacoes: item.observacoes,
+        status: item.status,
+      })
+      agendaState.setEditingId(item.id)
+      setAgendaIsViewMode(viewOnly)
+      setAgendaEditorOpen(true)
+    }
+
+    return (
+      <div className="customer-hub central-servicos">
+        {agendaEditorOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={closeAgendaEditor}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="agenda-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="agenda-modal-title">{agendaIsViewMode ? 'Visualizar Planejamento' : agendaState.editingId ? 'Editar Planejamento' : 'Novo Planejamento'}</h3>
+                  <p className="muted">Defina o recurso, cliente, dedicação e vigência para manter a agenda centralizada.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={closeAgendaEditor}>
+                  Fechar
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveAgenda} className="estimativas-form">
+                <label>
+                  Recurso
+                  <input
+                    list="agenda-resource-options"
+                    value={agendaState.form.recurso}
+                    onChange={(event) => agendaState.setForm((prev) => ({ ...prev, recurso: event.target.value }))}
+                    readOnly={agendaIsViewMode}
+                    required
+                  />
+                  <datalist id="agenda-resource-options">
+                    {resourceOptions.map((option) => <option key={option} value={option} />)}
+                  </datalist>
+                </label>
+                <label>
+                  Cliente
+                  <select
+                    value={agendaState.form.cliente}
+                    onChange={(event) => agendaState.setForm((prev) => ({ ...prev, cliente: event.target.value, contratoId: '', contrato: '' }))}
+                    disabled={agendaIsViewMode}
+                    required
+                  >
+                    <option value="">— Selecione —</option>
+                    {clientOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Contrato
+                  <select
+                    value={agendaState.form.contratoId}
+                    onChange={(event) => {
+                      const selected = contractsForLinking.find((contract) => String(contract.id) === event.target.value)
+                      agendaState.setForm((prev) => ({ ...prev, contratoId: event.target.value, contrato: selected?.titulo ?? '' }))
+                    }}
+                    disabled={agendaIsViewMode || !agendaState.form.cliente}
+                  >
+                    <option value="">— Selecione —</option>
+                    {contractsForLinking
+                      .filter((contract) => contract.status === 'Ativo' && contract.tipo === 'Cliente' && contract.relaciona === agendaState.form.cliente)
+                      .map((contract) => <option key={contract.id} value={String(contract.id)}>{contract.titulo} v{contract.versao}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Dedicação
+                  <select
+                    value={agendaState.form.dedicacao}
+                    onChange={(event) => agendaState.setForm((prev) => ({ ...prev, dedicacao: event.target.value as AgendaDedicacao }))}
+                    disabled={agendaIsViewMode}
+                  >
+                    {AGENDA_DEDICACAO_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select
+                    value={agendaState.form.status}
+                    onChange={(event) => agendaState.setForm((prev) => ({ ...prev, status: event.target.value as AgendaStatus }))}
+                    disabled={agendaIsViewMode}
+                  >
+                    {AGENDA_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                {agendaState.form.dedicacao === 'Parcial' && (
+                  <label className="estimativas-form__full">
+                    Dias da semana
+                    <div className="ch-status-list" style={{ marginTop: '0.35rem' }}>
+                      {AGENDA_WEEK_DAYS.map((day) => (
+                        <label key={day.key} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.85rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={agendaState.form.diasSemana.includes(day.key)}
+                            disabled={agendaIsViewMode}
+                            onChange={(event) => agendaState.setForm((prev) => ({
+                              ...prev,
+                              diasSemana: event.target.checked
+                                ? [...prev.diasSemana, day.key]
+                                : prev.diasSemana.filter((d) => d !== day.key),
+                            }))}
+                          />
+                          {day.label}
+                        </label>
+                      ))}
+                    </div>
+                  </label>
+                )}
+                <label>
+                  Vigência Início
+                  <input type="date" value={agendaState.form.vigenciaInicio} onChange={(event) => agendaState.setForm((prev) => ({ ...prev, vigenciaInicio: event.target.value }))} disabled={agendaIsViewMode} />
+                </label>
+                <label>
+                  Vigência Término
+                  <input type="date" value={agendaState.form.vigenciaTermino} onChange={(event) => agendaState.setForm((prev) => ({ ...prev, vigenciaTermino: event.target.value }))} disabled={agendaIsViewMode} />
+                </label>
+                <label className="estimativas-form__full">
+                  Observações
+                  <textarea rows={3} value={agendaState.form.observacoes} onChange={(event) => agendaState.setForm((prev) => ({ ...prev, observacoes: event.target.value }))} readOnly={agendaIsViewMode} />
+                </label>
+                {!agendaIsViewMode && (
+                  <div className="estimativas-actions estimativas-form__full">
+                    <button type="submit" className="button-primary" disabled={agendaState.isSaving}>
+                      {agendaState.editingId ? 'Salvar alterações' : 'Cadastrar planejamento'}
+                    </button>
+                  </div>
+                )}
+              </form>
+            </section>
+          </div>,
+          document.body,
+        )}
+
+        {agendaState.error && <p className="error">{agendaState.error}</p>}
+        {agendaState.success && <p className="success">{agendaState.success}</p>}
+        {conflictIds.size > 0 && (
+          <p className="error">
+            Atenção: existem {conflictIds.size} planejamento(s) com conflito de agenda (mesmo recurso alocado no mesmo dia). Verifique os itens destacados.
+          </p>
+        )}
+
+        <section className="card">
+          <div className="ch-section-header">
+            <div>
+              <h2>{meta.title}</h2>
+              <p className="muted">{meta.description}</p>
+            </div>
+            <div className="ch-row-actions" style={{ gap: '0.5rem' }}>
+              <button type="button" className={`button-secondary${agendaViewMode === 'grade' ? ' sidebar__link--active' : ''}`} onClick={() => setAgendaViewMode('grade')}>
+                Grade Semanal
+              </button>
+              <button type="button" className={`button-secondary${agendaViewMode === 'lista' ? ' sidebar__link--active' : ''}`} onClick={() => setAgendaViewMode('lista')}>
+                Lista
+              </button>
+              <button type="button" className="button-primary" onClick={openNewAgendaEditor}>
+                + Novo Planejamento
+              </button>
+            </div>
+          </div>
+
+          {agendaState.isLoading && <p className="muted">Carregando agendas...</p>}
+
+          {agendaViewMode === 'grade' && !agendaState.isLoading && (
+            <div className="csv-table ch-table-theme">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Recurso</th>
+                    {AGENDA_WEEK_DAYS.map((day) => <th key={day.key}>{day.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {recursos.map((recurso) => {
+                    const recursoItems = activeItems.filter((item) => item.recurso === recurso)
+                    return (
+                      <tr key={recurso}>
+                        <td>{recurso}</td>
+                        {AGENDA_WEEK_DAYS.map((day) => {
+                          const dayItems = recursoItems.filter((item) => (item.dedicacao === 'Full' ? true : item.diasSemana.includes(day.key)))
+                          const hasConflict = dayItems.some((item) => conflictIds.has(item.id))
+                          return (
+                            <td key={day.key} style={hasConflict ? { backgroundColor: '#fdecea' } : undefined}>
+                              {dayItems.length === 0
+                                ? <span className="muted">-</span>
+                                : dayItems.map((item) => (
+                                  <div key={item.id} style={{ marginBottom: '0.2rem' }}>
+                                    <span className={`ch-badge ${hasConflict ? 'ch-badge--danger' : 'ch-badge--ativo'}`}>{item.cliente}</span>
+                                  </div>
+                                ))}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                  {recursos.length === 0 && (
+                    <tr><td colSpan={AGENDA_WEEK_DAYS.length + 1} className="ch-empty">Nenhum planejamento ativo cadastrado.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {agendaViewMode === 'lista' && !agendaState.isLoading && (
+            <>
+              <div className="ch-table-toolbar ch-table-toolbar--single">
+                <label className="ch-table-search">
+                  <span className="ch-table-search__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+                  </span>
+                  <input
+                    type="search"
+                    value={agendaState.search}
+                    onChange={(event) => agendaState.setSearch(event.target.value)}
+                    placeholder={meta.searchPlaceholder}
+                    aria-label="Buscar planejamento"
+                  />
+                </label>
+              </div>
+              <div className="csv-table ch-table-theme">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{renderSortableHeader('Recurso', agendaSort.key === 'recurso', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'recurso', direction: getNextDirection(prev.key, 'recurso', prev.direction) })))}</th>
+                      <th>{renderSortableHeader('Cliente', agendaSort.key === 'cliente', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'cliente', direction: getNextDirection(prev.key, 'cliente', prev.direction) })))}</th>
+                      <th>Contrato</th>
+                      <th>{renderSortableHeader('Dedicação', agendaSort.key === 'dedicacao', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'dedicacao', direction: getNextDirection(prev.key, 'dedicacao', prev.direction) })))}</th>
+                      <th>Dias</th>
+                      <th>{renderSortableHeader('Vigência Início', agendaSort.key === 'vigenciaInicio', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'vigenciaInicio', direction: getNextDirection(prev.key, 'vigenciaInicio', prev.direction) })))}</th>
+                      <th>{renderSortableHeader('Status', agendaSort.key === 'status', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedItems.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.recurso}</td>
+                        <td>{item.cliente}</td>
+                        <td>{item.contrato || '-'}</td>
+                        <td>{item.dedicacao}</td>
+                        <td>{item.dedicacao === 'Full' ? 'Todos os dias úteis' : item.diasSemana.join(', ') || '-'}</td>
+                        <td>{formatDateDisplay(item.vigenciaInicio)}</td>
+                        <td>
+                          <span className={`ch-badge ch-badge--${item.status === 'Ativo' ? 'ativo' : 'implantacao'}`}>
+                            {conflictIds.has(item.id) ? 'Conflito' : item.status}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="ch-row-actions ch-row-actions--icons">
+                            <button type="button" className="ch-icon-action" aria-label="Visualizar planejamento" title="Visualizar" onClick={() => openEditAgendaEditor(item, true)}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                            </button>
+                            <button type="button" className="ch-icon-action" aria-label="Editar planejamento" title="Editar" onClick={() => openEditAgendaEditor(item, false)}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                            </button>
+                            <button
+                              type="button"
+                              className="ch-icon-action ch-icon-action--danger"
+                              aria-label="Excluir planejamento"
+                              title="Excluir"
+                              onClick={() => void handleDeleteItem('/api/central-servicos/agendas', item.id, reload, 'Planejamento removido com sucesso.', agendaState.setError, agendaState.setSuccess)}
+                              disabled={agendaState.isSaving}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {sortedItems.length === 0 && (
+                      <tr><td colSpan={8} className="ch-empty">Nenhum planejamento cadastrado.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
+    )
+  }
+
   const renderResourceSection = () => {
     const term = resourceState.search.trim().toLowerCase()
     const filteredItems = !term ? resourceState.items : resourceState.items.filter((item) => (
@@ -1959,6 +2515,36 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                         </button>
+                        <button type="button" className="ch-icon-action" aria-label="Duplicar contrato" title="Duplicar" onClick={() => {
+                          contractState.setForm({
+                            titulo: item.titulo,
+                            tipo: item.tipo,
+                            relaciona: item.relaciona,
+                            descricao: item.descricao,
+                            tipoContrato: item.tipoContrato,
+                            valorUnitario: item.valorUnitario === null ? '' : String(item.valorUnitario),
+                            tipoValor: item.tipoValor,
+                            quantidade: item.quantidade === null ? '' : String(item.quantidade),
+                            saldoQuantidade: item.saldoQuantidade === null ? '' : String(item.saldoQuantidade),
+                            saldoValor: item.saldoValor === null ? '' : String(item.saldoValor),
+                            dataInicio: item.dataInicio,
+                            vigenciaInicio: item.vigenciaInicio,
+                            vigenciaTermino: item.vigenciaTermino,
+                            observacoes: item.observacoes,
+                            faturamentoCorpoNota: item.faturamentoCorpoNota,
+                            faturamentoDocumentos: item.faturamentoDocumentos,
+                            faturamentoPrazoEmissao: item.faturamentoPrazoEmissao,
+                            faturamentoDataVencimento: item.faturamentoDataVencimento,
+                            faturamentoCodigoServico: item.faturamentoCodigoServico,
+                            status: item.status,
+                          })
+                          contractState.setEditingId(null)
+                          setContractVersioningFromId(null)
+                          setContractIsViewMode(false)
+                          setContractEditorOpen(true)
+                        }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
+                        </button>
                         <button type="button" className="ch-icon-action" aria-label="Versionar contrato" title="Versionar" onClick={() => {
                           contractState.setForm({
                             titulo: `${item.titulo} - v${item.versao + 1}`,
@@ -1987,7 +2573,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                           setContractIsViewMode(false)
                           setContractEditorOpen(true)
                         }}>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><polyline points="3 3 3 9 9 9" /><path d="M12 7v5l3 2" /></svg>
                         </button>
                         <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir contrato" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/contratos-servicos', item.id, reload, 'Contrato removido com sucesso.', contractState.setError, contractState.setSuccess)} disabled={contractState.isSaving}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
@@ -2738,6 +3324,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
   }
 
   if (subPage === 'dashboard') return renderDashboardSection()
+  if (subPage === 'agenda') return renderAgendaSection()
   if (subPage === 'recursos') return renderResourceSection()
   if (subPage === 'contratos-servicos') return renderContractSection()
   if (subPage === 'despesas') return renderExpenseSection()

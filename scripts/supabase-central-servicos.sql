@@ -141,11 +141,35 @@ create table if not exists public.central_servicos_pagamentos (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.central_servicos_agendas (
+  id bigint generated always as identity primary key,
+  recurso text not null default '',
+  cliente text not null default '',
+  contrato_id bigint,
+  contrato text not null default '',
+  dedicacao text not null default 'Full' check (dedicacao in ('Full', 'Parcial')),
+  dias_semana text[] not null default '{}',
+  vigencia_inicio date,
+  vigencia_termino date,
+  observacoes text not null default '',
+  status text not null default 'Ativo' check (status in ('Ativo', 'Encerrado')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (recurso, cliente)
+);
+
+alter table public.central_servicos_agendas
+  add column if not exists contrato_id bigint;
+
+alter table public.central_servicos_agendas
+  add column if not exists contrato text not null default '';
+
 alter table public.central_servicos_recursos disable row level security;
 alter table public.central_servicos_contratos_servicos disable row level security;
 alter table public.central_servicos_despesas disable row level security;
 alter table public.central_servicos_faturamentos disable row level security;
 alter table public.central_servicos_pagamentos disable row level security;
+alter table public.central_servicos_agendas disable row level security;
 
 create index if not exists idx_central_servicos_recursos_nome
   on public.central_servicos_recursos (nome);
@@ -176,6 +200,30 @@ create index if not exists idx_central_servicos_pagamentos_titulo
 
 create index if not exists idx_central_servicos_pagamentos_contrato
   on public.central_servicos_pagamentos (contrato);
+
+create index if not exists idx_central_servicos_agendas_recurso
+  on public.central_servicos_agendas (recurso);
+
+create index if not exists idx_central_servicos_agendas_cliente
+  on public.central_servicos_agendas (cliente);
+
+create index if not exists idx_central_servicos_agendas_contrato
+  on public.central_servicos_agendas (contrato_id);
+
+-- seed: planejamentos de agenda atualmente controlados manualmente
+insert into public.central_servicos_agendas (recurso, cliente, dedicacao, dias_semana, status)
+values
+  ('Flavia', 'Fundação Casa', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
+  ('Daniele', 'Fundação Casa', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
+  ('Diego', 'Fundação Casa', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
+  ('Diego', 'Bemobi', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
+  ('Wallace', 'Bemobi', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
+  ('Wallace', 'SESI', 'Parcial', '{SEG,QUA,SEX}', 'Ativo'),
+  ('Erick', 'SESI', 'Parcial', '{TER,QUI}', 'Ativo'),
+  ('Samuel', 'CETESB', 'Parcial', '{SEG,QUA,SEX}', 'Ativo'),
+  ('Abilton', 'CETESB', 'Parcial', '{TER,QUI}', 'Ativo'),
+  ('Erick', 'SGB', 'Parcial', '{SEG}', 'Ativo')
+on conflict (recurso, cliente) do nothing;
 
 -- migration: add relaciona to existing installations
 alter table public.central_servicos_pagamentos

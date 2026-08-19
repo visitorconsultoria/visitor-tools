@@ -27,6 +27,7 @@ type AgendaDedicacao = 'Full' | 'Parcial'
 type AgendaStatus = 'Ativo' | 'Encerrado'
 type AgendaWeekDay = 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'
 type AgendaSortKey = 'recurso' | 'cliente' | 'dedicacao' | 'vigenciaInicio' | 'status'
+type AgendaViewMode = 'grade' | 'calendario' | 'lista'
 
 type ResourceItem = {
   id: number
@@ -688,6 +689,25 @@ function computeAgendaConflictIds(items: AgendaItem[]): Set<number> {
   return conflicts
 }
 
+function toDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function isAgendaScheduledOn(item: AgendaItem, date: Date): boolean {
+  if (item.status !== 'Ativo') return false
+
+  const dateKey = toDateKey(date)
+  if (item.vigenciaInicio && dateKey < item.vigenciaInicio) return false
+  if (item.vigenciaTermino && dateKey > item.vigenciaTermino) return false
+
+  if (item.dedicacao === 'Full') return date.getDay() >= 1 && date.getDay() <= 5
+  const weekDay = AGENDA_ALL_WEEK_DAYS[(date.getDay() + 6) % 7]
+  return item.diasSemana.includes(weekDay)
+}
+
 function useCatalogState<TItem, TForm>(initial: TForm) {
   const [items, setItems] = useState<TItem[]>([])
   const [search, setSearch] = useState('')
@@ -757,7 +777,8 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
   const [agendaEditorOpen, setAgendaEditorOpen] = useState(false)
   const [agendaIsViewMode, setAgendaIsViewMode] = useState(false)
   const [agendaSort, setAgendaSort] = useState<{ key: AgendaSortKey; direction: SortDirection }>(AGENDA_DEFAULT_SORT)
-  const [agendaViewMode, setAgendaViewMode] = useState<'grade' | 'lista'>('grade')
+  const [agendaViewMode, setAgendaViewMode] = useState<AgendaViewMode>('grade')
+  const [agendaCalendarMonth, setAgendaCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [monthlyHoverIndex, setMonthlyHoverIndex] = useState<number | null>(null)
   const [competencyHoverIndex, setCompetencyHoverIndex] = useState<number | null>(null)
   const [competencyYear, setCompetencyYear] = useState<number | null>(null)
@@ -1875,6 +1896,9 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
               <button type="button" className={`button-secondary${agendaViewMode === 'grade' ? ' sidebar__link--active' : ''}`} onClick={() => setAgendaViewMode('grade')}>
                 Grade Semanal
               </button>
+              <button type="button" className={`button-secondary${agendaViewMode === 'calendario' ? ' sidebar__link--active' : ''}`} onClick={() => setAgendaViewMode('calendario')}>
+                Calendário
+              </button>
               <button type="button" className={`button-secondary${agendaViewMode === 'lista' ? ' sidebar__link--active' : ''}`} onClick={() => setAgendaViewMode('lista')}>
                 Lista
               </button>
@@ -1927,6 +1951,56 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
             </div>
           )}
 
+          {agendaViewMode === 'calendario' && !agendaState.isLoading && (() => {
+            const calendarYear = agendaCalendarMonth.getFullYear()
+            const calendarMonth = agendaCalendarMonth.getMonth()
+            const firstDay = new Date(calendarYear, calendarMonth, 1)
+            const lastDay = new Date(calendarYear, calendarMonth + 1, 0)
+            const leadingDays = (firstDay.getDay() + 6) % 7
+            const totalCells = Math.ceil((leadingDays + lastDay.getDate()) / 7) * 7
+            const calendarDays = Array.from({ length: totalCells }, (_, index) => {
+              const date = new Date(calendarYear, calendarMonth, index - leadingDays + 1)
+              return date.getMonth() === calendarMonth ? date : null
+            })
+            const monthLabel = agendaCalendarMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+
+            return (
+              <div>
+                <div className="ch-section-header" style={{ marginTop: '1rem', marginBottom: '0.75rem' }}>
+                  <div>
+                    <h3 style={{ margin: 0, textTransform: 'capitalize' }}>{monthLabel}</h3>
+                    <p className="muted" style={{ margin: '0.2rem 0 0' }}>Período exibido: 01/{String(calendarMonth + 1).padStart(2, '0')}/{calendarYear} a {formatDateDisplay(toDateKey(lastDay))}</p>
+                  </div>
+                  <div className="ch-row-actions" style={{ gap: '0.5rem' }}>
+                    <button type="button" className="button-secondary" onClick={() => setAgendaCalendarMonth(new Date(calendarYear, calendarMonth - 1, 1))}>Mês anterior</button>
+                    <button type="button" className="button-secondary" onClick={() => setAgendaCalendarMonth(new Date())}>Hoje</button>
+                    <button type="button" className="button-secondary" onClick={() => setAgendaCalendarMonth(new Date(calendarYear, calendarMonth + 1, 1))}>Próximo mês</button>
+                  </div>
+                </div>
+                <div className="agenda-calendar" role="grid" aria-label={`Agenda de ${monthLabel}`}>
+                  {AGENDA_ALL_WEEK_DAYS.map((day) => <div key={day} className="agenda-calendar__weekday" role="columnheader">{day}</div>)}
+                  {calendarDays.map((date, index) => {
+                    if (!date) return <div key={`empty-${index}`} className="agenda-calendar__day agenda-calendar__day--empty" role="gridcell" />
+                    const dayItems = activeItems.filter((item) => isAgendaScheduledOn(item, date))
+                    const hasConflict = dayItems.some((item) => conflictIds.has(item.id))
+                    const isToday = toDateKey(date) === toDateKey(new Date())
+                    return (
+                      <div key={toDateKey(date)} className={`agenda-calendar__day${isToday ? ' agenda-calendar__day--today' : ''}${hasConflict ? ' agenda-calendar__day--conflict' : ''}`} role="gridcell">
+                        <span className="agenda-calendar__date">{date.getDate()}</span>
+                        {dayItems.map((item) => (
+                          <button key={item.id} type="button" className={`agenda-calendar__event${conflictIds.has(item.id) ? ' agenda-calendar__event--conflict' : ''}`} title={`${item.recurso}: ${item.cliente} (${formatDateDisplay(item.vigenciaInicio)} a ${formatDateDisplay(item.vigenciaTermino)})`} onClick={() => openEditAgendaEditor(item, true)}>
+                            <strong>{item.recurso}</strong><span>{item.cliente}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+                {activeItems.length === 0 && <p className="ch-empty">Nenhum planejamento ativo cadastrado.</p>}
+              </div>
+            )
+          })()}
+
           {agendaViewMode === 'lista' && !agendaState.isLoading && (
             <>
               <div className="ch-table-toolbar ch-table-toolbar--single">
@@ -1953,6 +2027,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                       <th>{renderSortableHeader('Dedicação', agendaSort.key === 'dedicacao', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'dedicacao', direction: getNextDirection(prev.key, 'dedicacao', prev.direction) })))}</th>
                       <th>Dias</th>
                       <th>{renderSortableHeader('Vigência Início', agendaSort.key === 'vigenciaInicio', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'vigenciaInicio', direction: getNextDirection(prev.key, 'vigenciaInicio', prev.direction) })))}</th>
+                      <th>Vigência Término</th>
                       <th>{renderSortableHeader('Status', agendaSort.key === 'status', agendaSort.direction, () => setAgendaSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
                       <th>Ações</th>
                     </tr>
@@ -1966,6 +2041,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                         <td>{item.dedicacao}</td>
                         <td>{item.dedicacao === 'Full' ? 'Todos os dias úteis' : item.diasSemana.join(', ') || '-'}</td>
                         <td>{formatDateDisplay(item.vigenciaInicio)}</td>
+                        <td>{formatDateDisplay(item.vigenciaTermino)}</td>
                         <td>
                           <span className={`ch-badge ch-badge--${item.status === 'Ativo' ? 'ativo' : 'implantacao'}`}>
                             {conflictIds.has(item.id) ? 'Conflito' : item.status}
@@ -1994,7 +2070,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                       </tr>
                     ))}
                     {sortedItems.length === 0 && (
-                      <tr><td colSpan={8} className="ch-empty">Nenhum planejamento cadastrado.</td></tr>
+                      <tr><td colSpan={9} className="ch-empty">Nenhum planejamento cadastrado.</td></tr>
                     )}
                   </tbody>
                 </table>

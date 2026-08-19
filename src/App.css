@@ -1,3 +1,78 @@
+.agenda-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border: 1px solid #d8e2dd;
+  background: #d8e2dd;
+  gap: 1px;
+  overflow: auto;
+}
+
+.agenda-calendar__weekday {
+  min-width: 9rem;
+  padding: 0.55rem;
+  background: #315f53;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.agenda-calendar__day {
+  min-width: 9rem;
+  min-height: 8.25rem;
+  padding: 0.4rem;
+  background: #fff;
+}
+
+.agenda-calendar__day--empty {
+  background: #f3f6f4;
+}
+
+.agenda-calendar__day--today {
+  box-shadow: inset 0 0 0 2px #315f53;
+}
+
+.agenda-calendar__day--conflict {
+  background: #fff7f5;
+}
+
+.agenda-calendar__date {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #315f53;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.agenda-calendar__event {
+  display: flex;
+  width: 100%;
+  margin-bottom: 0.3rem;
+  padding: 0.35rem;
+  border: 0;
+  border-left: 3px solid #315f53;
+  background: #e8f1ed;
+  color: #173b32;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.73rem;
+  text-align: left;
+}
+
+.agenda-calendar__event strong,
+.agenda-calendar__event span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenda-calendar__event--conflict {
+  border-left-color: #c0392b;
+  background: #fdecea;
+  color: #8f241b;
+}
+
 :root {
   --bg-canvas: #f3f7f6;
   --bg-surface: #ffffff;

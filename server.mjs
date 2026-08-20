@@ -1319,6 +1319,7 @@ function normalizeCentralServicosInvoiceRow(row) {
 
   return {
     id,
+    contratoId: Number(row?.contrato_id) > 0 ? Number(row.contrato_id) : null,
     titulo,
     nota: parseCentralServicosTextInput(row?.nota),
     emissao: parseCentralServicosTextInput(row?.emissao),

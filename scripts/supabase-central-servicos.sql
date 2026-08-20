@@ -210,21 +210,6 @@ create index if not exists idx_central_servicos_agendas_cliente
 create index if not exists idx_central_servicos_agendas_contrato
   on public.central_servicos_agendas (contrato_id);
 
--- seed: planejamentos de agenda atualmente controlados manualmente
-insert into public.central_servicos_agendas (recurso, cliente, dedicacao, dias_semana, status)
-values
-  ('Flavia', 'Fundação Casa', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
-  ('Daniele', 'Fundação Casa', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
-  ('Diego', 'Fundação Casa', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
-  ('Diego', 'Bemobi', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
-  ('Wallace', 'Bemobi', 'Full', '{SEG,TER,QUA,QUI,SEX}', 'Ativo'),
-  ('Wallace', 'SESI', 'Parcial', '{SEG,QUA,SEX}', 'Ativo'),
-  ('Erick', 'SESI', 'Parcial', '{TER,QUI}', 'Ativo'),
-  ('Samuel', 'CETESB', 'Parcial', '{SEG,QUA,SEX}', 'Ativo'),
-  ('Abilton', 'CETESB', 'Parcial', '{TER,QUI}', 'Ativo'),
-  ('Erick', 'SGB', 'Parcial', '{SEG}', 'Ativo')
-on conflict (recurso, cliente) do nothing;
-
 create table if not exists public.central_servicos_atendimentos (
   id bigint generated always as identity primary key,
   numero text not null default '',

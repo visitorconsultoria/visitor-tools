@@ -2440,26 +2440,26 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                     <option value="Encerrado">Encerrado</option>
                   </select>
                 </label>
-                <label className="estimativas-form__full">
-                  Descrição
+                <div className="estimativas-form__full rich-field">
+                  <span className="rich-field__label">Descrição</span>
                   <RichTextEditor value={contractState.form.descricao} onChange={(value) => contractState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva o contrato." rows={4} disabled={contractIsViewMode} />
-                </label>
-                <label className="estimativas-form__full">
-                  Observações
+                </div>
+                <div className="estimativas-form__full rich-field">
+                  <span className="rich-field__label">Observações</span>
                   <RichTextEditor value={contractState.form.observacoes} onChange={(value) => contractState.setForm((prev) => ({ ...prev, observacoes: value }))} placeholder="Adicione observações do contrato." rows={4} disabled={contractIsViewMode} />
-                </label>
+                </div>
                   </>
                 )}
                 {contractEditorTab === 'faturamento' && (
                   <>
-                    <label className="estimativas-form__full">
-                      Corpo da Nota
+                    <div className="estimativas-form__full rich-field">
+                      <span className="rich-field__label">Corpo da Nota</span>
                       <RichTextEditor value={contractState.form.faturamentoCorpoNota} onChange={(value) => contractState.setForm((prev) => ({ ...prev, faturamentoCorpoNota: value }))} placeholder="Texto que deverá constar no corpo da nota fiscal." rows={6} disabled={contractIsViewMode} />
-                    </label>
-                    <label className="estimativas-form__full">
-                      Documentos para Anexar
+                    </div>
+                    <div className="estimativas-form__full rich-field">
+                      <span className="rich-field__label">Documentos para Anexar</span>
                       <RichTextEditor value={contractState.form.faturamentoDocumentos} onChange={(value) => contractState.setForm((prev) => ({ ...prev, faturamentoDocumentos: value }))} placeholder="Liste os documentos necessários para anexar à nota." rows={5} disabled={contractIsViewMode} />
-                    </label>
+                    </div>
                     <label>
                       Prazo de Emissão
                       <input value={contractState.form.faturamentoPrazoEmissao} onChange={(event) => contractState.setForm((prev) => ({ ...prev, faturamentoPrazoEmissao: event.target.value }))} readOnly={contractIsViewMode} placeholder="Ex.: até o 5º dia útil" />
@@ -2761,14 +2761,14 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                   Vigência - Término
                   <input type="date" value={expenseState.form.vigenciaTermino} onChange={(event) => expenseState.setForm((prev) => ({ ...prev, vigenciaTermino: event.target.value }))} disabled={expenseIsViewMode} />
                 </label>
-                <label className="estimativas-form__full">
-                  Descrição
+                <div className="estimativas-form__full rich-field">
+                  <span className="rich-field__label">Descrição</span>
                   <RichTextEditor value={expenseState.form.descricao} onChange={(value) => expenseState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva a despesa." rows={4} disabled={expenseIsViewMode} />
-                </label>
-                <label className="estimativas-form__full">
-                  Observações
+                </div>
+                <div className="estimativas-form__full rich-field">
+                  <span className="rich-field__label">Observações</span>
                   <RichTextEditor value={expenseState.form.observacoes} onChange={(value) => expenseState.setForm((prev) => ({ ...prev, observacoes: value }))} placeholder="Adicione observações da despesa." rows={4} disabled={expenseIsViewMode} />
-                </label>
+                </div>
                 {!expenseIsViewMode && (
                   <div className="estimativas-actions estimativas-form__full">
                     <button type="submit" className="button-primary" disabled={expenseState.isSaving}>
@@ -3007,10 +3007,10 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                   Data de Pagamento
                   <input type="date" value={invoiceState.form.dataPagamento} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, dataPagamento: event.target.value }))} disabled={invoiceIsViewMode} />
                 </label>
-                <label className="estimativas-form__full">
-                  Descrição
+                <div className="estimativas-form__full rich-field">
+                  <span className="rich-field__label">Descrição</span>
                   <RichTextEditor value={invoiceState.form.descricao} onChange={(value) => invoiceState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva o faturamento." rows={4} disabled={invoiceIsViewMode} />
-                </label>
+                </div>
                 {!invoiceIsViewMode && (
                   <div className="estimativas-actions estimativas-form__full">
                     <button type="submit" className="button-primary" disabled={invoiceState.isSaving}>
@@ -3258,10 +3258,10 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                   Data de Pagamento
                   <input type="date" value={paymentState.form.dataPagamento} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, dataPagamento: event.target.value }))} disabled={paymentIsViewMode} />
                 </label>
-                <label className="estimativas-form__full">
-                  Descrição
+                <div className="estimativas-form__full rich-field">
+                  <span className="rich-field__label">Descrição</span>
                   <RichTextEditor value={paymentState.form.descricao} onChange={(value) => paymentState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva o pagamento." rows={4} disabled={paymentIsViewMode} />
-                </label>
+                </div>
                 {!paymentIsViewMode && (
                   <div className="estimativas-actions estimativas-form__full">
                     <button type="submit" className="button-primary" disabled={paymentState.isSaving}>

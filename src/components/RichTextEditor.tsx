@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
@@ -24,12 +24,16 @@ function fileToBase64(file: File): Promise<string> {
 export default function RichTextEditor({ value, onChange, placeholder = '', rows = 3, disabled = false }: Props) {
   const minHeight = `${rows * 1.5 + 1}rem`
 
+  // Extensions must stay referentially stable across renders, otherwise tiptap
+  // rebuilds the schema (and resets the cursor) on every keystroke.
+  const extensions = useMemo(() => [
+    StarterKit,
+    Image.configure({ inline: false, allowBase64: true }),
+    Placeholder.configure({ placeholder }),
+  ], [placeholder])
+
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Image.configure({ inline: false, allowBase64: true }),
-      Placeholder.configure({ placeholder }),
-    ],
+    extensions,
     content: value,
     editable: !disabled,
     onUpdate({ editor: ed }) {

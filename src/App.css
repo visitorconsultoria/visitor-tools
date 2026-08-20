@@ -147,9 +147,18 @@
 .login-form label,
 .estimativas-form label,
 .csv-options label,
-.ch-form label {
+.ch-form label,
+.rich-field {
   display: grid;
   gap: 0.38rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--ink-primary);
+}
+
+/* Uses a div instead of a label so browsers don't forward clicks to the
+   RichTextEditor's toolbar buttons (labels auto-focus the first labelable child). */
+.rich-field__label {
   font-size: 0.88rem;
   font-weight: 700;
   color: var(--ink-primary);

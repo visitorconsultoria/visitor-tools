@@ -3099,6 +3099,297 @@ button:disabled {
   color: var(--danger-700);
 }
 
+.agenda-week-grid table {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.agenda-week-grid th:first-child,
+.agenda-week-grid td:first-child {
+  width: 7.5rem;
+}
+
+.agenda-week-grid__cell {
+  min-width: 10.5rem;
+}
+
+.agenda-week-grid__item {
+  display: grid;
+  gap: 0.16rem;
+  margin-bottom: 0.35rem;
+}
+
+.agenda-week-grid__item:last-child {
+  margin-bottom: 0;
+}
+
+.agenda-week-grid__badge {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+
+.agenda-week-grid__badge--conflict {
+  background: #fdecea !important;
+  border: 1px solid #f5b7b1;
+}
+
+.agenda-week-grid__item small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.agenda-weekday-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.agenda-weekday-fieldset legend {
+  margin-bottom: 0.45rem;
+  color: var(--ink-primary);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.agenda-weekday-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  gap: 0.55rem;
+}
+
+.agenda-weekday-option {
+  display: flex !important;
+  min-height: 42px;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem !important;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #fcfefd;
+  color: var(--ink-secondary) !important;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.agenda-weekday-option:hover {
+  border-color: var(--line-strong);
+  background: #f4faf7;
+}
+
+.agenda-weekday-option:has(input:checked) {
+  border-color: var(--brand-600);
+  background: var(--brand-100);
+  box-shadow: inset 0 0 0 1px rgba(47, 143, 116, 0.14);
+  color: var(--brand-700) !important;
+}
+
+.agenda-weekday-option input {
+  width: 16px !important;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--brand-600);
+}
+
+.agenda-weekday-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenda-date-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.agenda-date-selector input {
+  max-width: 220px;
+}
+
+.agenda-date-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.agenda-date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.58rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--brand-100);
+  color: var(--brand-700);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.agenda-date-chip button {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(47, 143, 116, 0.14);
+  color: var(--brand-700);
+  cursor: pointer;
+}
+
+.agenda-resource-filter {
+  margin: 0.85rem 0 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: #f8fcfa;
+}
+
+.agenda-resource-filter__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+  color: var(--ink-primary);
+}
+
+.agenda-resource-filter__dropdown {
+  position: relative;
+}
+
+.agenda-resource-filter__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 42px;
+  padding: 0.62rem 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-primary);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agenda-resource-filter__trigger:hover,
+.agenda-resource-filter__trigger:focus-visible {
+  border-color: var(--brand-600);
+  outline: none;
+}
+
+.agenda-resource-filter__chevron {
+  flex: 0 0 auto;
+  color: var(--brand-700);
+  font-size: 0.88rem;
+}
+
+.agenda-resource-filter__grid {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 34px rgba(35, 66, 56, 0.14);
+}
+
+.agenda-resource-filter__option {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem !important;
+  min-width: 0;
+  padding: 0.56rem 0.68rem;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-secondary) !important;
+  cursor: pointer;
+}
+
+.agenda-resource-filter__option:last-child {
+  border-bottom: 0;
+}
+
+.agenda-resource-filter__option:has(input:checked) {
+  background: var(--brand-100);
+  color: var(--brand-700) !important;
+}
+
+.agenda-resource-filter__option input {
+  width: 16px !important;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--brand-600);
+}
+
+.agenda-resource-filter__option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenda-resource-filter__scope-note {
+  margin: 0.6rem 0 0.9rem;
+}
+
+.agenda-tooltip {
+  position: fixed;
+  z-index: 2000;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 2rem));
+  padding: 0.72rem 0.82rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #f8fcfa;
+  box-shadow: 0 16px 34px rgba(15, 58, 51, 0.18);
+  color: var(--ink-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: pre-line;
+}
+
+.agenda-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line-strong);
+  background: #f8fcfa;
+  transform: translateX(-50%) rotate(45deg);
+}
+
 .central-servicos .ch-table-search input,
 .central-servicos .ch-table-toolbar select,
 .central-servicos .form-grid input,

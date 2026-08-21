@@ -66,6 +66,7 @@ type UserSession = {
   username: string
   displayName: string
   allowedMenus: AllowedMenu[]
+  centralServicosResourceScope: 'all' | 'self'
 }
 
 const MAX_PREVIEW_ROWS = 8
@@ -202,6 +203,7 @@ function parseStoredSession(raw: string | null): UserSession | null {
       username,
       displayName: String(parsed.displayName ?? ''),
       allowedMenus,
+      centralServicosResourceScope: parsed.centralServicosResourceScope === 'self' ? 'self' : 'all',
     }
   } catch {
     return null
@@ -436,15 +438,16 @@ function App() {
           headers: { 'x-user': currentUser.username },
         })
         if (!response.ok) return
-        const data = await response.json() as { allowedMenus?: unknown[] }
+        const data = await response.json() as { allowedMenus?: unknown[]; centralServicosResourceScope?: unknown }
         const freshMenus = getUserAllowedMenus(currentUser.username, data.allowedMenus)
+        const freshCentralServicosResourceScope = data.centralServicosResourceScope === 'self' ? 'self' : 'all'
         setCurrentUser((prev) => {
           if (!prev) return prev
           const same =
             prev.allowedMenus.length === freshMenus.length &&
             freshMenus.every((m) => prev.allowedMenus.includes(m))
-          if (same) return prev
-          const updated: UserSession = { ...prev, allowedMenus: freshMenus }
+          if (same && prev.centralServicosResourceScope === freshCentralServicosResourceScope) return prev
+          const updated: UserSession = { ...prev, allowedMenus: freshMenus, centralServicosResourceScope: freshCentralServicosResourceScope }
           localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated))
           return updated
         })
@@ -603,6 +606,7 @@ function App() {
         username,
         displayName: String(user?.displayName ?? ''),
         allowedMenus,
+        centralServicosResourceScope: user?.centralServicosResourceScope === 'self' ? 'self' : 'all',
       }
 
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
@@ -1882,7 +1886,12 @@ function App() {
                 }}
               />
             ) : currentPage === 'central-servicos' ? (
-              <CentralServicosTool subPage={centralServicosPage} />
+              <CentralServicosTool
+                subPage={centralServicosPage}
+                currentUsername={currentUser?.username || ''}
+                currentDisplayName={currentUser?.displayName || ''}
+                resourceScope={currentUser?.centralServicosResourceScope ?? 'all'}
+              />
             ) : currentPage === 'ticket-hub' ? (
               <TicketHubTool currentUsername={currentUser?.username || ''} subPage={ticketHubPage} />
             ) : currentPage === 'propostas' ? (

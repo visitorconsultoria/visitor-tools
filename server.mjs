@@ -26,8 +26,17 @@ function normalizeOriginValue(value) {
   }
 }
 
-const configuredCorsOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
-  .split(',')
+const DEFAULT_CORS_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://visitorconsultoria.github.io',
+  'https://tools.visitorconsultoria.com',
+]
+
+const configuredCorsOrigins = Array.from(new Set([
+  ...DEFAULT_CORS_ORIGINS,
+  ...String(process.env.CORS_ALLOWED_ORIGINS || '').split(','),
+]))
   .map((item) => normalizeOriginValue(item))
   .filter(Boolean)
 
@@ -139,6 +148,7 @@ function getSupabaseClient() {
 }
 
 const MENU_KEYS = [...ASSIGNABLE_MENU_KEYS]
+const CENTRAL_SERVICOS_RESOURCE_SCOPES = ['all', 'self']
 
 function isVisitorAdminUser(username) {
   return isVisitorUsername(username)
@@ -194,16 +204,21 @@ function normalizeUserRow(row) {
     displayName: String(row.display_name ?? ''),
     isActive: Boolean(row.is_active),
     allowedMenus: getEffectiveMenus(username, row.allowed_menus, MENU_KEYS),
+    centralServicosResourceScope: CENTRAL_SERVICOS_RESOURCE_SCOPES.includes(String(row.central_servicos_resource_scope ?? ''))
+      ? String(row.central_servicos_resource_scope)
+      : 'all',
   }
 }
 
 function parseUserPayload(payload) {
+  const centralServicosResourceScope = String(payload.centralServicosResourceScope ?? payload.central_servicos_resource_scope ?? 'all').trim()
   return {
     username: String(payload.username ?? '').trim().toLowerCase(),
     password: String(payload.password ?? '').trim(),
     displayName: String(payload.displayName ?? '').trim(),
     isActive: payload.isActive !== false,
     allowedMenus: normalizeMenuPermissions(payload.allowedMenus, MENU_KEYS),
+    centralServicosResourceScope: CENTRAL_SERVICOS_RESOURCE_SCOPES.includes(centralServicosResourceScope) ? centralServicosResourceScope : 'all',
   }
 }
 
@@ -233,7 +248,7 @@ async function authenticateUser(username, password) {
 
   const { data: row, error } = await client
     .from(usersTable)
-    .select('id, username, password, display_name, is_active, allowed_menus')
+    .select('id, username, password, display_name, is_active, allowed_menus, central_servicos_resource_scope')
     .eq('username', normalizedUsername)
     .maybeSingle()
 
@@ -261,7 +276,7 @@ async function listUsers() {
   const { client, usersTable } = getSupabaseClient()
   const { data: rows, error } = await client
     .from(usersTable)
-    .select('id, username, display_name, is_active, allowed_menus, created_at')
+    .select('id, username, display_name, is_active, allowed_menus, central_servicos_resource_scope, created_at')
     .order('created_at', { ascending: true })
 
   if (error) {
@@ -282,12 +297,13 @@ async function createUser(payload) {
     display_name: parsed.displayName,
     is_active: parsed.isActive,
     allowed_menus: isVisitorAdminUser(parsed.username) ? MENU_KEYS : parsed.allowedMenus,
+    central_servicos_resource_scope: isVisitorAdminUser(parsed.username) ? 'all' : parsed.centralServicosResourceScope,
   }
 
   const { data: row, error } = await client
     .from(usersTable)
     .insert(insertPayload)
-    .select('id, username, display_name, is_active, allowed_menus')
+    .select('id, username, display_name, is_active, allowed_menus, central_servicos_resource_scope')
     .single()
 
   if (error) {
@@ -302,7 +318,7 @@ async function updateUser(id, payload) {
 
   const { data: currentRow, error: currentError } = await client
     .from(usersTable)
-    .select('id, username, display_name, is_active, allowed_menus')
+    .select('id, username, display_name, is_active, allowed_menus, central_servicos_resource_scope')
     .eq('id', id)
     .single()
 
@@ -320,7 +336,7 @@ async function updateUser(id, payload) {
       .from(usersTable)
       .update({ password })
       .eq('id', id)
-      .select('id, username, display_name, is_active, allowed_menus')
+      .select('id, username, display_name, is_active, allowed_menus, central_servicos_resource_scope')
       .single()
 
     if (visitorError) {
@@ -338,6 +354,7 @@ async function updateUser(id, payload) {
     display_name: parsed.displayName,
     is_active: parsed.isActive,
     allowed_menus: isVisitorAdminUser(parsed.username) ? MENU_KEYS : parsed.allowedMenus,
+    central_servicos_resource_scope: isVisitorAdminUser(parsed.username) ? 'all' : parsed.centralServicosResourceScope,
   }
 
   if (parsed.password) {
@@ -350,7 +367,7 @@ async function updateUser(id, payload) {
     .from(usersTable)
     .update(updatePayload)
     .eq('id', id)
-    .select('id, username, display_name, is_active, allowed_menus')
+    .select('id, username, display_name, is_active, allowed_menus, central_servicos_resource_scope')
     .single()
 
   console.log('[updateUser] Supabase retornou - error:', error, 'allowed_menus salvo:', row?.allowed_menus)
@@ -1110,7 +1127,7 @@ const CENTRAL_SERVICOS_VALUE_TYPES = ['Hora', 'Valor', 'Tarefa']
 const CENTRAL_SERVICOS_EXPENSE_TYPES = ['Fixa', 'Avulsa']
 const CENTRAL_SERVICOS_INVOICE_STATUS = ['Pendente', 'Faturado', 'Pago']
 const CENTRAL_SERVICOS_PAYMENT_STATUS = ['Pendente', 'Pago']
-const CENTRAL_SERVICOS_AGENDA_DEDICACOES = ['Full', 'Parcial']
+const CENTRAL_SERVICOS_AGENDA_DEDICACOES = ['Full', 'Parcial', 'Avulsa', 'Parcial + Avulsa']
 const CENTRAL_SERVICOS_AGENDA_STATUS = ['Ativo', 'Encerrado']
 const CENTRAL_SERVICOS_AGENDA_DAYS = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
 
@@ -1780,6 +1797,9 @@ function normalizeCentralServicosAgendaRow(row) {
   const diasSemana = Array.isArray(row?.dias_semana)
     ? row.dias_semana.map((day) => parseCentralServicosTextInput(day)).filter((day) => CENTRAL_SERVICOS_AGENDA_DAYS.includes(day))
     : []
+  const datasAvulsas = Array.isArray(row?.datas_avulsas)
+    ? row.datas_avulsas.map((date) => parseCentralServicosNullableDateInput(date)).filter(Boolean)
+    : []
 
   return {
     id,
@@ -1789,6 +1809,7 @@ function normalizeCentralServicosAgendaRow(row) {
     contrato: parseCentralServicosTextInput(row?.contrato),
     dedicacao: CENTRAL_SERVICOS_AGENDA_DEDICACOES.includes(dedicacao) ? dedicacao : 'Full',
     diasSemana,
+    datasAvulsas,
     vigenciaInicio: parseCentralServicosTextInput(row?.vigencia_inicio),
     vigenciaTermino: parseCentralServicosTextInput(row?.vigencia_termino),
     observacoes: parseCentralServicosTextInput(row?.observacoes),
@@ -1801,15 +1822,22 @@ function parseCentralServicosAgendaPayload(payload) {
   const status = parseCentralServicosTextInput(payload?.status)
   const rawDias = Array.isArray(payload?.dias_semana ?? payload?.diasSemana) ? (payload?.dias_semana ?? payload?.diasSemana) : []
   const diasSemana = rawDias.map((day) => parseCentralServicosTextInput(day)).filter((day) => CENTRAL_SERVICOS_AGENDA_DAYS.includes(day))
-  const isFull = CENTRAL_SERVICOS_AGENDA_DEDICACOES.includes(dedicacao) ? dedicacao === 'Full' : true
+  const rawDatasAvulsas = Array.isArray(payload?.datas_avulsas ?? payload?.datasAvulsas) ? (payload?.datas_avulsas ?? payload?.datasAvulsas) : []
+  const datasAvulsas = Array.from(new Set(rawDatasAvulsas.map((date) => parseCentralServicosNullableDateInput(date)).filter(Boolean))).sort()
+  const normalizedDedicacao = CENTRAL_SERVICOS_AGENDA_DEDICACOES.includes(dedicacao) ? dedicacao : 'Full'
 
   return {
     recurso: parseCentralServicosTextInput(payload?.recurso),
     cliente: parseCentralServicosTextInput(payload?.cliente),
     contrato_id: Number(payload?.contrato_id ?? payload?.contratoId) > 0 ? Number(payload?.contrato_id ?? payload?.contratoId) : null,
     contrato: parseCentralServicosTextInput(payload?.contrato),
-    dedicacao: isFull ? 'Full' : 'Parcial',
-    dias_semana: isFull ? ['SEG', 'TER', 'QUA', 'QUI', 'SEX'] : diasSemana,
+    dedicacao: normalizedDedicacao,
+    dias_semana: normalizedDedicacao === 'Full'
+      ? ['SEG', 'TER', 'QUA', 'QUI', 'SEX']
+      : normalizedDedicacao === 'Avulsa'
+        ? []
+        : diasSemana,
+    datas_avulsas: normalizedDedicacao === 'Avulsa' || normalizedDedicacao === 'Parcial + Avulsa' ? datasAvulsas : [],
     vigencia_inicio: parseCentralServicosNullableDateInput(payload?.vigencia_inicio ?? payload?.vigenciaInicio),
     vigencia_termino: parseCentralServicosNullableDateInput(payload?.vigencia_termino ?? payload?.vigenciaTermino),
     observacoes: parseCentralServicosTextInput(payload?.observacoes),
@@ -1824,8 +1852,11 @@ function validateCentralServicosAgendaPayload(parsed) {
   if (!parsed.cliente) {
     throw new Error('Informe o cliente ou projeto do planejamento.')
   }
-  if (parsed.dedicacao === 'Parcial' && parsed.dias_semana.length === 0) {
+  if ((parsed.dedicacao === 'Parcial' || parsed.dedicacao === 'Parcial + Avulsa') && parsed.dias_semana.length === 0) {
     throw new Error('Selecione ao menos um dia da semana para dedicação parcial.')
+  }
+  if (parsed.dedicacao === 'Avulsa' && parsed.datas_avulsas.length === 0) {
+    throw new Error('Selecione ao menos uma data para dedicação avulsa.')
   }
 }
 
@@ -1833,10 +1864,49 @@ async function listCentralServicosAgendas() {
   const { centralServicosAgendasTable } = getSupabaseClient()
   return listCentralServicosItems(
     centralServicosAgendasTable,
-    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, vigencia_inicio, vigencia_termino, observacoes, status',
+    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, datas_avulsas, vigencia_inicio, vigencia_termino, observacoes, status',
     'recurso',
     normalizeCentralServicosAgendaRow,
   )
+}
+
+async function getCentralServicosAgendaScopeFromRequest(req) {
+  const usernameHeader = req.headers['x-user']
+  const displayNameHeader = req.headers['x-user-display']
+  const usernameRaw = Array.isArray(usernameHeader) ? usernameHeader[0] : usernameHeader
+  const displayNameRaw = Array.isArray(displayNameHeader) ? displayNameHeader[0] : displayNameHeader
+  const username = String(usernameRaw || '').trim().toLowerCase()
+  const displayName = String(displayNameRaw || '').trim()
+
+  if (!username || isVisitorAdminUser(username)) {
+    return { scope: 'all', resourceName: '' }
+  }
+
+  const { client, usersTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(usersTable)
+    .select('display_name, central_servicos_resource_scope')
+    .eq('username', username)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+
+  const scope = CENTRAL_SERVICOS_RESOURCE_SCOPES.includes(String(row?.central_servicos_resource_scope ?? ''))
+    ? String(row.central_servicos_resource_scope)
+    : 'all'
+
+  return {
+    scope,
+    resourceName: String(row?.display_name || displayName || username).trim(),
+  }
+}
+
+function assertCentralServicosAgendaPayloadAllowedForScope(payload, scope) {
+  if (scope.scope !== 'self') return
+  const payloadResource = parseCentralServicosTextInput(payload?.recurso)
+  if (payloadResource.trim().toLowerCase() !== scope.resourceName.trim().toLowerCase()) {
+    throw new Error('Acesso negado: usuario limitado ao proprio recurso.')
+  }
 }
 
 async function createCentralServicosAgenda(payload) {
@@ -1844,7 +1914,7 @@ async function createCentralServicosAgenda(payload) {
   return createCentralServicosItem(
     centralServicosAgendasTable,
     payload,
-    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, vigencia_inicio, vigencia_termino, observacoes, status',
+    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, datas_avulsas, vigencia_inicio, vigencia_termino, observacoes, status',
     parseCentralServicosAgendaPayload,
     validateCentralServicosAgendaPayload,
     normalizeCentralServicosAgendaRow,
@@ -1857,7 +1927,7 @@ async function updateCentralServicosAgenda(id, payload) {
     centralServicosAgendasTable,
     id,
     payload,
-    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, vigencia_inicio, vigencia_termino, observacoes, status',
+    'id, recurso, cliente, contrato_id, contrato, dedicacao, dias_semana, datas_avulsas, vigencia_inicio, vigencia_termino, observacoes, status',
     parseCentralServicosAgendaPayload,
     validateCentralServicosAgendaPayload,
     normalizeCentralServicosAgendaRow,
@@ -3198,12 +3268,13 @@ app.get('/api/auth/me', async (req, res) => {
       return res.json({
         ok: true,
         allowedMenus: Array.from(new Set([...MENU_KEYS, 'user-admin'])),
+        centralServicosResourceScope: 'all',
       })
     }
 
     const { data: row, error } = await client
       .from(usersTable)
-      .select('is_active, allowed_menus')
+      .select('is_active, allowed_menus, central_servicos_resource_scope')
       .eq('username', username)
       .maybeSingle()
 
@@ -3212,7 +3283,13 @@ app.get('/api/auth/me', async (req, res) => {
       return res.status(403).json({ error: 'Usuario inativo ou nao encontrado.' })
     }
 
-    return res.json({ ok: true, allowedMenus: normalizeMenuPermissions(row.allowed_menus) })
+    return res.json({
+      ok: true,
+      allowedMenus: normalizeMenuPermissions(row.allowed_menus),
+      centralServicosResourceScope: CENTRAL_SERVICOS_RESOURCE_SCOPES.includes(String(row.central_servicos_resource_scope ?? ''))
+        ? String(row.central_servicos_resource_scope)
+        : 'all',
+    })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao obter permissoes: ${detail}` })
@@ -3656,10 +3733,14 @@ app.delete('/api/central-servicos/pagamentos/:id', async (req, res) => {
   }
 })
 
-app.get('/api/central-servicos/agendas', async (_req, res) => {
+app.get('/api/central-servicos/agendas', async (req, res) => {
   try {
+    const scope = await getCentralServicosAgendaScopeFromRequest(req)
     const items = await listCentralServicosAgendas()
-    return res.json({ items })
+    const scopedItems = scope.scope === 'self'
+      ? items.filter((item) => item.recurso.trim().toLowerCase() === scope.resourceName.trim().toLowerCase())
+      : items
+    return res.json({ items: scopedItems })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao buscar agendas: ${detail}` })
@@ -3668,6 +3749,8 @@ app.get('/api/central-servicos/agendas', async (_req, res) => {
 
 app.post('/api/central-servicos/agendas', async (req, res) => {
   try {
+    const scope = await getCentralServicosAgendaScopeFromRequest(req)
+    assertCentralServicosAgendaPayloadAllowedForScope(req.body || {}, scope)
     const item = await createCentralServicosAgenda(req.body || {})
     return res.status(201).json({ ok: true, item })
   } catch (error) {
@@ -3679,6 +3762,8 @@ app.post('/api/central-servicos/agendas', async (req, res) => {
 app.put('/api/central-servicos/agendas/:id', async (req, res) => {
   try {
     const id = parseProjectDevIdInput(req.params.id, 'ID da agenda')
+    const scope = await getCentralServicosAgendaScopeFromRequest(req)
+    assertCentralServicosAgendaPayloadAllowedForScope(req.body || {}, scope)
     const item = await updateCentralServicosAgenda(id, req.body || {})
     return res.json({ ok: true, item })
   } catch (error) {

@@ -1,6 +1,17 @@
 -- Tabelas da Central de Serviços
 -- Executar no Supabase SQL Editor
 
+-- Permissao por recurso usada no login e nas rotas da Central de Servicos.
+alter table public.app_users
+  add column if not exists central_servicos_resource_scope text not null default 'all';
+
+alter table public.app_users
+  drop constraint if exists app_users_central_servicos_resource_scope_check;
+
+alter table public.app_users
+  add constraint app_users_central_servicos_resource_scope_check
+  check (central_servicos_resource_scope in ('all', 'self'));
+
 create table if not exists public.central_servicos_recursos (
   id bigint generated always as identity primary key,
   nome text not null default '',
@@ -147,8 +158,9 @@ create table if not exists public.central_servicos_agendas (
   cliente text not null default '',
   contrato_id bigint,
   contrato text not null default '',
-  dedicacao text not null default 'Full' check (dedicacao in ('Full', 'Parcial')),
+  dedicacao text not null default 'Full' check (dedicacao in ('Full', 'Parcial', 'Avulsa', 'Parcial + Avulsa')),
   dias_semana text[] not null default '{}',
+  datas_avulsas date[] not null default '{}',
   vigencia_inicio date,
   vigencia_termino date,
   observacoes text not null default '',
@@ -163,6 +175,16 @@ alter table public.central_servicos_agendas
 
 alter table public.central_servicos_agendas
   add column if not exists contrato text not null default '';
+
+alter table public.central_servicos_agendas
+  add column if not exists datas_avulsas date[] not null default '{}';
+
+alter table public.central_servicos_agendas
+  drop constraint if exists central_servicos_agendas_dedicacao_check;
+
+alter table public.central_servicos_agendas
+  add constraint central_servicos_agendas_dedicacao_check
+  check (dedicacao in ('Full', 'Parcial', 'Avulsa', 'Parcial + Avulsa'));
 
 alter table public.central_servicos_recursos disable row level security;
 alter table public.central_servicos_contratos_servicos disable row level security;

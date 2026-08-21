@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
 import RichTextEditor from './RichTextEditor'
 import AtendimentoReportsTool from './AtendimentoReportsTool'
@@ -23,11 +23,20 @@ type ContractSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoContrato' | 'valor
 type ExpenseSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoDespesa' | 'valorUnitario'
 type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'valor' | 'status'
 type PaymentSortKey = 'titulo' | 'tipo' | 'relaciona' | 'contrato' | 'emissao' | 'valor' | 'status'
-type AgendaDedicacao = 'Full' | 'Parcial'
+type AgendaDedicacao = 'Full' | 'Parcial' | 'Avulsa' | 'Parcial + Avulsa'
 type AgendaStatus = 'Ativo' | 'Encerrado'
 type AgendaWeekDay = 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'
 type AgendaSortKey = 'recurso' | 'cliente' | 'dedicacao' | 'vigenciaInicio' | 'status'
 type AgendaViewMode = 'grade' | 'calendario' | 'lista'
+type AgendaTooltip = { content: string; top: number; left: number }
+type CentralServicosResourceScope = 'all' | 'self'
+
+type CentralServicosToolProps = {
+  subPage: CentralServicosPage
+  currentUsername?: string
+  currentDisplayName?: string
+  resourceScope?: CentralServicosResourceScope
+}
 
 type ResourceItem = {
   id: number
@@ -204,6 +213,7 @@ type AgendaItem = {
   contrato: string
   dedicacao: AgendaDedicacao
   diasSemana: AgendaWeekDay[]
+  datasAvulsas: string[]
   vigenciaInicio: string
   vigenciaTermino: string
   observacoes: string
@@ -217,6 +227,8 @@ type AgendaForm = {
   contrato: string
   dedicacao: AgendaDedicacao
   diasSemana: AgendaWeekDay[]
+  datasAvulsas: string[]
+  dataAvulsaInput: string
   vigenciaInicio: string
   vigenciaTermino: string
   observacoes: string
@@ -310,6 +322,8 @@ const EMPTY_AGENDA_FORM: AgendaForm = {
   contrato: '',
   dedicacao: 'Full',
   diasSemana: [],
+  datasAvulsas: [],
+  dataAvulsaInput: '',
   vigenciaInicio: '',
   vigenciaTermino: '',
   observacoes: '',
@@ -324,7 +338,7 @@ const VALUE_TYPE_OPTIONS: ValueType[] = ['Hora', 'Valor', 'Tarefa']
 const EXPENSE_TYPE_OPTIONS: ExpenseType[] = ['Fixa', 'Avulsa']
 const INVOICE_STATUS_OPTIONS: InvoiceStatus[] = ['Pendente', 'Faturado', 'Pago']
 const PAYMENT_STATUS_OPTIONS: PaymentStatus[] = ['Pendente', 'Pago']
-const AGENDA_DEDICACAO_OPTIONS: AgendaDedicacao[] = ['Full', 'Parcial']
+const AGENDA_DEDICACAO_OPTIONS: AgendaDedicacao[] = ['Full', 'Parcial', 'Avulsa', 'Parcial + Avulsa']
 const AGENDA_STATUS_OPTIONS: AgendaStatus[] = ['Ativo', 'Encerrado']
 const AGENDA_WEEK_DAYS: Array<{ key: AgendaWeekDay; label: string }> = [
   { key: 'SEG', label: 'Segunda' },
@@ -636,6 +650,9 @@ function normalizeAgenda(input: unknown): AgendaItem | null {
   const rawDias = Array.isArray(item.diasSemana ?? (item as { dias_semana?: unknown }).dias_semana)
     ? (item.diasSemana ?? (item as { dias_semana?: unknown[] }).dias_semana) as unknown[]
     : []
+  const rawDatasAvulsas = Array.isArray(item.datasAvulsas ?? (item as { datas_avulsas?: unknown }).datas_avulsas)
+    ? (item.datasAvulsas ?? (item as { datas_avulsas?: unknown[] }).datas_avulsas) as unknown[]
+    : []
 
   return {
     id,
@@ -649,6 +666,7 @@ function normalizeAgenda(input: unknown): AgendaItem | null {
     diasSemana: rawDias
       .map((day) => normalizeText(day))
       .filter((day): day is AgendaWeekDay => AGENDA_ALL_WEEK_DAYS.includes(day as AgendaWeekDay)) as AgendaWeekDay[],
+    datasAvulsas: Array.from(new Set(rawDatasAvulsas.map((date) => parseNullableDate(normalizeText(date))).filter((date): date is string => Boolean(date)))).sort(),
     vigenciaInicio: normalizeText(item.vigenciaInicio ?? (item as { vigencia_inicio?: unknown }).vigencia_inicio),
     vigenciaTermino: normalizeText(item.vigenciaTermino ?? (item as { vigencia_termino?: unknown }).vigencia_termino),
     observacoes: normalizeText(item.observacoes),
@@ -666,6 +684,68 @@ function agendaVigenciasOverlap(a: AgendaItem, b: AgendaItem): boolean {
   return aStart <= bEnd && bStart <= aEnd
 }
 
+function getAgendaWeeklyDays(item: AgendaItem): AgendaWeekDay[] {
+  if (item.dedicacao === 'Full') return AGENDA_FULL_WEEK_DAYS
+  if (item.dedicacao === 'Parcial' || item.dedicacao === 'Parcial + Avulsa') return item.diasSemana
+  return []
+}
+
+function getWeekDayFromDateKey(dateKey: string): AgendaWeekDay | null {
+  const stamp = Date.parse(`${dateKey}T00:00:00`)
+  if (Number.isNaN(stamp)) return null
+  return AGENDA_ALL_WEEK_DAYS[(new Date(stamp).getDay() + 6) % 7] ?? null
+}
+
+function isDateInsideAgendaVigencia(item: AgendaItem, dateKey: string): boolean {
+  if (item.vigenciaInicio && dateKey < item.vigenciaInicio) return false
+  if (item.vigenciaTermino && dateKey > item.vigenciaTermino) return false
+  return true
+}
+
+function isAgendaScheduledOnDateKey(item: AgendaItem, dateKey: string): boolean {
+  if (item.status !== 'Ativo') return false
+  if (!isDateInsideAgendaVigencia(item, dateKey)) return false
+  if (item.datasAvulsas.includes(dateKey)) return true
+
+  const weekDay = getWeekDayFromDateKey(dateKey)
+  return weekDay ? getAgendaWeeklyDays(item).includes(weekDay) : false
+}
+
+function isAgendaScheduledOnWeekDay(item: AgendaItem, weekDay: AgendaWeekDay): boolean {
+  return getAgendaWeeklyDays(item).includes(weekDay)
+    || item.datasAvulsas.some((dateKey) => getWeekDayFromDateKey(dateKey) === weekDay)
+}
+
+function formatAgendaSchedule(item: AgendaItem): string {
+  const weeklyDays = getAgendaWeeklyDays(item)
+  const weeklyLabel = item.dedicacao === 'Full'
+    ? 'Todos os dias úteis'
+    : weeklyDays.length > 0
+      ? weeklyDays.join(', ')
+      : ''
+  const specificDates = item.datasAvulsas.map((date) => formatDateDisplay(date)).join(', ')
+
+  if (weeklyLabel && specificDates) return `${weeklyLabel}; Datas específicas: ${specificDates}`
+  if (weeklyLabel) return weeklyLabel
+  if (specificDates) return `Datas específicas: ${specificDates}`
+  return '-'
+}
+
+function agendasHaveScheduleConflict(a: AgendaItem, b: AgendaItem): boolean {
+  const weeklyDaysA = getAgendaWeeklyDays(a)
+  const weeklyDaysB = getAgendaWeeklyDays(b)
+  const hasWeeklyConflict = weeklyDaysA.length > 0
+    && weeklyDaysB.length > 0
+    && agendaVigenciasOverlap(a, b)
+    && weeklyDaysA.some((day) => weeklyDaysB.includes(day))
+
+  if (hasWeeklyConflict) return true
+
+  return [...a.datasAvulsas, ...b.datasAvulsas].some((dateKey) => (
+    isAgendaScheduledOnDateKey(a, dateKey) && isAgendaScheduledOnDateKey(b, dateKey)
+  ))
+}
+
 function computeAgendaConflictIds(items: AgendaItem[]): Set<number> {
   const conflicts = new Set<number>()
   const activeItems = items.filter((item) => item.status === 'Ativo')
@@ -675,11 +755,7 @@ function computeAgendaConflictIds(items: AgendaItem[]): Set<number> {
       const a = activeItems[i]
       const b = activeItems[j]
       if (a.recurso.toLowerCase() !== b.recurso.toLowerCase()) continue
-      if (!agendaVigenciasOverlap(a, b)) continue
-      const daysA = a.dedicacao === 'Full' ? AGENDA_FULL_WEEK_DAYS : a.diasSemana
-      const daysB = b.dedicacao === 'Full' ? AGENDA_FULL_WEEK_DAYS : b.diasSemana
-      const hasCommonDay = daysA.some((day) => daysB.includes(day))
-      if (hasCommonDay) {
+      if (agendasHaveScheduleConflict(a, b)) {
         conflicts.add(a.id)
         conflicts.add(b.id)
       }
@@ -703,9 +779,7 @@ function isAgendaScheduledOn(item: AgendaItem, date: Date): boolean {
   if (item.vigenciaInicio && dateKey < item.vigenciaInicio) return false
   if (item.vigenciaTermino && dateKey > item.vigenciaTermino) return false
 
-  if (item.dedicacao === 'Full') return date.getDay() >= 1 && date.getDay() <= 5
-  const weekDay = AGENDA_ALL_WEEK_DAYS[(date.getDay() + 6) % 7]
-  return item.diasSemana.includes(weekDay)
+  return isAgendaScheduledOnDateKey(item, dateKey)
 }
 
 function useCatalogState<TItem, TForm>(initial: TForm) {
@@ -738,8 +812,8 @@ function useCatalogState<TItem, TForm>(initial: TForm) {
   }
 }
 
-async function loadCatalogItems<T>(endpoint: string, normalize: (item: unknown) => T | null): Promise<T[]> {
-  const response = await fetch(apiUrl(endpoint))
+async function loadCatalogItems<T>(endpoint: string, normalize: (item: unknown) => T | null, init?: RequestInit): Promise<T[]> {
+  const response = await fetch(apiUrl(endpoint), init)
   if (!response.ok) {
     await readApiError(response, 'Falha ao carregar registros.')
   }
@@ -748,8 +822,14 @@ async function loadCatalogItems<T>(endpoint: string, normalize: (item: unknown) 
   return Array.isArray(data.items) ? data.items.map(normalize).filter((item): item is T => Boolean(item)) : []
 }
 
-export default function CentralServicosTool({ subPage }: { subPage: CentralServicosPage }) {
+export default function CentralServicosTool({ subPage, currentUsername = '', currentDisplayName = '', resourceScope = 'all' }: CentralServicosToolProps) {
   const meta = PAGE_META[subPage]
+  const currentResourceName = currentDisplayName.trim() || currentUsername.trim()
+  const canViewAllResources = resourceScope !== 'self'
+  const userHeaders = {
+    'x-user': currentUsername.trim(),
+    'x-user-display': currentDisplayName.trim(),
+  }
 
   const resourceState = useCatalogState<ResourceItem, ResourceForm>(EMPTY_RESOURCE_FORM)
   const [resourceEditorOpen, setResourceEditorOpen] = useState(false)
@@ -779,6 +859,10 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
   const [agendaSort, setAgendaSort] = useState<{ key: AgendaSortKey; direction: SortDirection }>(AGENDA_DEFAULT_SORT)
   const [agendaViewMode, setAgendaViewMode] = useState<AgendaViewMode>('grade')
   const [agendaCalendarMonth, setAgendaCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const [agendaTooltip, setAgendaTooltip] = useState<AgendaTooltip | null>(null)
+  const [agendaResourceFilter, setAgendaResourceFilter] = useState<string[]>([])
+  const [agendaResourceDropdownOpen, setAgendaResourceDropdownOpen] = useState(false)
+  const agendaResourceDropdownRef = useRef<HTMLDivElement | null>(null)
   const [monthlyHoverIndex, setMonthlyHoverIndex] = useState<number | null>(null)
   const [competencyHoverIndex, setCompetencyHoverIndex] = useState<number | null>(null)
   const [competencyYear, setCompetencyYear] = useState<number | null>(null)
@@ -871,9 +955,45 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     setAgendaEditorOpen(false)
     setAgendaIsViewMode(false)
     setAgendaSort(AGENDA_DEFAULT_SORT)
+    setAgendaTooltip(null)
+    setAgendaResourceFilter([])
+    setAgendaResourceDropdownOpen(false)
     agendaState.setError(null)
     agendaState.setSuccess(null)
   }
+
+  const showAgendaTooltip = (content: string, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect()
+    const left = Math.min(Math.max(rect.left + rect.width / 2, 180), window.innerWidth - 180)
+    setAgendaTooltip({ content, top: rect.bottom + 10, left })
+  }
+
+  const hideAgendaTooltip = () => setAgendaTooltip(null)
+
+  useEffect(() => {
+    if (!agendaResourceDropdownOpen) return undefined
+
+    const closeOnOutsideInteraction = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (agendaResourceDropdownRef.current?.contains(target)) return
+      setAgendaResourceDropdownOpen(false)
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAgendaResourceDropdownOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideInteraction)
+    document.addEventListener('touchstart', closeOnOutsideInteraction)
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideInteraction)
+      document.removeEventListener('touchstart', closeOnOutsideInteraction)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [agendaResourceDropdownOpen])
 
   const closeResourceEditor = () => {
     if (resourceState.isSaving) return
@@ -935,13 +1055,17 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
         agendaState.setIsLoading(true)
         try {
           const [agendas, resources, clients, contracts] = await Promise.all([
-            loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda),
+            loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda, { headers: userHeaders }),
             loadCatalogItems('/api/central-servicos/recursos', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
             loadCatalogItems('/api/customer-hub/clients', (item: unknown) => { const r = item as { nome?: unknown }; const n = String(r.nome ?? ''); return n || null }),
             loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract),
           ])
+          const visibleResources = canViewAllResources
+            ? resources
+            : resources.filter((resource) => resource.trim().toLowerCase() === currentResourceName.trim().toLowerCase())
           agendaState.setItems(agendas)
-          setResourceOptions(resources)
+          setResourceOptions(visibleResources.length || canViewAllResources ? visibleResources : [currentResourceName].filter(Boolean))
+          setAgendaResourceFilter(visibleResources.length || canViewAllResources ? visibleResources : [currentResourceName].filter(Boolean))
           setClientOptions(clients)
           setContractsForLinking(contracts)
         } catch (loadError) {
@@ -1041,13 +1165,13 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     }
 
     void load()
-  }, [subPage])
+  }, [subPage, currentUsername, currentDisplayName, resourceScope])
 
   const handleSaveAgenda = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (agendaIsViewMode) return
     const { form, editingId } = agendaState
-    const recurso = form.recurso.trim()
+    const recurso = canViewAllResources ? form.recurso.trim() : currentResourceName.trim()
     const cliente = form.cliente.trim()
     if (!recurso) {
       agendaState.setError('Selecione o recurso do planejamento.')
@@ -1057,8 +1181,12 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       agendaState.setError('Selecione o cliente do planejamento.')
       return
     }
-    if (form.dedicacao === 'Parcial' && form.diasSemana.length === 0) {
+    if ((form.dedicacao === 'Parcial' || form.dedicacao === 'Parcial + Avulsa') && form.diasSemana.length === 0) {
       agendaState.setError('Selecione ao menos um dia da semana para dedicação parcial.')
+      return
+    }
+    if (form.dedicacao === 'Avulsa' && form.datasAvulsas.length === 0) {
+      agendaState.setError('Selecione ao menos uma data para dedicação avulsa.')
       return
     }
 
@@ -1072,7 +1200,14 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       contrato_id: form.contratoId ? Number(form.contratoId) : null,
       contrato: form.contrato.trim(),
       dedicacao: form.dedicacao,
-      dias_semana: form.dedicacao === 'Full' ? AGENDA_FULL_WEEK_DAYS : form.diasSemana,
+      dias_semana: form.dedicacao === 'Full'
+        ? AGENDA_FULL_WEEK_DAYS
+        : form.dedicacao === 'Avulsa'
+          ? []
+          : form.diasSemana,
+      datas_avulsas: form.dedicacao === 'Avulsa' || form.dedicacao === 'Parcial + Avulsa'
+        ? form.datasAvulsas
+        : [],
       vigencia_inicio: parseNullableDate(form.vigenciaInicio),
       vigencia_termino: parseNullableDate(form.vigenciaTermino),
       observacoes: form.observacoes.trim(),
@@ -1082,7 +1217,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
     try {
       const response = await fetch(apiUrl(editingId ? `/api/central-servicos/agendas/${editingId}` : '/api/central-servicos/agendas'), {
         method: editingId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...userHeaders },
         body: JSON.stringify(payload),
       })
 
@@ -1090,7 +1225,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
         await readApiError(response, 'Falha ao salvar planejamento de agenda.')
       }
 
-      agendaState.setItems(await loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda))
+      agendaState.setItems(await loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda, { headers: userHeaders }))
       agendaState.setForm(EMPTY_AGENDA_FORM)
       agendaState.setEditingId(null)
       setAgendaEditorOpen(false)
@@ -1699,8 +1834,11 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
   }
 
   const renderAgendaSection = () => {
+    const scopedItems = canViewAllResources
+      ? agendaState.items.filter((item) => agendaResourceFilter.includes(item.recurso))
+      : agendaState.items
     const term = agendaState.search.trim().toLowerCase()
-    const filteredItems = !term ? agendaState.items : agendaState.items.filter((item) => (
+    const filteredItems = !term ? scopedItems : scopedItems.filter((item) => (
         item.recurso.toLowerCase().includes(term)
         || item.cliente.toLowerCase().includes(term)
         || item.dedicacao.toLowerCase().includes(term)
@@ -1716,22 +1854,29 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
       return applyDirection(result, agendaSort.direction)
     })
 
-    const conflictIds = computeAgendaConflictIds(agendaState.items)
-    const activeItems = agendaState.items.filter((item) => item.status === 'Ativo')
+    const conflictIds = computeAgendaConflictIds(scopedItems)
+    const activeItems = scopedItems.filter((item) => item.status === 'Ativo')
     const recursos = Array.from(new Set(activeItems.map((item) => item.recurso))).sort((a, b) => compareText(a, b))
+    const selectedResourceCount = agendaResourceFilter.length
+    const resourceFilterLabel = selectedResourceCount === 0
+      ? 'Nenhum recurso selecionado'
+      : selectedResourceCount === resourceOptions.length
+        ? 'Todos os recursos'
+        : `${selectedResourceCount} recurso(s) selecionado(s)`
 
     const reload = async () => {
-      agendaState.setItems(await loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda))
+      agendaState.setItems(await loadCatalogItems('/api/central-servicos/agendas', normalizeAgenda, { headers: userHeaders }))
     }
 
     const openNewAgendaEditor = () => {
-      agendaState.setForm(EMPTY_AGENDA_FORM)
+      agendaState.setForm(canViewAllResources ? EMPTY_AGENDA_FORM : { ...EMPTY_AGENDA_FORM, recurso: currentResourceName })
       agendaState.setEditingId(null)
       setAgendaIsViewMode(false)
       setAgendaEditorOpen(true)
     }
 
     const openEditAgendaEditor = (item: AgendaItem, viewOnly: boolean) => {
+      hideAgendaTooltip()
       agendaState.setForm({
         recurso: item.recurso,
         cliente: item.cliente,
@@ -1739,6 +1884,8 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
         contrato: item.contrato,
         dedicacao: item.dedicacao,
         diasSemana: item.diasSemana,
+        datasAvulsas: item.datasAvulsas,
+        dataAvulsaInput: '',
         vigenciaInicio: item.vigenciaInicio,
         vigenciaTermino: item.vigenciaTermino,
         observacoes: item.observacoes,
@@ -1751,6 +1898,13 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
 
     return (
       <div className="customer-hub central-servicos">
+        {agendaTooltip && createPortal(
+          <div className="agenda-tooltip" style={{ top: agendaTooltip.top, left: agendaTooltip.left }} role="tooltip">
+            {agendaTooltip.content}
+          </div>,
+          document.body,
+        )}
+
         {agendaEditorOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation" onClick={closeAgendaEditor}>
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="agenda-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -1771,7 +1925,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                     list="agenda-resource-options"
                     value={agendaState.form.recurso}
                     onChange={(event) => agendaState.setForm((prev) => ({ ...prev, recurso: event.target.value }))}
-                    readOnly={agendaIsViewMode}
+                        readOnly={agendaIsViewMode || !canViewAllResources}
                     required
                   />
                   <datalist id="agenda-resource-options">
@@ -1830,12 +1984,12 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                     ))}
                   </select>
                 </label>
-                {agendaState.form.dedicacao === 'Parcial' && (
-                  <label className="estimativas-form__full">
-                    Dias da semana
-                    <div className="ch-status-list" style={{ marginTop: '0.35rem' }}>
+                {(agendaState.form.dedicacao === 'Parcial' || agendaState.form.dedicacao === 'Parcial + Avulsa') && (
+                  <fieldset className="estimativas-form__full agenda-weekday-fieldset">
+                    <legend>Dias da semana</legend>
+                    <div className="agenda-weekday-grid">
                       {AGENDA_WEEK_DAYS.map((day) => (
-                        <label key={day.key} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginRight: '0.85rem' }}>
+                        <label key={day.key} className="agenda-weekday-option">
                           <input
                             type="checkbox"
                             checked={agendaState.form.diasSemana.includes(day.key)}
@@ -1847,11 +2001,58 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                                 : prev.diasSemana.filter((d) => d !== day.key),
                             }))}
                           />
-                          {day.label}
+                          <span>{day.label}</span>
                         </label>
                       ))}
                     </div>
-                  </label>
+                  </fieldset>
+                )}
+                {(agendaState.form.dedicacao === 'Avulsa' || agendaState.form.dedicacao === 'Parcial + Avulsa') && (
+                  <fieldset className="estimativas-form__full agenda-weekday-fieldset">
+                    <legend>Datas específicas</legend>
+                    <div className="agenda-date-selector">
+                      <input
+                        type="date"
+                        value={agendaState.form.dataAvulsaInput}
+                        onChange={(event) => agendaState.setForm((prev) => ({ ...prev, dataAvulsaInput: event.target.value }))}
+                        disabled={agendaIsViewMode}
+                      />
+                      {!agendaIsViewMode && (
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => agendaState.setForm((prev) => {
+                            const date = parseNullableDate(prev.dataAvulsaInput)
+                            if (!date) return prev
+                            return {
+                              ...prev,
+                              datasAvulsas: Array.from(new Set([...prev.datasAvulsas, date])).sort(),
+                              dataAvulsaInput: '',
+                            }
+                          })}
+                        >
+                          Adicionar
+                        </button>
+                      )}
+                    </div>
+                    <div className="agenda-date-list" aria-label="Datas específicas selecionadas">
+                      {agendaState.form.datasAvulsas.map((date) => (
+                        <span key={date} className="agenda-date-chip">
+                          {formatDateDisplay(date)}
+                          {!agendaIsViewMode && (
+                            <button
+                              type="button"
+                              aria-label={`Remover data ${formatDateDisplay(date)}`}
+                              onClick={() => agendaState.setForm((prev) => ({ ...prev, datasAvulsas: prev.datasAvulsas.filter((item) => item !== date) }))}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      {agendaState.form.datasAvulsas.length === 0 && <span className="muted">Nenhuma data específica selecionada.</span>}
+                    </div>
+                  </fieldset>
                 )}
                 <label>
                   Vigência Início
@@ -1908,10 +2109,62 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
             </div>
           </div>
 
+          {!agendaState.isLoading && canViewAllResources && resourceOptions.length > 0 && (
+            <div className="agenda-resource-filter" aria-label="Selecionar recursos exibidos">
+              <div className="agenda-resource-filter__header">
+                <strong>Recursos exibidos</strong>
+                <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                  <button type="button" className="button-secondary" onClick={() => setAgendaResourceFilter(resourceOptions)}>
+                    Todos
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => setAgendaResourceFilter([])}>
+                    Limpar
+                  </button>
+                </div>
+              </div>
+              <div className="agenda-resource-filter__dropdown" ref={agendaResourceDropdownRef}>
+                <button
+                  type="button"
+                  className="agenda-resource-filter__trigger"
+                  aria-expanded={agendaResourceDropdownOpen}
+                  aria-controls="agenda-resource-filter-list"
+                  onClick={() => setAgendaResourceDropdownOpen((prev) => !prev)}
+                >
+                  <span>{resourceFilterLabel}</span>
+                  <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                </button>
+                {agendaResourceDropdownOpen && (
+                  <div id="agenda-resource-filter-list" className="agenda-resource-filter__grid">
+                    {resourceOptions.map((resource) => (
+                      <label key={resource} className="agenda-resource-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={agendaResourceFilter.includes(resource)}
+                          onChange={(event) => setAgendaResourceFilter((prev) => (
+                            event.target.checked
+                              ? Array.from(new Set([...prev, resource]))
+                              : prev.filter((item) => item !== resource)
+                          ))}
+                        />
+                        <span>{resource}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!agendaState.isLoading && !canViewAllResources && (
+            <p className="muted agenda-resource-filter__scope-note">
+              Visualização limitada ao recurso {currentResourceName || currentUsername}.
+            </p>
+          )}
+
           {agendaState.isLoading && <p className="muted">Carregando agendas...</p>}
 
           {agendaViewMode === 'grade' && !agendaState.isLoading && (
-            <div className="csv-table ch-table-theme">
+            <div className="csv-table ch-table-theme agenda-week-grid">
               <table>
                 <thead>
                   <tr>
@@ -1926,17 +2179,48 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                       <tr key={recurso}>
                         <td>{recurso}</td>
                         {AGENDA_WEEK_DAYS.map((day) => {
-                          const dayItems = recursoItems.filter((item) => (item.dedicacao === 'Full' ? true : item.diasSemana.includes(day.key)))
+                          const dayItems = recursoItems.filter((item) => isAgendaScheduledOnWeekDay(item, day.key))
                           const hasConflict = dayItems.some((item) => conflictIds.has(item.id))
                           return (
-                            <td key={day.key} style={hasConflict ? { backgroundColor: '#fdecea' } : undefined}>
+                            <td key={day.key} className="agenda-week-grid__cell" style={hasConflict ? { backgroundColor: '#fdecea' } : undefined}>
                               {dayItems.length === 0
                                 ? <span className="muted">-</span>
-                                : dayItems.map((item) => (
-                                  <div key={item.id} style={{ marginBottom: '0.2rem' }}>
-                                    <span className={`ch-badge ${hasConflict ? 'ch-badge--danger' : 'ch-badge--ativo'}`}>{item.cliente}</span>
-                                  </div>
-                                ))}
+                                : dayItems.map((item) => {
+                                  const tooltip = [
+                                    `Recurso: ${item.recurso}`,
+                                    `Cliente: ${item.cliente}`,
+                                    `Contrato: ${item.contrato || '-'}`,
+                                    `Dedicação: ${item.dedicacao}`,
+                                    `Agenda: ${formatAgendaSchedule(item)}`,
+                                    `Vigência: ${formatDateDisplay(item.vigenciaInicio)} a ${formatDateDisplay(item.vigenciaTermino)}`,
+                                    item.observacoes ? `Observações: ${item.observacoes}` : '',
+                                  ].filter(Boolean).join('\n')
+                                  return (
+                                    <div key={item.id} className="agenda-week-grid__item">
+                                      <span
+                                        className={`ch-badge agenda-week-grid__badge ${conflictIds.has(item.id) ? 'ch-badge--danger agenda-week-grid__badge--conflict' : 'ch-badge--ativo'}`}
+                                        aria-label={tooltip}
+                                        onMouseEnter={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                                        onMouseMove={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                                        onMouseLeave={hideAgendaTooltip}
+                                        onFocus={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                                        onBlur={hideAgendaTooltip}
+                                        tabIndex={0}
+                                      >{item.cliente}</span>
+                                      {item.contrato && (
+                                        <small
+                                          aria-label={tooltip}
+                                          onMouseEnter={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                                          onMouseMove={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                                          onMouseLeave={hideAgendaTooltip}
+                                          onFocus={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                                          onBlur={hideAgendaTooltip}
+                                          tabIndex={0}
+                                        >{item.contrato}</small>
+                                      )}
+                                    </div>
+                                  )
+                                })}
                             </td>
                           )
                         })}
@@ -1987,11 +2271,32 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                     return (
                       <div key={toDateKey(date)} className={`agenda-calendar__day${isToday ? ' agenda-calendar__day--today' : ''}${hasConflict ? ' agenda-calendar__day--conflict' : ''}`} role="gridcell">
                         <span className="agenda-calendar__date">{date.getDate()}</span>
-                        {dayItems.map((item) => (
-                          <button key={item.id} type="button" className={`agenda-calendar__event${conflictIds.has(item.id) ? ' agenda-calendar__event--conflict' : ''}`} title={`${item.recurso}: ${item.cliente} (${formatDateDisplay(item.vigenciaInicio)} a ${formatDateDisplay(item.vigenciaTermino)})`} onClick={() => openEditAgendaEditor(item, true)}>
-                            <strong>{item.recurso}</strong><span>{item.cliente}</span>
-                          </button>
-                        ))}
+                        {dayItems.map((item) => {
+                          const tooltip = [
+                            `Recurso: ${item.recurso}`,
+                            `Cliente: ${item.cliente}`,
+                            `Contrato: ${item.contrato || '-'}`,
+                            `Dedicação: ${item.dedicacao}`,
+                            `Agenda: ${formatAgendaSchedule(item)}`,
+                            `Vigência: ${formatDateDisplay(item.vigenciaInicio)} a ${formatDateDisplay(item.vigenciaTermino)}`,
+                          ].join('\n')
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={`agenda-calendar__event${conflictIds.has(item.id) ? ' agenda-calendar__event--conflict' : ''}`}
+                              aria-label={tooltip}
+                              onClick={() => openEditAgendaEditor(item, true)}
+                              onMouseEnter={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                              onMouseMove={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                              onMouseLeave={hideAgendaTooltip}
+                              onFocus={(event) => showAgendaTooltip(tooltip, event.currentTarget)}
+                              onBlur={hideAgendaTooltip}
+                            >
+                              <strong>{item.recurso}</strong><span>{item.cliente}</span>
+                            </button>
+                          )
+                        })}
                       </div>
                     )
                   })}
@@ -2039,7 +2344,7 @@ export default function CentralServicosTool({ subPage }: { subPage: CentralServi
                         <td>{item.cliente}</td>
                         <td>{item.contrato || '-'}</td>
                         <td>{item.dedicacao}</td>
-                        <td>{item.dedicacao === 'Full' ? 'Todos os dias úteis' : item.diasSemana.join(', ') || '-'}</td>
+                        <td>{formatAgendaSchedule(item)}</td>
                         <td>{formatDateDisplay(item.vigenciaInicio)}</td>
                         <td>{formatDateDisplay(item.vigenciaTermino)}</td>
                         <td>

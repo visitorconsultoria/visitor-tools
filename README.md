@@ -71,7 +71,7 @@ SUPABASE_CUSTOMER_PROCESSES_TABLE=customer_hub_processes
 SUPABASE_CUSTOMER_ACTIVITIES_TABLE=customer_hub_activities
 SUPABASE_DEV_PROJECTS_TABLE=dev_projects
 SUPABASE_DEV_PROJECT_ITEMS_TABLE=dev_project_items
-CORS_ALLOWED_ORIGINS=https://visitorconsultoria.github.io,https://tools.visitorconsultoria.com
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://visitorconsultoria.github.io,https://tools.visitorconsultoria.com
 ```
 
 Depois de publicar, voce tera uma URL da API, por exemplo:

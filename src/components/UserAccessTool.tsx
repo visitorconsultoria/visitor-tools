@@ -3,6 +3,7 @@ import { apiUrl } from '../lib/api'
 import { ASSIGNABLE_MENU_KEYS, ASSIGNABLE_MENU_OPTIONS, getEffectiveMenus, type AssignableMenu } from '../lib/menuConfig'
 
 type MenuPermission = AssignableMenu
+type CentralServicosResourceScope = 'all' | 'self'
 
 type UserRow = {
   id: number
@@ -10,6 +11,7 @@ type UserRow = {
   displayName: string
   isActive: boolean
   allowedMenus: MenuPermission[]
+  centralServicosResourceScope: CentralServicosResourceScope
 }
 
 type UserFormState = {
@@ -18,6 +20,7 @@ type UserFormState = {
   displayName: string
   isActive: boolean
   allowedMenus: MenuPermission[]
+  centralServicosResourceScope: CentralServicosResourceScope
 }
 
 type UserAccessToolProps = {
@@ -32,6 +35,7 @@ const EMPTY_FORM: UserFormState = {
   displayName: '',
   isActive: true,
   allowedMenus: [],
+  centralServicosResourceScope: 'all',
 }
 
 function toFriendlyApiError(error: unknown, fallback: string): string {
@@ -46,6 +50,25 @@ function toFriendlyApiError(error: unknown, fallback: string): string {
   return fallback
 }
 
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  const bodyText = await response.text().catch(() => '')
+
+  if (bodyText) {
+    try {
+      const err = JSON.parse(bodyText) as { error?: string }
+      if (err.error) return err.error
+    } catch {
+      if (!/internal server error/i.test(bodyText)) return bodyText
+    }
+  }
+
+  if (response.status >= 500) {
+    return 'Nao foi possivel conectar na API local. Inicie frontend + API com npm run dev:all.'
+  }
+
+  return response.statusText || fallback
+}
+
 function normalizeUser(input: unknown): UserRow {
   const row = input as Partial<UserRow>
   const permissions = getEffectiveMenus(row.username ?? '', row.allowedMenus, ASSIGNABLE_MENU_KEYS)
@@ -55,6 +78,7 @@ function normalizeUser(input: unknown): UserRow {
     username: String(row.username ?? ''),
     displayName: String(row.displayName ?? ''),
     isActive: Boolean(row.isActive),
+    centralServicosResourceScope: row.centralServicosResourceScope === 'self' ? 'self' : 'all',
     allowedMenus: permissions
       .map((item) => String(item))
       .filter((item): item is MenuPermission => MENU_OPTIONS.some((opt) => opt.key === item)),
@@ -104,13 +128,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
     try {
       const response = await fetch(apiUrl('/api/users'), { headers: headerValue })
       if (!response.ok) {
-        let detail = 'Falha ao carregar usuarios.'
-        try {
-          const err = await response.json()
-          detail = (err as { error?: string })?.error ?? detail
-        } catch {
-          detail = response.statusText || detail
-        }
+        const detail = await readApiError(response, 'Falha ao carregar usuarios.')
         throw new Error(detail)
       }
 
@@ -144,6 +162,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
       displayName: user.displayName,
       isActive: user.isActive,
       allowedMenus: user.allowedMenus,
+      centralServicosResourceScope: user.centralServicosResourceScope,
     })
   }
 
@@ -190,6 +209,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
       displayName: form.displayName.trim(),
       isActive: form.isActive,
       allowedMenus: form.allowedMenus,
+      centralServicosResourceScope: form.username.trim().toLowerCase() === 'visitor' ? 'all' : form.centralServicosResourceScope,
     }
 
     try {
@@ -204,13 +224,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
       })
 
       if (!response.ok) {
-        let detail = editingId ? 'Falha ao atualizar usuario.' : 'Falha ao cadastrar usuario.'
-        try {
-          const err = await response.json()
-          detail = (err as { error?: string })?.error ?? detail
-        } catch {
-          detail = response.statusText || detail
-        }
+        const detail = await readApiError(response, editingId ? 'Falha ao atualizar usuario.' : 'Falha ao cadastrar usuario.')
         throw new Error(detail)
       }
 
@@ -318,6 +332,37 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
             )}
           </div>
 
+          <div className="estimativas-form__full user-admin-form__permissions">
+            <strong>Central de Serviços - recursos visíveis</strong>
+            <div className="user-admin-form__permissions-grid user-admin-form__permissions-grid--compact">
+              <label className="checkbox user-admin-form__permission-item">
+                <input
+                  type="radio"
+                  name="central-servicos-resource-scope"
+                  value="all"
+                  checked={form.centralServicosResourceScope === 'all'}
+                  onChange={() => setForm((prev) => ({ ...prev, centralServicosResourceScope: 'all' }))}
+                  disabled={isEditingVisitor || form.username.trim().toLowerCase() === 'visitor'}
+                />
+                Todos os recursos
+              </label>
+              <label className="checkbox user-admin-form__permission-item">
+                <input
+                  type="radio"
+                  name="central-servicos-resource-scope"
+                  value="self"
+                  checked={form.centralServicosResourceScope === 'self'}
+                  onChange={() => setForm((prev) => ({ ...prev, centralServicosResourceScope: 'self' }))}
+                  disabled={isEditingVisitor || form.username.trim().toLowerCase() === 'visitor'}
+                />
+                Somente o próprio recurso
+              </label>
+            </div>
+            <p className="muted" style={{ marginTop: '0.5rem' }}>
+              Para "somente o próprio recurso", o nome de exibição deve corresponder ao nome do recurso na Central de Serviços.
+            </p>
+          </div>
+
           <div className="estimativas-actions estimativas-form__full">
             <button type="submit" className="button-primary" disabled={isSaving}>
               {isSaving ? 'Salvando...' : editingId ? (isEditingVisitor ? 'Atualizar senha' : 'Atualizar') : 'Cadastrar'}
@@ -363,6 +408,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
                 <th>Nome</th>
                 <th>Status</th>
                 <th>Acessos</th>
+                <th>Recursos</th>
                 <th>Acoes</th>
               </tr>
             </thead>
@@ -373,6 +419,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
                   <td>{user.displayName || '-'}</td>
                   <td>{user.isActive ? 'Ativo' : 'Inativo'}</td>
                   <td>{user.username === 'visitor' ? 'Completo' : user.allowedMenus.join(', ') || '-'}</td>
+                  <td>{user.centralServicosResourceScope === 'self' ? 'Somente ele' : 'Todos'}</td>
                   <td>
                     <div className="ch-row-actions ch-row-actions--icons">
                       <button type="button" className="ch-icon-action" title="Editar" onClick={() => startEdit(user)}>
@@ -384,7 +431,7 @@ export default function UserAccessTool({ currentUsername }: UserAccessToolProps)
               ))}
               {!filteredUsers.length && (
                 <tr>
-                  <td colSpan={5}>Nenhum usuario cadastrado.</td>
+                  <td colSpan={6}>Nenhum usuario cadastrado.</td>
                 </tr>
               )}
             </tbody>

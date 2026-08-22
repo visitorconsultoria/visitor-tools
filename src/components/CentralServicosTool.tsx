@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import * as XLSX from 'xlsx'
 import { apiUrl } from '../lib/api'
 import RichTextEditor from './RichTextEditor'
 import AtendimentoReportsTool from './AtendimentoReportsTool'
@@ -22,7 +23,15 @@ type ResourceSortKey = 'nome' | 'cpf' | 'cnpj' | 'sexo' | 'status'
 type ContractSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoContrato' | 'valorUnitario' | 'status'
 type ExpenseSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoDespesa' | 'valorUnitario'
 type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'valor' | 'status'
-type PaymentSortKey = 'titulo' | 'tipo' | 'relaciona' | 'contrato' | 'emissao' | 'valor' | 'status'
+type PaymentSortKey = 'titulo' | 'tipo' | 'relaciona' | 'contrato' | 'emissao' | 'previsaoPagamento' | 'valor' | 'status'
+type PaymentExportFilters = {
+  recursos: string[]
+  contratos: string[]
+  emissaoDe: string
+  emissaoAte: string
+  previsaoDe: string
+  previsaoAte: string
+}
 type AgendaDedicacao = 'Full' | 'Parcial' | 'Avulsa' | 'Parcial + Avulsa'
 type AgendaStatus = 'Ativo' | 'Encerrado'
 type AgendaWeekDay = 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'
@@ -313,6 +322,15 @@ const EMPTY_PAYMENT_FORM: PaymentForm = {
   valor: '',
   status: 'Pendente',
   dataPagamento: '',
+}
+
+const EMPTY_PAYMENT_EXPORT_FILTERS: PaymentExportFilters = {
+  recursos: [],
+  contratos: [],
+  emissaoDe: '',
+  emissaoAte: '',
+  previsaoDe: '',
+  previsaoAte: '',
 }
 
 const EMPTY_AGENDA_FORM: AgendaForm = {
@@ -853,6 +871,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [paymentEditorOpen, setPaymentEditorOpen] = useState(false)
   const [paymentIsViewMode, setPaymentIsViewMode] = useState(false)
   const [paymentSort, setPaymentSort] = useState<{ key: PaymentSortKey; direction: SortDirection }>(PAYMENT_DEFAULT_SORT)
+  const [paymentExportOpen, setPaymentExportOpen] = useState(false)
+  const [paymentExportFilters, setPaymentExportFilters] = useState<PaymentExportFilters>(EMPTY_PAYMENT_EXPORT_FILTERS)
   const agendaState = useCatalogState<AgendaItem, AgendaForm>(EMPTY_AGENDA_FORM)
   const [agendaEditorOpen, setAgendaEditorOpen] = useState(false)
   const [agendaIsViewMode, setAgendaIsViewMode] = useState(false)
@@ -946,6 +966,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setPaymentEditorOpen(false)
     setPaymentIsViewMode(false)
     setPaymentSort(PAYMENT_DEFAULT_SORT)
+    setPaymentExportOpen(false)
+    setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
     paymentState.setError(null)
     paymentState.setSuccess(null)
     agendaState.setItems([])
@@ -3487,6 +3509,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       if (paymentSort.key === 'relaciona') result = compareText(a.relaciona, b.relaciona)
       if (paymentSort.key === 'contrato') result = compareText(a.contrato, b.contrato)
       if (paymentSort.key === 'emissao') result = toSortableDate(a.emissao) - toSortableDate(b.emissao)
+      if (paymentSort.key === 'previsaoPagamento') result = toSortableDate(a.previsaoPagamento) - toSortableDate(b.previsaoPagamento)
       if (paymentSort.key === 'valor') result = compareNullableNumber(a.valor, b.valor)
       if (paymentSort.key === 'status') result = compareText(a.status, b.status)
       return applyDirection(result, paymentSort.direction)
@@ -3496,8 +3519,144 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       paymentState.setItems(await loadCatalogItems('/api/central-servicos/pagamentos', normalizePayment))
     }
 
+    const paymentContractOptions = Array.from(new Set(paymentState.items.map((item) => item.contrato).filter(Boolean))).sort((a, b) => compareText(a, b))
+
+    const handleGeneratePaymentSpreadsheet = () => {
+      const { recursos, contratos, emissaoDe, emissaoAte, previsaoDe, previsaoAte } = paymentExportFilters
+      const emissaoDeStamp = emissaoDe ? toSortableDate(emissaoDe) : null
+      const emissaoAteStamp = emissaoAte ? toSortableDate(emissaoAte) : null
+      const previsaoDeStamp = previsaoDe ? toSortableDate(previsaoDe) : null
+      const previsaoAteStamp = previsaoAte ? toSortableDate(previsaoAte) : null
+
+      const rows = paymentState.items.filter((item) => {
+        if (recursos.length > 0 && item.tipo === 'Recurso' && !recursos.includes(item.relaciona)) return false
+        if (contratos.length > 0 && item.contrato && !contratos.includes(item.contrato)) return false
+        if (emissaoDeStamp !== null && toSortableDate(item.emissao) < emissaoDeStamp) return false
+        if (emissaoAteStamp !== null && toSortableDate(item.emissao) > emissaoAteStamp) return false
+        if (previsaoDeStamp !== null && toSortableDate(item.previsaoPagamento) < previsaoDeStamp) return false
+        if (previsaoAteStamp !== null && toSortableDate(item.previsaoPagamento) > previsaoAteStamp) return false
+        return true
+      })
+
+      const sheetRows = rows.map((item) => ({
+        Título: item.titulo,
+        Nota: item.nota,
+        Tipo: item.tipo,
+        Relaciona: item.relaciona,
+        Contrato: item.contrato,
+        Emissão: formatDateDisplay(item.emissao),
+        'Previsão de Pagamento': formatDateDisplay(item.previsaoPagamento),
+        Valor: item.valor,
+        Status: item.status,
+        'Data de Pagamento': formatDateDisplay(item.dataPagamento),
+      }))
+
+      const worksheet = XLSX.utils.json_to_sheet(sheetRows)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Pagamentos')
+      const today = new Date().toISOString().slice(0, 10)
+      XLSX.writeFile(workbook, `pagamentos-${today}.xlsx`)
+      setPaymentExportOpen(false)
+    }
+
     return (
       <div className="customer-hub central-servicos">
+        {paymentExportOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setPaymentExportOpen(false)}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="payment-export-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="payment-export-modal-title">Gerar Planilha de Pagamentos</h3>
+                  <p className="muted">Selecione os filtros desejados para exportar os pagamentos em Excel.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={() => setPaymentExportOpen(false)}>Fechar</button>
+              </div>
+
+              <div className="estimativas-form">
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Recurso</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setPaymentExportFilters((prev) => ({ ...prev, recursos: resourceOptions }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setPaymentExportFilters((prev) => ({ ...prev, recursos: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {resourceOptions.map((resource) => (
+                      <label key={resource} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={paymentExportFilters.recursos.includes(resource)}
+                          onChange={(event) => setPaymentExportFilters((prev) => ({
+                            ...prev,
+                            recursos: event.target.checked
+                              ? Array.from(new Set([...prev.recursos, resource]))
+                              : prev.recursos.filter((item) => item !== resource),
+                          }))}
+                        />
+                        <span>{resource}</span>
+                      </label>
+                    ))}
+                    {resourceOptions.length === 0 && <span className="muted">Nenhum recurso cadastrado.</span>}
+                  </div>
+                </div>
+
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Contrato</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setPaymentExportFilters((prev) => ({ ...prev, contratos: paymentContractOptions }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setPaymentExportFilters((prev) => ({ ...prev, contratos: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {paymentContractOptions.map((contrato) => (
+                      <label key={contrato} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={paymentExportFilters.contratos.includes(contrato)}
+                          onChange={(event) => setPaymentExportFilters((prev) => ({
+                            ...prev,
+                            contratos: event.target.checked
+                              ? Array.from(new Set([...prev.contratos, contrato]))
+                              : prev.contratos.filter((item) => item !== contrato),
+                          }))}
+                        />
+                        <span>{contrato}</span>
+                      </label>
+                    ))}
+                    {paymentContractOptions.length === 0 && <span className="muted">Nenhum contrato encontrado.</span>}
+                  </div>
+                </div>
+
+                <label>
+                  Emissão de
+                  <input type="date" value={paymentExportFilters.emissaoDe} onChange={(event) => setPaymentExportFilters((prev) => ({ ...prev, emissaoDe: event.target.value }))} />
+                </label>
+                <label>
+                  Emissão até
+                  <input type="date" value={paymentExportFilters.emissaoAte} onChange={(event) => setPaymentExportFilters((prev) => ({ ...prev, emissaoAte: event.target.value }))} />
+                </label>
+                <label>
+                  Previsão pagamento de
+                  <input type="date" value={paymentExportFilters.previsaoDe} onChange={(event) => setPaymentExportFilters((prev) => ({ ...prev, previsaoDe: event.target.value }))} />
+                </label>
+                <label>
+                  Previsão pagamento até
+                  <input type="date" value={paymentExportFilters.previsaoAte} onChange={(event) => setPaymentExportFilters((prev) => ({ ...prev, previsaoAte: event.target.value }))} />
+                </label>
+
+                <div className="estimativas-actions estimativas-form__full">
+                  <button type="button" className="button-primary" onClick={handleGeneratePaymentSpreadsheet}>
+                    Gerar planilha
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
+
         {paymentEditorOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation" onClick={closePaymentEditor}>
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -3600,6 +3759,12 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
             }}>
               + Novo Pagamento
             </button>
+            <button type="button" className="button-secondary" onClick={() => {
+              setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
+              setPaymentExportOpen(true)
+            }}>
+              Gerar Planilha
+            </button>
           </div>
           <div className="ch-table-toolbar ch-table-toolbar--single">
             <label className="ch-table-search">
@@ -3618,6 +3783,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                   <th>{renderSortableHeader('Relaciona', paymentSort.key === 'relaciona', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'relaciona', direction: getNextDirection(prev.key, 'relaciona', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Contrato', paymentSort.key === 'contrato', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'contrato', direction: getNextDirection(prev.key, 'contrato', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Emissão', paymentSort.key === 'emissao', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'emissao', direction: getNextDirection(prev.key, 'emissao', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Previsão Pagamento', paymentSort.key === 'previsaoPagamento', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'previsaoPagamento', direction: getNextDirection(prev.key, 'previsaoPagamento', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Valor', paymentSort.key === 'valor', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'valor', direction: getNextDirection(prev.key, 'valor', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Status', paymentSort.key === 'status', paymentSort.direction, () => setPaymentSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
                   <th>Ações</th>
@@ -3631,6 +3797,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                     <td>{item.relaciona || '-'}</td>
                     <td>{item.contrato || '-'}</td>
                     <td>{formatDateDisplay(item.emissao)}</td>
+                    <td>{formatDateDisplay(item.previsaoPagamento)}</td>
                     <td>{formatCurrencyDisplay(item.valor)}</td>
                     <td>
                       <span className={`ch-badge ch-badge--${item.status === 'Pago' ? 'ativo' : 'implantacao'}`}>{item.status}</span>
@@ -3707,7 +3874,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                     </td>
                   </tr>
                 ))}
-                {sortedItems.length === 0 && <tr><td colSpan={8} className="ch-empty">Nenhum pagamento cadastrado.</td></tr>}
+                {sortedItems.length === 0 && <tr><td colSpan={9} className="ch-empty">Nenhum pagamento cadastrado.</td></tr>}
               </tbody>
             </table>
           </div>

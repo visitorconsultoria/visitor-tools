@@ -1918,6 +1918,9 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 </button>
               </div>
 
+              {agendaState.error && <p className="error">{agendaState.error}</p>}
+              {agendaState.success && <p className="success">{agendaState.success}</p>}
+
               <form onSubmit={handleSaveAgenda} className="estimativas-form">
                 <label>
                   Recurso
@@ -2079,8 +2082,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
           document.body,
         )}
 
-        {agendaState.error && <p className="error">{agendaState.error}</p>}
-        {agendaState.success && <p className="success">{agendaState.success}</p>}
+        {!agendaEditorOpen && agendaState.error && <p className="error">{agendaState.error}</p>}
+        {!agendaEditorOpen && agendaState.success && <p className="success">{agendaState.success}</p>}
         {conflictIds.size > 0 && (
           <p className="error">
             Atenção: existem {conflictIds.size} planejamento(s) com conflito de agenda (mesmo recurso alocado no mesmo dia). Verifique os itens destacados.

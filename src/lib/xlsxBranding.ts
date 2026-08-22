@@ -149,7 +149,7 @@ export async function exportBrandedWorkbook(options: BrandedWorkbookOptions): Pr
     }
 
     const imageId = workbook.addImage({ base64: logoBase64, extension: 'png' })
-    worksheet.addImage(imageId, { tl: { col: 0.12, row: 0.12 }, ext: { width: 78, height: 26 } })
+    worksheet.addImage(imageId, { tl: { col: 0.12, row: 0.12 }, ext: { width: 76, height: 27 } })
 
     const headerRow = worksheet.getRow(3)
     headerRow.height = 20

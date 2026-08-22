@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { apiUrl } from '../lib/api'
+import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import RichTextEditor from './RichTextEditor'
 
 type AtendimentoStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
@@ -108,6 +109,31 @@ function toFriendlyApiError(error: unknown, fallback: string): string {
   return fallback
 }
 
+function toSortableDate(value: string): number {
+  const iso = normalizeDateInput(value)
+  if (!iso) return Number.NEGATIVE_INFINITY
+  const stamp = Date.parse(iso)
+  return Number.isFinite(stamp) ? stamp : Number.NEGATIVE_INFINITY
+}
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+type AtendimentoExportFilters = {
+  clientes: string[]
+  status: AtendimentoStatus[]
+  dataDe: string
+  dataAte: string
+}
+
+const EMPTY_EXPORT_FILTERS: AtendimentoExportFilters = {
+  clientes: [],
+  status: [],
+  dataDe: '',
+  dataAte: '',
+}
+
 function getCurrentDateISO(): string {
   const now = new Date()
   return now.toISOString().slice(0, 10)
@@ -144,6 +170,10 @@ export default function AtendimentoReportsTool() {
   const [isDeleting, setIsDeleting] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportFilters, setExportFilters] = useState<AtendimentoExportFilters>(EMPTY_EXPORT_FILTERS)
+  const [exportClientDropdownOpen, setExportClientDropdownOpen] = useState(false)
+  const exportClientDropdownRef = useRef<HTMLDivElement | null>(null)
 
   const fetchAtendimentos = async () => {
     setError(null)
@@ -253,6 +283,31 @@ export default function AtendimentoReportsTool() {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [isModalOpen, isSaving])
 
+  useEffect(() => {
+    if (!exportClientDropdownOpen) return undefined
+
+    const closeOnOutsideInteraction = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (exportClientDropdownRef.current?.contains(target)) return
+      setExportClientDropdownOpen(false)
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExportClientDropdownOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideInteraction)
+    document.addEventListener('touchstart', closeOnOutsideInteraction)
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideInteraction)
+      document.removeEventListener('touchstart', closeOnOutsideInteraction)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [exportClientDropdownOpen])
+
   const handleFormChange = (field: keyof AtendimentoForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -344,6 +399,64 @@ export default function AtendimentoReportsTool() {
     return counts
   }, [items])
 
+  const exportClientOptions = useMemo(
+    () => Array.from(new Set(items.map((item) => item.cliente).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [items],
+  )
+
+  const handleGenerateSpreadsheet = async () => {
+    const { clientes, status, dataDe, dataAte } = exportFilters
+    const dataDeStamp = dataDe ? toSortableDate(dataDe) : null
+    const dataAteStamp = dataAte ? toSortableDate(dataAte) : null
+
+    const rows = items.filter((item) => {
+      if (clientes.length > 0 && !clientes.includes(item.cliente)) return false
+      if (status.length > 0 && !status.includes(item.status)) return false
+      if (dataDeStamp !== null && toSortableDate(item.data) < dataDeStamp) return false
+      if (dataAteStamp !== null && toSortableDate(item.data) > dataAteStamp) return false
+      return true
+    })
+
+    const sheetRows = rows.map((item) => ({
+      Número: item.numero,
+      Data: toDisplayDate(item.data),
+      Tipo: item.tipo,
+      Cliente: item.cliente,
+      Solicitante: item.solicitante,
+      Descrição: stripHtml(item.descricao),
+      Responsável: item.responsavel,
+      Status: toStatusLabel(item.status),
+      Observações: item.observacoes,
+    }))
+
+    const today = new Date().toISOString().slice(0, 10)
+    try {
+      await exportBrandedWorkbook({
+        fileName: `atendimentos-${today}.xlsx`,
+        title: 'Visitor Tools • Central de Serviços',
+        subtitle: 'Atendimentos',
+        sheets: [{
+          sheetName: 'Atendimentos',
+          columns: [
+            { header: 'Número', key: 'Número', width: 16 },
+            { header: 'Data', key: 'Data', width: 14 },
+            { header: 'Tipo', key: 'Tipo', width: 16 },
+            { header: 'Cliente', key: 'Cliente', width: 28 },
+            { header: 'Solicitante', key: 'Solicitante', width: 22 },
+            { header: 'Descrição', key: 'Descrição', width: 40 },
+            { header: 'Responsável', key: 'Responsável', width: 22 },
+            { header: 'Status', key: 'Status', width: 16 },
+            { header: 'Observações', key: 'Observações', width: 32 },
+          ],
+          rows: sheetRows,
+        }],
+      })
+      setExportOpen(false)
+    } catch (exportError) {
+      setError(toFriendlyApiError(exportError, 'Falha ao gerar a planilha de atendimentos.'))
+    }
+  }
+
   return (
     <div className="estimativas-layout">
       <section className="card">
@@ -352,9 +465,18 @@ export default function AtendimentoReportsTool() {
             <h2>Atendimentos</h2>
             <p className="muted">Registro e acompanhamento dos atendimentos prestados aos clientes.</p>
           </div>
-          <button type="button" className="button-primary" onClick={openNew}>
-            Novo atendimento
-          </button>
+          <div className="ch-header-actions">
+            <button type="button" className="button-primary" onClick={openNew}>
+              Novo atendimento
+            </button>
+            <button type="button" className="button-secondary" onClick={() => {
+              setExportFilters(EMPTY_EXPORT_FILTERS)
+              setExportClientDropdownOpen(false)
+              setExportOpen(true)
+            }}>
+              Gerar Planilha
+            </button>
+          </div>
         </div>
 
         <div className="estimativas-stats">
@@ -455,6 +577,113 @@ export default function AtendimentoReportsTool() {
         {error && <p className="error">{error}</p>}
         {success && <p className="success">{success}</p>}
       </section>
+
+      {exportOpen && typeof document !== 'undefined' && createPortal(
+        <div className="estimativas-modal-overlay" role="presentation" onClick={() => setExportOpen(false)}>
+          <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="atendimento-export-modal-title" onClick={(e) => e.stopPropagation()}>
+            <div className="estimativas-modal__header">
+              <div>
+                <h3 id="atendimento-export-modal-title">Gerar Planilha de Atendimentos</h3>
+                <p className="muted">Selecione os filtros desejados para exportar os atendimentos em Excel.</p>
+              </div>
+              <button type="button" className="button-secondary" onClick={() => setExportOpen(false)}>Fechar</button>
+            </div>
+
+            <div className="estimativas-form">
+              <div className="estimativas-form__full payment-export-filter">
+                <div className="payment-export-filter__header">
+                  <strong>Cliente</strong>
+                  <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                    <button type="button" className="button-secondary" onClick={() => setExportFilters((prev) => ({ ...prev, clientes: exportClientOptions }))}>Todos</button>
+                    <button type="button" className="button-secondary" onClick={() => setExportFilters((prev) => ({ ...prev, clientes: [] }))}>Limpar</button>
+                  </div>
+                </div>
+                <div className="agenda-resource-filter__dropdown" ref={exportClientDropdownRef}>
+                  <button
+                    type="button"
+                    className="agenda-resource-filter__trigger"
+                    aria-expanded={exportClientDropdownOpen}
+                    aria-controls="atendimento-export-client-list"
+                    onClick={() => setExportClientDropdownOpen((prev) => !prev)}
+                  >
+                    <span>
+                      {exportFilters.clientes.length === 0
+                        ? 'Nenhum selecionado'
+                        : exportFilters.clientes.length === exportClientOptions.length
+                          ? 'Todos'
+                          : `${exportFilters.clientes.length} selecionado(s)`}
+                    </span>
+                    <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                  </button>
+                  {exportClientDropdownOpen && (
+                    <div id="atendimento-export-client-list" className="agenda-resource-filter__grid">
+                      {exportClientOptions.map((cliente) => (
+                        <label key={cliente} className="agenda-resource-filter__option">
+                          <input
+                            type="checkbox"
+                            checked={exportFilters.clientes.includes(cliente)}
+                            onChange={(e) => setExportFilters((prev) => ({
+                              ...prev,
+                              clientes: e.target.checked
+                                ? Array.from(new Set([...prev.clientes, cliente]))
+                                : prev.clientes.filter((item) => item !== cliente),
+                            }))}
+                          />
+                          <span>{cliente}</span>
+                        </label>
+                      ))}
+                      {exportClientOptions.length === 0 && <span className="muted">Nenhum cliente encontrado.</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="estimativas-form__full payment-export-filter">
+                <div className="payment-export-filter__header">
+                  <strong>Status</strong>
+                  <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                    <button type="button" className="button-secondary" onClick={() => setExportFilters((prev) => ({ ...prev, status: STATUS_OPTIONS.map((o) => o.value) }))}>Todos</button>
+                    <button type="button" className="button-secondary" onClick={() => setExportFilters((prev) => ({ ...prev, status: [] }))}>Limpar</button>
+                  </div>
+                </div>
+                <div className="payment-export-filter__list">
+                  {STATUS_OPTIONS.map((option) => (
+                    <label key={option.value} className="payment-export-filter__option">
+                      <input
+                        type="checkbox"
+                        checked={exportFilters.status.includes(option.value)}
+                        onChange={(e) => setExportFilters((prev) => ({
+                          ...prev,
+                          status: e.target.checked
+                            ? Array.from(new Set([...prev.status, option.value]))
+                            : prev.status.filter((item) => item !== option.value),
+                        }))}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <label>
+                Data de
+                <input type="date" value={exportFilters.dataDe} onChange={(e) => setExportFilters((prev) => ({ ...prev, dataDe: e.target.value }))} />
+              </label>
+              <label>
+                Data até
+                <input type="date" value={exportFilters.dataAte} onChange={(e) => setExportFilters((prev) => ({ ...prev, dataAte: e.target.value }))} />
+              </label>
+
+              <div className="estimativas-actions estimativas-form__full">
+                <button type="button" className="button-primary" onClick={() => void handleGenerateSpreadsheet()}>
+                  Gerar planilha
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
 
       {isModalOpen && typeof document !== 'undefined' && createPortal(
         <div className="estimativas-modal-overlay" role="presentation">

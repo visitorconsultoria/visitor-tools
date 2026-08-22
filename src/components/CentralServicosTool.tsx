@@ -40,6 +40,23 @@ type PaymentExportFilters = {
   previsaoDe: string
   previsaoAte: string
 }
+type ResourceExportFilters = {
+  status: string[]
+}
+type ContractExportFilters = {
+  tipos: string[]
+  relaciona: string[]
+  status: string[]
+  vigenciaDe: string
+  vigenciaAte: string
+}
+type ExpenseExportFilters = {
+  tipos: string[]
+  relaciona: string[]
+  tiposDespesa: string[]
+  vigenciaDe: string
+  vigenciaAte: string
+}
 type AgendaDedicacao = 'Full' | 'Parcial' | 'Avulsa' | 'Parcial + Avulsa'
 type AgendaStatus = 'Ativo' | 'Encerrado'
 type AgendaWeekDay = 'SEG' | 'TER' | 'QUA' | 'QUI' | 'SEX' | 'SAB' | 'DOM'
@@ -339,6 +356,26 @@ const EMPTY_PAYMENT_EXPORT_FILTERS: PaymentExportFilters = {
   emissaoAte: '',
   previsaoDe: '',
   previsaoAte: '',
+}
+
+const EMPTY_RESOURCE_EXPORT_FILTERS: ResourceExportFilters = {
+  status: [],
+}
+
+const EMPTY_CONTRACT_EXPORT_FILTERS: ContractExportFilters = {
+  tipos: [],
+  relaciona: [],
+  status: [],
+  vigenciaDe: '',
+  vigenciaAte: '',
+}
+
+const EMPTY_EXPENSE_EXPORT_FILTERS: ExpenseExportFilters = {
+  tipos: [],
+  relaciona: [],
+  tiposDespesa: [],
+  vigenciaDe: '',
+  vigenciaAte: '',
 }
 
 const EMPTY_INVOICE_EXPORT_FILTERS: InvoiceExportFilters = {
@@ -870,16 +907,26 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [resourceEditorOpen, setResourceEditorOpen] = useState(false)
   const [resourceIsViewMode, setResourceIsViewMode] = useState(false)
   const [resourceSort, setResourceSort] = useState<{ key: ResourceSortKey; direction: SortDirection }>(RESOURCE_DEFAULT_SORT)
+  const [resourceExportOpen, setResourceExportOpen] = useState(false)
+  const [resourceExportFilters, setResourceExportFilters] = useState<ResourceExportFilters>(EMPTY_RESOURCE_EXPORT_FILTERS)
   const contractState = useCatalogState<ContractItem, ContractForm>(EMPTY_CONTRACT_FORM)
   const [contractEditorOpen, setContractEditorOpen] = useState(false)
   const [contractIsViewMode, setContractIsViewMode] = useState(false)
   const [contractEditorTab, setContractEditorTab] = useState<'dados' | 'faturamento'>('dados')
   const [contractVersioningFromId, setContractVersioningFromId] = useState<number | null>(null)
   const [contractSort, setContractSort] = useState<{ key: ContractSortKey; direction: SortDirection }>(CONTRACT_DEFAULT_SORT)
+  const [contractExportOpen, setContractExportOpen] = useState(false)
+  const [contractExportFilters, setContractExportFilters] = useState<ContractExportFilters>(EMPTY_CONTRACT_EXPORT_FILTERS)
+  const [contractExportRelacionaDropdownOpen, setContractExportRelacionaDropdownOpen] = useState(false)
+  const contractExportRelacionaDropdownRef = useRef<HTMLDivElement | null>(null)
   const expenseState = useCatalogState<ExpenseItem, ExpenseForm>(EMPTY_EXPENSE_FORM)
   const [expenseEditorOpen, setExpenseEditorOpen] = useState(false)
   const [expenseIsViewMode, setExpenseIsViewMode] = useState(false)
   const [expenseSort, setExpenseSort] = useState<{ key: ExpenseSortKey; direction: SortDirection }>(EXPENSE_DEFAULT_SORT)
+  const [expenseExportOpen, setExpenseExportOpen] = useState(false)
+  const [expenseExportFilters, setExpenseExportFilters] = useState<ExpenseExportFilters>(EMPTY_EXPENSE_EXPORT_FILTERS)
+  const [expenseExportRelacionaDropdownOpen, setExpenseExportRelacionaDropdownOpen] = useState(false)
+  const expenseExportRelacionaDropdownRef = useRef<HTMLDivElement | null>(null)
   const invoiceState = useCatalogState<InvoiceItem, InvoiceForm>(EMPTY_INVOICE_FORM)
   const [invoiceEditorOpen, setInvoiceEditorOpen] = useState(false)
   const [invoiceIsViewMode, setInvoiceIsViewMode] = useState(false)
@@ -952,6 +999,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setResourceEditorOpen(false)
     setResourceIsViewMode(false)
     setResourceSort(RESOURCE_DEFAULT_SORT)
+    setResourceExportOpen(false)
+    setResourceExportFilters(EMPTY_RESOURCE_EXPORT_FILTERS)
     resourceState.setError(null)
     resourceState.setSuccess(null)
     contractState.setItems([])
@@ -963,6 +1012,9 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setContractEditorTab('dados')
     setContractVersioningFromId(null)
     setContractSort(CONTRACT_DEFAULT_SORT)
+    setContractExportOpen(false)
+    setContractExportFilters(EMPTY_CONTRACT_EXPORT_FILTERS)
+    setContractExportRelacionaDropdownOpen(false)
     contractState.setError(null)
     contractState.setSuccess(null)
     expenseState.setItems([])
@@ -972,6 +1024,9 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setExpenseEditorOpen(false)
     setExpenseIsViewMode(false)
     setExpenseSort(EXPENSE_DEFAULT_SORT)
+    setExpenseExportOpen(false)
+    setExpenseExportFilters(EMPTY_EXPENSE_EXPORT_FILTERS)
+    setExpenseExportRelacionaDropdownOpen(false)
     expenseState.setError(null)
     expenseState.setSuccess(null)
     invoiceState.setItems([])
@@ -1107,6 +1162,35 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [invoiceExportClientDropdownOpen, invoiceExportContractDropdownOpen])
+
+  useEffect(() => {
+    if (!contractExportRelacionaDropdownOpen && !expenseExportRelacionaDropdownOpen) return undefined
+
+    const closeOnOutsideInteraction = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (contractExportRelacionaDropdownRef.current?.contains(target)) return
+      if (expenseExportRelacionaDropdownRef.current?.contains(target)) return
+      setContractExportRelacionaDropdownOpen(false)
+      setExpenseExportRelacionaDropdownOpen(false)
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setContractExportRelacionaDropdownOpen(false)
+      setExpenseExportRelacionaDropdownOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideInteraction)
+    document.addEventListener('touchstart', closeOnOutsideInteraction)
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideInteraction)
+      document.removeEventListener('touchstart', closeOnOutsideInteraction)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [contractExportRelacionaDropdownOpen, expenseExportRelacionaDropdownOpen])
 
   const closeResourceEditor = () => {
     if (resourceState.isSaving) return
@@ -2526,8 +2610,97 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       resourceState.setItems(await loadCatalogItems('/api/central-servicos/recursos', normalizeResource))
     }
 
+    const handleGenerateResourceSpreadsheet = async () => {
+      const { status } = resourceExportFilters
+      const rows = resourceState.items.filter((item) => status.length === 0 || status.includes(item.status))
+
+      const sheetRows = rows.map((item) => ({
+        Nome: item.nome,
+        CPF: item.cpf,
+        CNPJ: item.cnpj,
+        Sexo: item.sexo,
+        'Data de Nascimento': formatDateDisplay(item.dataNascimento),
+        'eMail Pessoal': item.emailPessoal,
+        Status: item.status,
+      }))
+
+      const today = new Date().toISOString().slice(0, 10)
+      try {
+        await exportBrandedWorkbook({
+          fileName: `recursos-${today}.xlsx`,
+          title: 'Visitor Tools • Central de Serviços',
+          subtitle: 'Cadastro de Recursos',
+          sheets: [{
+            sheetName: 'Recursos',
+            columns: [
+              { header: 'Nome', key: 'Nome', width: 30 },
+              { header: 'CPF', key: 'CPF', width: 18 },
+              { header: 'CNPJ', key: 'CNPJ', width: 20 },
+              { header: 'Sexo', key: 'Sexo', width: 16 },
+              { header: 'Data de Nascimento', key: 'Data de Nascimento', width: 18 },
+              { header: 'eMail Pessoal', key: 'eMail Pessoal', width: 28 },
+              { header: 'Status', key: 'Status', width: 14 },
+            ],
+            rows: sheetRows,
+          }],
+        })
+        setResourceExportOpen(false)
+      } catch (exportError) {
+        resourceState.setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar a planilha de recursos.')
+      }
+    }
+
     return (
       <div className="customer-hub central-servicos">
+        {resourceExportOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setResourceExportOpen(false)}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="resource-export-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="resource-export-modal-title">Gerar Planilha de Recursos</h3>
+                  <p className="muted">Selecione os filtros desejados para exportar os recursos em Excel.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={() => setResourceExportOpen(false)}>Fechar</button>
+              </div>
+
+              <div className="estimativas-form">
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Status</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setResourceExportFilters({ status: [...RESOURCE_STATUS_OPTIONS] })}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setResourceExportFilters({ status: [] })}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {RESOURCE_STATUS_OPTIONS.map((option) => (
+                      <label key={option} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={resourceExportFilters.status.includes(option)}
+                          onChange={(event) => setResourceExportFilters((prev) => ({
+                            status: event.target.checked
+                              ? Array.from(new Set([...prev.status, option]))
+                              : prev.status.filter((item) => item !== option),
+                          }))}
+                        />
+                        <span>{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="estimativas-actions estimativas-form__full">
+                  <button type="button" className="button-primary" onClick={() => void handleGenerateResourceSpreadsheet()}>
+                    Gerar planilha
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
+
         {resourceEditorOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation" onClick={closeResourceEditor}>
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="resource-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -2606,14 +2779,22 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               <h2>{meta.title}</h2>
               <p className="muted">{meta.description}</p>
             </div>
-            <button type="button" className="button-primary" onClick={() => {
-              resourceState.setForm(EMPTY_RESOURCE_FORM)
-              resourceState.setEditingId(null)
-              setResourceIsViewMode(false)
-              setResourceEditorOpen(true)
-            }}>
-              + Novo Recurso
-            </button>
+            <div className="ch-header-actions">
+              <button type="button" className="button-primary" onClick={() => {
+                resourceState.setForm(EMPTY_RESOURCE_FORM)
+                resourceState.setEditingId(null)
+                setResourceIsViewMode(false)
+                setResourceEditorOpen(true)
+              }}>
+                + Novo Recurso
+              </button>
+              <button type="button" className="button-secondary" onClick={() => {
+                setResourceExportFilters(EMPTY_RESOURCE_EXPORT_FILTERS)
+                setResourceExportOpen(true)
+              }}>
+                Gerar Planilha
+              </button>
+            </div>
           </div>
           <div className="ch-table-toolbar ch-table-toolbar--single">
             <label className="ch-table-search">
@@ -2773,8 +2954,199 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       contractState.setItems(await loadCatalogItems('/api/central-servicos/contratos-servicos', normalizeContract))
     }
 
+    const contractRelacionaOptions = Array.from(new Set(contractState.items.map((item) => item.relaciona).filter(Boolean))).sort((a, b) => compareText(a, b))
+
+    const handleGenerateContractSpreadsheet = async () => {
+      const { tipos, relaciona, status, vigenciaDe, vigenciaAte } = contractExportFilters
+      const vigenciaDeStamp = vigenciaDe ? toSortableDate(vigenciaDe) : null
+      const vigenciaAteStamp = vigenciaAte ? toSortableDate(vigenciaAte) : null
+
+      const rows = contractState.items.filter((item) => {
+        if (tipos.length > 0 && !tipos.includes(item.tipo)) return false
+        if (relaciona.length > 0 && !relaciona.includes(item.relaciona)) return false
+        if (status.length > 0 && !status.includes(item.status)) return false
+        if (vigenciaDeStamp !== null && toSortableDate(item.vigenciaInicio) < vigenciaDeStamp) return false
+        if (vigenciaAteStamp !== null && toSortableDate(item.vigenciaInicio) > vigenciaAteStamp) return false
+        return true
+      })
+
+      const sheetRows = rows.map((item) => ({
+        Título: item.titulo,
+        Tipo: item.tipo,
+        Relaciona: item.relaciona,
+        'Tipo Contrato': item.tipoContrato,
+        Valor: item.valorUnitario,
+        'Tipo Valor': item.tipoValor,
+        'Vigência Início': formatDateDisplay(item.vigenciaInicio),
+        'Vigência Término': formatDateDisplay(item.vigenciaTermino),
+        Status: item.status,
+      }))
+
+      const today = new Date().toISOString().slice(0, 10)
+      try {
+        await exportBrandedWorkbook({
+          fileName: `contratos-servicos-${today}.xlsx`,
+          title: 'Visitor Tools • Central de Serviços',
+          subtitle: 'Cadastro de Contratos e Serviços',
+          sheets: [{
+            sheetName: 'Contratos',
+            columns: [
+              { header: 'Título', key: 'Título', width: 28 },
+              { header: 'Tipo', key: 'Tipo', width: 14 },
+              { header: 'Relaciona', key: 'Relaciona', width: 28 },
+              { header: 'Tipo Contrato', key: 'Tipo Contrato', width: 18 },
+              { header: 'Valor', key: 'Valor', width: 16, numFmt: '#,##0.00' },
+              { header: 'Tipo Valor', key: 'Tipo Valor', width: 14 },
+              { header: 'Vigência Início', key: 'Vigência Início', width: 16 },
+              { header: 'Vigência Término', key: 'Vigência Término', width: 16 },
+              { header: 'Status', key: 'Status', width: 14 },
+            ],
+            rows: sheetRows,
+          }],
+        })
+        setContractExportOpen(false)
+      } catch (exportError) {
+        contractState.setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar a planilha de contratos.')
+      }
+    }
+
+    const selectedContractRelacionaCount = contractExportFilters.relaciona.length
+    const contractRelacionaFilterLabel = selectedContractRelacionaCount === 0
+      ? 'Nenhum selecionado'
+      : selectedContractRelacionaCount === contractRelacionaOptions.length
+        ? 'Todos'
+        : `${selectedContractRelacionaCount} selecionado(s)`
+
     return (
       <div className="customer-hub central-servicos">
+        {contractExportOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setContractExportOpen(false)}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="contract-export-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="contract-export-modal-title">Gerar Planilha de Contratos</h3>
+                  <p className="muted">Selecione os filtros desejados para exportar os contratos em Excel.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={() => setContractExportOpen(false)}>Fechar</button>
+              </div>
+
+              <div className="estimativas-form">
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Tipo</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setContractExportFilters((prev) => ({ ...prev, tipos: [...RELATION_TYPE_OPTIONS] }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setContractExportFilters((prev) => ({ ...prev, tipos: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {RELATION_TYPE_OPTIONS.map((option) => (
+                      <label key={option} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={contractExportFilters.tipos.includes(option)}
+                          onChange={(event) => setContractExportFilters((prev) => ({
+                            ...prev,
+                            tipos: event.target.checked
+                              ? Array.from(new Set([...prev.tipos, option]))
+                              : prev.tipos.filter((item) => item !== option),
+                          }))}
+                        />
+                        <span>{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Relaciona</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setContractExportFilters((prev) => ({ ...prev, relaciona: contractRelacionaOptions }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setContractExportFilters((prev) => ({ ...prev, relaciona: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="agenda-resource-filter__dropdown" ref={contractExportRelacionaDropdownRef}>
+                    <button
+                      type="button"
+                      className="agenda-resource-filter__trigger"
+                      aria-expanded={contractExportRelacionaDropdownOpen}
+                      aria-controls="contract-export-relaciona-list"
+                      onClick={() => setContractExportRelacionaDropdownOpen((prev) => !prev)}
+                    >
+                      <span>{contractRelacionaFilterLabel}</span>
+                      <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {contractExportRelacionaDropdownOpen && (
+                      <div id="contract-export-relaciona-list" className="agenda-resource-filter__grid">
+                        {contractRelacionaOptions.map((option) => (
+                          <label key={option} className="agenda-resource-filter__option">
+                            <input
+                              type="checkbox"
+                              checked={contractExportFilters.relaciona.includes(option)}
+                              onChange={(event) => setContractExportFilters((prev) => ({
+                                ...prev,
+                                relaciona: event.target.checked
+                                  ? Array.from(new Set([...prev.relaciona, option]))
+                                  : prev.relaciona.filter((item) => item !== option),
+                              }))}
+                            />
+                            <span>{option}</span>
+                          </label>
+                        ))}
+                        {contractRelacionaOptions.length === 0 && <span className="muted">Nenhum vínculo encontrado.</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Status</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setContractExportFilters((prev) => ({ ...prev, status: ['Ativo', 'Encerrado'] }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setContractExportFilters((prev) => ({ ...prev, status: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {(['Ativo', 'Encerrado'] as const).map((option) => (
+                      <label key={option} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={contractExportFilters.status.includes(option)}
+                          onChange={(event) => setContractExportFilters((prev) => ({
+                            ...prev,
+                            status: event.target.checked
+                              ? Array.from(new Set([...prev.status, option]))
+                              : prev.status.filter((item) => item !== option),
+                          }))}
+                        />
+                        <span>{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <label>
+                  Vigência de
+                  <input type="date" value={contractExportFilters.vigenciaDe} onChange={(event) => setContractExportFilters((prev) => ({ ...prev, vigenciaDe: event.target.value }))} />
+                </label>
+                <label>
+                  Vigência até
+                  <input type="date" value={contractExportFilters.vigenciaAte} onChange={(event) => setContractExportFilters((prev) => ({ ...prev, vigenciaAte: event.target.value }))} />
+                </label>
+
+                <div className="estimativas-actions estimativas-form__full">
+                  <button type="button" className="button-primary" onClick={() => void handleGenerateContractSpreadsheet()}>
+                    Gerar planilha
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
+
         {contractEditorOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation" onClick={closeContractEditor}>
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="contract-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -2917,15 +3289,24 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               <h2>{meta.title}</h2>
               <p className="muted">{meta.description}</p>
             </div>
-            <button type="button" className="button-primary" onClick={() => {
-              contractState.setForm(EMPTY_CONTRACT_FORM)
-              contractState.setEditingId(null)
-              setContractVersioningFromId(null)
-              setContractIsViewMode(false)
-              setContractEditorOpen(true)
-            }}>
-              + Novo Contrato
-            </button>
+            <div className="ch-header-actions">
+              <button type="button" className="button-primary" onClick={() => {
+                contractState.setForm(EMPTY_CONTRACT_FORM)
+                contractState.setEditingId(null)
+                setContractVersioningFromId(null)
+                setContractIsViewMode(false)
+                setContractEditorOpen(true)
+              }}>
+                + Novo Contrato
+              </button>
+              <button type="button" className="button-secondary" onClick={() => {
+                setContractExportFilters(EMPTY_CONTRACT_EXPORT_FILTERS)
+                setContractExportRelacionaDropdownOpen(false)
+                setContractExportOpen(true)
+              }}>
+                Gerar Planilha
+              </button>
+            </div>
           </div>
           <div className="ch-table-toolbar ch-table-toolbar--single">
             <label className="ch-table-search">
@@ -3119,8 +3500,197 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       expenseState.setItems(await loadCatalogItems('/api/central-servicos/despesas', normalizeExpense))
     }
 
+    const expenseRelacionaOptions = Array.from(new Set(expenseState.items.map((item) => item.relaciona).filter(Boolean))).sort((a, b) => compareText(a, b))
+
+    const handleGenerateExpenseSpreadsheet = async () => {
+      const { tipos, relaciona, tiposDespesa, vigenciaDe, vigenciaAte } = expenseExportFilters
+      const vigenciaDeStamp = vigenciaDe ? toSortableDate(vigenciaDe) : null
+      const vigenciaAteStamp = vigenciaAte ? toSortableDate(vigenciaAte) : null
+
+      const rows = expenseState.items.filter((item) => {
+        if (tipos.length > 0 && !tipos.includes(item.tipo)) return false
+        if (relaciona.length > 0 && !relaciona.includes(item.relaciona)) return false
+        if (tiposDespesa.length > 0 && !tiposDespesa.includes(item.tipoDespesa)) return false
+        if (vigenciaDeStamp !== null && toSortableDate(item.vigenciaInicio) < vigenciaDeStamp) return false
+        if (vigenciaAteStamp !== null && toSortableDate(item.vigenciaInicio) > vigenciaAteStamp) return false
+        return true
+      })
+
+      const sheetRows = rows.map((item) => ({
+        Título: item.titulo,
+        Tipo: item.tipo,
+        Relaciona: item.relaciona,
+        'Tipo Despesa': item.tipoDespesa,
+        Valor: item.valorUnitario,
+        'Tipo Valor': item.tipoValor,
+        'Vigência Início': formatDateDisplay(item.vigenciaInicio),
+        'Vigência Término': formatDateDisplay(item.vigenciaTermino),
+      }))
+
+      const today = new Date().toISOString().slice(0, 10)
+      try {
+        await exportBrandedWorkbook({
+          fileName: `despesas-${today}.xlsx`,
+          title: 'Visitor Tools • Central de Serviços',
+          subtitle: 'Cadastro de Despesa',
+          sheets: [{
+            sheetName: 'Despesas',
+            columns: [
+              { header: 'Título', key: 'Título', width: 28 },
+              { header: 'Tipo', key: 'Tipo', width: 14 },
+              { header: 'Relaciona', key: 'Relaciona', width: 28 },
+              { header: 'Tipo Despesa', key: 'Tipo Despesa', width: 16 },
+              { header: 'Valor', key: 'Valor', width: 16, numFmt: '#,##0.00' },
+              { header: 'Tipo Valor', key: 'Tipo Valor', width: 14 },
+              { header: 'Vigência Início', key: 'Vigência Início', width: 16 },
+              { header: 'Vigência Término', key: 'Vigência Término', width: 16 },
+            ],
+            rows: sheetRows,
+          }],
+        })
+        setExpenseExportOpen(false)
+      } catch (exportError) {
+        expenseState.setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar a planilha de despesas.')
+      }
+    }
+
+    const selectedExpenseRelacionaCount = expenseExportFilters.relaciona.length
+    const expenseRelacionaFilterLabel = selectedExpenseRelacionaCount === 0
+      ? 'Nenhum selecionado'
+      : selectedExpenseRelacionaCount === expenseRelacionaOptions.length
+        ? 'Todos'
+        : `${selectedExpenseRelacionaCount} selecionado(s)`
+
     return (
       <div className="customer-hub central-servicos">
+        {expenseExportOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setExpenseExportOpen(false)}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="expense-export-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="expense-export-modal-title">Gerar Planilha de Despesas</h3>
+                  <p className="muted">Selecione os filtros desejados para exportar as despesas em Excel.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={() => setExpenseExportOpen(false)}>Fechar</button>
+              </div>
+
+              <div className="estimativas-form">
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Tipo</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setExpenseExportFilters((prev) => ({ ...prev, tipos: [...RELATION_TYPE_OPTIONS] }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setExpenseExportFilters((prev) => ({ ...prev, tipos: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {RELATION_TYPE_OPTIONS.map((option) => (
+                      <label key={option} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={expenseExportFilters.tipos.includes(option)}
+                          onChange={(event) => setExpenseExportFilters((prev) => ({
+                            ...prev,
+                            tipos: event.target.checked
+                              ? Array.from(new Set([...prev.tipos, option]))
+                              : prev.tipos.filter((item) => item !== option),
+                          }))}
+                        />
+                        <span>{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Relaciona</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setExpenseExportFilters((prev) => ({ ...prev, relaciona: expenseRelacionaOptions }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setExpenseExportFilters((prev) => ({ ...prev, relaciona: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="agenda-resource-filter__dropdown" ref={expenseExportRelacionaDropdownRef}>
+                    <button
+                      type="button"
+                      className="agenda-resource-filter__trigger"
+                      aria-expanded={expenseExportRelacionaDropdownOpen}
+                      aria-controls="expense-export-relaciona-list"
+                      onClick={() => setExpenseExportRelacionaDropdownOpen((prev) => !prev)}
+                    >
+                      <span>{expenseRelacionaFilterLabel}</span>
+                      <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {expenseExportRelacionaDropdownOpen && (
+                      <div id="expense-export-relaciona-list" className="agenda-resource-filter__grid">
+                        {expenseRelacionaOptions.map((option) => (
+                          <label key={option} className="agenda-resource-filter__option">
+                            <input
+                              type="checkbox"
+                              checked={expenseExportFilters.relaciona.includes(option)}
+                              onChange={(event) => setExpenseExportFilters((prev) => ({
+                                ...prev,
+                                relaciona: event.target.checked
+                                  ? Array.from(new Set([...prev.relaciona, option]))
+                                  : prev.relaciona.filter((item) => item !== option),
+                              }))}
+                            />
+                            <span>{option}</span>
+                          </label>
+                        ))}
+                        {expenseRelacionaOptions.length === 0 && <span className="muted">Nenhum vínculo encontrado.</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Tipo de Despesa</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setExpenseExportFilters((prev) => ({ ...prev, tiposDespesa: [...EXPENSE_TYPE_OPTIONS] }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setExpenseExportFilters((prev) => ({ ...prev, tiposDespesa: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {EXPENSE_TYPE_OPTIONS.map((option) => (
+                      <label key={option} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={expenseExportFilters.tiposDespesa.includes(option)}
+                          onChange={(event) => setExpenseExportFilters((prev) => ({
+                            ...prev,
+                            tiposDespesa: event.target.checked
+                              ? Array.from(new Set([...prev.tiposDespesa, option]))
+                              : prev.tiposDespesa.filter((item) => item !== option),
+                          }))}
+                        />
+                        <span>{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <label>
+                  Vigência de
+                  <input type="date" value={expenseExportFilters.vigenciaDe} onChange={(event) => setExpenseExportFilters((prev) => ({ ...prev, vigenciaDe: event.target.value }))} />
+                </label>
+                <label>
+                  Vigência até
+                  <input type="date" value={expenseExportFilters.vigenciaAte} onChange={(event) => setExpenseExportFilters((prev) => ({ ...prev, vigenciaAte: event.target.value }))} />
+                </label>
+
+                <div className="estimativas-actions estimativas-form__full">
+                  <button type="button" className="button-primary" onClick={() => void handleGenerateExpenseSpreadsheet()}>
+                    Gerar planilha
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
+
         {expenseEditorOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation" onClick={closeExpenseEditor}>
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="expense-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -3212,14 +3782,23 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               <h2>{meta.title}</h2>
               <p className="muted">{meta.description}</p>
             </div>
-            <button type="button" className="button-primary" onClick={() => {
-              expenseState.setForm(EMPTY_EXPENSE_FORM)
-              expenseState.setEditingId(null)
-              setExpenseIsViewMode(false)
-              setExpenseEditorOpen(true)
-            }}>
-              + Nova Despesa
-            </button>
+            <div className="ch-header-actions">
+              <button type="button" className="button-primary" onClick={() => {
+                expenseState.setForm(EMPTY_EXPENSE_FORM)
+                expenseState.setEditingId(null)
+                setExpenseIsViewMode(false)
+                setExpenseEditorOpen(true)
+              }}>
+                + Nova Despesa
+              </button>
+              <button type="button" className="button-secondary" onClick={() => {
+                setExpenseExportFilters(EMPTY_EXPENSE_EXPORT_FILTERS)
+                setExpenseExportRelacionaDropdownOpen(false)
+                setExpenseExportOpen(true)
+              }}>
+                Gerar Planilha
+              </button>
+            </div>
           </div>
           <div className="ch-table-toolbar ch-table-toolbar--single">
             <label className="ch-table-search">

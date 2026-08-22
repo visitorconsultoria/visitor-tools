@@ -23,6 +23,14 @@ type ResourceSortKey = 'nome' | 'cpf' | 'cnpj' | 'sexo' | 'status'
 type ContractSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoContrato' | 'valorUnitario' | 'status'
 type ExpenseSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoDespesa' | 'valorUnitario'
 type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'valor' | 'status'
+type InvoiceExportFilters = {
+  clientes: string[]
+  contratos: string[]
+  emissaoDe: string
+  emissaoAte: string
+  previsaoDe: string
+  previsaoAte: string
+}
 type PaymentSortKey = 'titulo' | 'tipo' | 'relaciona' | 'contrato' | 'emissao' | 'previsaoPagamento' | 'valor' | 'status'
 type PaymentExportFilters = {
   recursos: string[]
@@ -326,6 +334,15 @@ const EMPTY_PAYMENT_FORM: PaymentForm = {
 
 const EMPTY_PAYMENT_EXPORT_FILTERS: PaymentExportFilters = {
   recursos: [],
+  contratos: [],
+  emissaoDe: '',
+  emissaoAte: '',
+  previsaoDe: '',
+  previsaoAte: '',
+}
+
+const EMPTY_INVOICE_EXPORT_FILTERS: InvoiceExportFilters = {
+  clientes: [],
   contratos: [],
   emissaoDe: '',
   emissaoAte: '',
@@ -867,6 +884,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [invoiceEditorOpen, setInvoiceEditorOpen] = useState(false)
   const [invoiceIsViewMode, setInvoiceIsViewMode] = useState(false)
   const [invoiceSort, setInvoiceSort] = useState<{ key: InvoiceSortKey; direction: SortDirection }>(INVOICE_DEFAULT_SORT)
+  const [invoiceExportOpen, setInvoiceExportOpen] = useState(false)
+  const [invoiceExportFilters, setInvoiceExportFilters] = useState<InvoiceExportFilters>(EMPTY_INVOICE_EXPORT_FILTERS)
   const paymentState = useCatalogState<PaymentItem, PaymentForm>(EMPTY_PAYMENT_FORM)
   const [paymentEditorOpen, setPaymentEditorOpen] = useState(false)
   const [paymentIsViewMode, setPaymentIsViewMode] = useState(false)
@@ -954,6 +973,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setInvoiceEditorOpen(false)
     setInvoiceIsViewMode(false)
     setInvoiceSort(INVOICE_DEFAULT_SORT)
+    setInvoiceExportOpen(false)
+    setInvoiceExportFilters(EMPTY_INVOICE_EXPORT_FILTERS)
     setMonthlyHoverIndex(null)
     setCompetencyHoverIndex(null)
     setCompetencyYear(null)
@@ -3264,8 +3285,145 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       invoiceState.setItems(await loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice))
     }
 
+    const invoiceClientOptions = Array.from(new Set(invoiceState.items.map((item) => item.cliente).filter(Boolean))).sort((a, b) => compareText(a, b))
+    const invoiceContractOptions = Array.from(new Set(invoiceState.items.map((item) => item.contrato).filter(Boolean))).sort((a, b) => compareText(a, b))
+
+    const handleGenerateInvoiceSpreadsheet = () => {
+      const { clientes, contratos, emissaoDe, emissaoAte, previsaoDe, previsaoAte } = invoiceExportFilters
+      const emissaoDeStamp = emissaoDe ? toSortableDate(emissaoDe) : null
+      const emissaoAteStamp = emissaoAte ? toSortableDate(emissaoAte) : null
+      const previsaoDeStamp = previsaoDe ? toSortableDate(previsaoDe) : null
+      const previsaoAteStamp = previsaoAte ? toSortableDate(previsaoAte) : null
+
+      const rows = invoiceState.items.filter((item) => {
+        if (clientes.length > 0 && item.cliente && !clientes.includes(item.cliente)) return false
+        if (contratos.length > 0 && item.contrato && !contratos.includes(item.contrato)) return false
+        if (emissaoDeStamp !== null && toSortableDate(item.emissao) < emissaoDeStamp) return false
+        if (emissaoAteStamp !== null && toSortableDate(item.emissao) > emissaoAteStamp) return false
+        if (previsaoDeStamp !== null && toSortableDate(item.previsaoPagamento) < previsaoDeStamp) return false
+        if (previsaoAteStamp !== null && toSortableDate(item.previsaoPagamento) > previsaoAteStamp) return false
+        return true
+      })
+
+      const sheetRows = rows.map((item) => ({
+        Título: item.titulo,
+        Nota: item.nota,
+        Cliente: item.cliente,
+        Contrato: item.contrato,
+        Emissão: formatDateDisplay(item.emissao),
+        Quantidade: item.quantidade,
+        'Previsão de Pagamento': formatDateDisplay(item.previsaoPagamento),
+        Valor: item.valor,
+        Status: item.status,
+        'Data de Pagamento': formatDateDisplay(item.dataPagamento),
+      }))
+
+      const worksheet = XLSX.utils.json_to_sheet(sheetRows)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Faturamentos')
+      const today = new Date().toISOString().slice(0, 10)
+      XLSX.writeFile(workbook, `faturamentos-${today}.xlsx`)
+      setInvoiceExportOpen(false)
+    }
+
     return (
       <div className="customer-hub central-servicos">
+        {invoiceExportOpen && createPortal(
+          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setInvoiceExportOpen(false)}>
+            <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-export-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="estimativas-modal__header">
+                <div>
+                  <h3 id="invoice-export-modal-title">Gerar Planilha de Faturamentos</h3>
+                  <p className="muted">Selecione os filtros desejados para exportar os faturamentos em Excel.</p>
+                </div>
+                <button type="button" className="button-secondary" onClick={() => setInvoiceExportOpen(false)}>Fechar</button>
+              </div>
+
+              <div className="estimativas-form">
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Cliente</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, clientes: invoiceClientOptions }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, clientes: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {invoiceClientOptions.map((cliente) => (
+                      <label key={cliente} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={invoiceExportFilters.clientes.includes(cliente)}
+                          onChange={(event) => setInvoiceExportFilters((prev) => ({
+                            ...prev,
+                            clientes: event.target.checked
+                              ? Array.from(new Set([...prev.clientes, cliente]))
+                              : prev.clientes.filter((item) => item !== cliente),
+                          }))}
+                        />
+                        <span>{cliente}</span>
+                      </label>
+                    ))}
+                    {invoiceClientOptions.length === 0 && <span className="muted">Nenhum cliente encontrado.</span>}
+                  </div>
+                </div>
+
+                <div className="estimativas-form__full payment-export-filter">
+                  <div className="payment-export-filter__header">
+                    <strong>Contrato</strong>
+                    <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
+                      <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, contratos: invoiceContractOptions }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, contratos: [] }))}>Limpar</button>
+                    </div>
+                  </div>
+                  <div className="payment-export-filter__list">
+                    {invoiceContractOptions.map((contrato) => (
+                      <label key={contrato} className="payment-export-filter__option">
+                        <input
+                          type="checkbox"
+                          checked={invoiceExportFilters.contratos.includes(contrato)}
+                          onChange={(event) => setInvoiceExportFilters((prev) => ({
+                            ...prev,
+                            contratos: event.target.checked
+                              ? Array.from(new Set([...prev.contratos, contrato]))
+                              : prev.contratos.filter((item) => item !== contrato),
+                          }))}
+                        />
+                        <span>{contrato}</span>
+                      </label>
+                    ))}
+                    {invoiceContractOptions.length === 0 && <span className="muted">Nenhum contrato encontrado.</span>}
+                  </div>
+                </div>
+
+                <label>
+                  Emissão de
+                  <input type="date" value={invoiceExportFilters.emissaoDe} onChange={(event) => setInvoiceExportFilters((prev) => ({ ...prev, emissaoDe: event.target.value }))} />
+                </label>
+                <label>
+                  Emissão até
+                  <input type="date" value={invoiceExportFilters.emissaoAte} onChange={(event) => setInvoiceExportFilters((prev) => ({ ...prev, emissaoAte: event.target.value }))} />
+                </label>
+                <label>
+                  Previsão pagamento de
+                  <input type="date" value={invoiceExportFilters.previsaoDe} onChange={(event) => setInvoiceExportFilters((prev) => ({ ...prev, previsaoDe: event.target.value }))} />
+                </label>
+                <label>
+                  Previsão pagamento até
+                  <input type="date" value={invoiceExportFilters.previsaoAte} onChange={(event) => setInvoiceExportFilters((prev) => ({ ...prev, previsaoAte: event.target.value }))} />
+                </label>
+
+                <div className="estimativas-actions estimativas-form__full">
+                  <button type="button" className="button-primary" onClick={handleGenerateInvoiceSpreadsheet}>
+                    Gerar planilha
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
+
         {invoiceEditorOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation" onClick={closeInvoiceEditor}>
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -3363,14 +3521,22 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               <h2>{meta.title}</h2>
               <p className="muted">{meta.description}</p>
             </div>
-            <button type="button" className="button-primary" onClick={() => {
-              invoiceState.setForm(EMPTY_INVOICE_FORM)
-              invoiceState.setEditingId(null)
-              setInvoiceIsViewMode(false)
-              setInvoiceEditorOpen(true)
-            }}>
-              + Novo Faturamento
-            </button>
+            <div className="ch-header-actions">
+              <button type="button" className="button-primary" onClick={() => {
+                invoiceState.setForm(EMPTY_INVOICE_FORM)
+                invoiceState.setEditingId(null)
+                setInvoiceIsViewMode(false)
+                setInvoiceEditorOpen(true)
+              }}>
+                + Novo Faturamento
+              </button>
+              <button type="button" className="button-secondary" onClick={() => {
+                setInvoiceExportFilters(EMPTY_INVOICE_EXPORT_FILTERS)
+                setInvoiceExportOpen(true)
+              }}>
+                Gerar Planilha
+              </button>
+            </div>
           </div>
           <div className="ch-table-toolbar ch-table-toolbar--single">
             <label className="ch-table-search">

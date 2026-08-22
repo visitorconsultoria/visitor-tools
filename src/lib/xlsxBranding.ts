@@ -78,6 +78,7 @@ export type BrandedColumn = {
   header: string
   key: string
   width?: number
+  numFmt?: string
 }
 
 export type BrandedSheet = {
@@ -99,6 +100,7 @@ const BRAND_HEADER_FILL = 'FF2F8F74'
 const BRAND_STRIPE_FILL = 'FFE4F2ED'
 const BRAND_BORDER_COLOR = 'FFBFD5CF'
 const WHITE = 'FFFFFFFF'
+const LOGO_COLUMN_WIDTH = 13
 
 const THIN_BORDER = {
   top: { style: 'thin', color: { argb: BRAND_BORDER_COLOR } },
@@ -122,37 +124,43 @@ export async function exportBrandedWorkbook(options: BrandedWorkbookOptions): Pr
   sheets.forEach((sheet) => {
     const { sheetName, columns, rows } = sheet
     const worksheet = workbook.addWorksheet(sheetName)
-    const lastColLetter = columnLetter(Math.max(columns.length - 1, 0))
+    const totalColumnCount = columns.length + 1
+    const lastColLetter = columnLetter(totalColumnCount - 1)
 
-    worksheet.columns = columns.map((column) => ({ key: column.key, width: column.width ?? 18 }))
+    worksheet.columns = [
+      { key: '__logoSpacer', width: LOGO_COLUMN_WIDTH },
+      ...columns.map((column) => ({ key: column.key, width: column.width ?? 18 })),
+    ]
 
     const titleRow = worksheet.getRow(1)
-    titleRow.height = 34
-    worksheet.mergeCells(`A1:${lastColLetter}1`)
-    titleRow.getCell(1).value = title
-    titleRow.getCell(1).font = { bold: true, size: 14, color: { argb: WHITE } }
-    titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', indent: 6 }
+    titleRow.height = 30
+    worksheet.mergeCells(`B1:${lastColLetter}1`)
+    titleRow.getCell(2).value = title
+    titleRow.getCell(2).font = { bold: true, size: 14, color: { argb: WHITE } }
+    titleRow.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 }
 
     const sheetSubtitle = sheet.subtitle ?? subtitle
     const subtitleRow = worksheet.getRow(2)
-    subtitleRow.height = 20
-    worksheet.mergeCells(`A2:${lastColLetter}2`)
-    subtitleRow.getCell(1).value = `${sheetSubtitle ? `${sheetSubtitle} — ` : ''}Gerado em ${generatedAtLabel}`
-    subtitleRow.getCell(1).font = { size: 10, color: { argb: WHITE } }
-    subtitleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', indent: 6 }
+    subtitleRow.height = 18
+    worksheet.mergeCells(`B2:${lastColLetter}2`)
+    subtitleRow.getCell(2).value = `${sheetSubtitle ? `${sheetSubtitle} — ` : ''}Gerado em ${generatedAtLabel}`
+    subtitleRow.getCell(2).font = { size: 10, color: { argb: WHITE } }
+    subtitleRow.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 }
 
-    for (let col = 1; col <= columns.length; col += 1) {
+    for (let col = 1; col <= totalColumnCount; col += 1) {
       titleRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TITLE_FILL } }
       subtitleRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_TITLE_FILL } }
     }
 
     const imageId = workbook.addImage({ base64: logoBase64, extension: 'png' })
-    worksheet.addImage(imageId, { tl: { col: 0.08, row: 0.08 }, ext: { width: 96, height: 34 } })
+    worksheet.addImage(imageId, { tl: { col: 0.15, row: 0.12 }, ext: { width: 84, height: 28 } })
 
     const headerRow = worksheet.getRow(3)
     headerRow.height = 20
+    headerRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_HEADER_FILL } }
+    headerRow.getCell(1).border = THIN_BORDER
     columns.forEach((column, index) => {
-      const cell = headerRow.getCell(index + 1)
+      const cell = headerRow.getCell(index + 2)
       cell.value = column.header
       cell.font = { bold: true, color: { argb: WHITE } }
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_HEADER_FILL } }
@@ -162,17 +170,26 @@ export async function exportBrandedWorkbook(options: BrandedWorkbookOptions): Pr
 
     rows.forEach((rowData, rowIndex) => {
       const row = worksheet.addRow(rowData)
-      columns.forEach((_column, colIndex) => {
-        const cell = row.getCell(colIndex + 1)
-        if (rowIndex % 2 === 1) {
+      const isStripe = rowIndex % 2 === 1
+      const spacerCell = row.getCell(1)
+      spacerCell.border = THIN_BORDER
+      if (isStripe) {
+        spacerCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_STRIPE_FILL } }
+      }
+      columns.forEach((column, colIndex) => {
+        const cell = row.getCell(colIndex + 2)
+        if (isStripe) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_STRIPE_FILL } }
+        }
+        if (column.numFmt) {
+          cell.numFmt = column.numFmt
         }
         cell.border = THIN_BORDER
       })
     })
 
     worksheet.views = [{ state: 'frozen', ySplit: 3 }]
-    worksheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: columns.length } }
+    worksheet.autoFilter = { from: { row: 3, column: 2 }, to: { row: 3, column: totalColumnCount } }
   })
 
   const buffer = await workbook.xlsx.writeBuffer()

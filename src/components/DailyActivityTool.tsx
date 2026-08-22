@@ -324,7 +324,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
             sheetName: 'Resumo',
             columns: [
               { header: 'Recurso', key: 'Recurso', width: 32 },
-              { header: 'Total de horas', key: 'Total de horas', width: 18 },
+              { header: 'Total de horas', key: 'Total de horas', width: 18, numFmt: '#,##0.00' },
             ],
             rows: summaryRowsData,
           },
@@ -335,7 +335,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
               { header: 'Data', key: 'Data', width: 14 },
               { header: 'Recurso', key: 'Recurso', width: 28 },
               { header: 'Atividade', key: 'Atividade', width: 36 },
-              { header: 'Horas', key: 'Horas', width: 12 },
+              { header: 'Horas', key: 'Horas', width: 12, numFmt: '#,##0.00' },
               { header: 'Observacoes', key: 'Observacoes', width: 36 },
             ],
             rows: detailRows,

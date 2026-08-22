@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import * as XLSX from 'xlsx'
 import { apiUrl } from '../lib/api'
+import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 
 type DailyActivityRow = {
   id: number
@@ -312,28 +312,36 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       }))
 
     try {
-      const workbook = XLSX.utils.book_new()
+      const summaryRowsData = summaryRows.map(([resource, total]) => ({ Recurso: resource, 'Total de horas': Number(total.toFixed(2)) }))
+      summaryRowsData.push({ Recurso: 'TOTAL GERAL', 'Total de horas': Number(grandTotal.toFixed(2)) })
 
-      const summarySheet = XLSX.utils.aoa_to_sheet([
-        ['Relatorio de apontamentos mensais'],
-        ['Mes', toMonthLabel(monthFilter)],
-        [],
-        ['Recurso', 'Total de horas'],
-        ...summaryRows.map(([resource, total]) => [resource, Number(total.toFixed(2))]),
-        ['TOTAL GERAL', Number(grandTotal.toFixed(2))],
-        [],
-        ['Detalhamento dos apontamentos do mes'],
-        ['Data', 'Recurso', 'Atividade', 'Horas'],
-        ...detailRows.map((item) => [item.Data, item.Recurso, item.Atividade, item.Horas]),
-      ])
-
-      const detailsSheet = XLSX.utils.json_to_sheet(detailRows)
-
-      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Resumo')
-      XLSX.utils.book_append_sheet(workbook, detailsSheet, 'Apontamentos')
-
-      const safeMonth = monthFilter || 'periodo'
-      XLSX.writeFile(workbook, `apontamentos-${safeMonth}.xlsx`)
+      await exportBrandedWorkbook({
+        fileName: `apontamentos-${monthFilter || 'periodo'}.xlsx`,
+        title: 'Visitor Tools • Apontamento de Atividades',
+        subtitle: `Relatório de apontamentos — ${toMonthLabel(monthFilter)}`,
+        sheets: [
+          {
+            sheetName: 'Resumo',
+            columns: [
+              { header: 'Recurso', key: 'Recurso', width: 32 },
+              { header: 'Total de horas', key: 'Total de horas', width: 18 },
+            ],
+            rows: summaryRowsData,
+          },
+          {
+            sheetName: 'Apontamentos',
+            columns: [
+              { header: 'Codigo', key: 'Codigo', width: 12 },
+              { header: 'Data', key: 'Data', width: 14 },
+              { header: 'Recurso', key: 'Recurso', width: 28 },
+              { header: 'Atividade', key: 'Atividade', width: 36 },
+              { header: 'Horas', key: 'Horas', width: 12 },
+              { header: 'Observacoes', key: 'Observacoes', width: 36 },
+            ],
+            rows: detailRows,
+          },
+        ],
+      })
       setSuccess('Planilha exportada com sucesso.')
     } catch (exportError) {
       setError(toFriendlyApiError(exportError, 'Nao foi possivel exportar a planilha.'))

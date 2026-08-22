@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
+import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import { apiUrl } from '../lib/api'
 import {
   RUBRICA_RULE_FIELD_DEFINITIONS,
@@ -369,7 +370,7 @@ export default function RubricaRuleTool() {
     setCurrentScreen('overview')
   }
 
-  const handleExportSelectedRuleSet = () => {
+  const handleExportSelectedRuleSet = async () => {
     if (!selectedRuleSet || !items.length) {
       setError('Selecione um cadastro com regras para exportar.')
       return
@@ -378,21 +379,17 @@ export default function RubricaRuleTool() {
     setError(null)
     setSuccess(null)
 
-    const workbook = XLSX.utils.book_new()
     const metaRows = [
-      ['Cadastro', selectedRuleSet.name],
-      ['Origem', selectedRuleSet.sourceFileName || '-'],
-      ['Descricao', selectedRuleSet.description || '-'],
-      ['Exportado em', new Date().toLocaleString('pt-BR')],
-      ['Total de regras', String(items.length)],
+      { campo: 'Cadastro', valor: selectedRuleSet.name },
+      { campo: 'Origem', valor: selectedRuleSet.sourceFileName || '-' },
+      { campo: 'Descricao', valor: selectedRuleSet.description || '-' },
+      { campo: 'Exportado em', valor: new Date().toLocaleString('pt-BR') },
+      { campo: 'Total de regras', valor: String(items.length) },
     ]
 
     const detailRows = items.map((item) => Object.fromEntries(
       RUBRICA_RULE_FIELD_DEFINITIONS.map((field) => [field.label, item[field.key]]),
     ))
-
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(metaRows), 'Resumo')
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detailRows), 'Regras')
 
     const safeName = selectedRuleSet.name
       .normalize('NFD')
@@ -402,8 +399,31 @@ export default function RubricaRuleTool() {
       .replace(/^-|-$/g, '')
       .toLowerCase() || 'tabela-regra'
 
-    XLSX.writeFile(workbook, `tabela-regra-${safeName}.xlsx`)
-    setSuccess(`Cadastro "${selectedRuleSet.name}" exportado com sucesso.`)
+    try {
+      await exportBrandedWorkbook({
+        fileName: `tabela-regra-${safeName}.xlsx`,
+        title: 'Visitor Tools • Tabela de Regra',
+        subtitle: selectedRuleSet.name,
+        sheets: [
+          {
+            sheetName: 'Resumo',
+            columns: [
+              { header: 'Campo', key: 'campo', width: 24 },
+              { header: 'Valor', key: 'valor', width: 36 },
+            ],
+            rows: metaRows,
+          },
+          {
+            sheetName: 'Regras',
+            columns: RUBRICA_RULE_FIELD_DEFINITIONS.map((field) => ({ header: field.label, key: field.label, width: 20 })),
+            rows: detailRows,
+          },
+        ],
+      })
+      setSuccess(`Cadastro "${selectedRuleSet.name}" exportado com sucesso.`)
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : 'Falha ao exportar o cadastro.')
+    }
   }
 
   const handleCreateRuleSet = async () => {
@@ -831,7 +851,7 @@ export default function RubricaRuleTool() {
                 <p className="muted">CRUD completo das regras importadas ou digitadas manualmente.</p>
               </div>
               <div className="ch-header-actions">
-                <button type="button" className="button-secondary" onClick={handleExportSelectedRuleSet} disabled={!selectedRuleSetId || isLoadingItems || items.length === 0}>
+                <button type="button" className="button-secondary" onClick={() => void handleExportSelectedRuleSet()} disabled={!selectedRuleSetId || isLoadingItems || items.length === 0}>
                   Exportar Excel
                 </button>
                 <button type="button" className="button-primary" onClick={openCreateModal} disabled={!selectedRuleSetId || isLoadingItems}>

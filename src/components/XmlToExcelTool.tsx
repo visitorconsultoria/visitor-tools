@@ -1,5 +1,5 @@
 import { useMemo, useState, type ChangeEvent } from 'react'
-import * as XLSX from 'xlsx'
+import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 
 type XmlRow = Record<string, string>
 type WarningItem = { fileName: string; detail: string }
@@ -293,18 +293,21 @@ function XmlToExcelTool() {
       const headers = collectHeaders(finalRows, generationMode)
       const sheetName = generationMode === 'totalizers' ? 'Totalizadores' : 'Consolidado'
 
-      const body = finalRows.map((row) => headers.map((header) => row[header] ?? ''))
-
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...body])
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
+      const columns = headers.map((header) => ({ header, key: header, width: Math.min(Math.max(header.length + 4, 12), 32) }))
+      const sheetRows = finalRows.map((row) => Object.fromEntries(headers.map((header) => [header, row[header] ?? ''])))
 
       const dateTag = new Date().toISOString().slice(0, 10)
       const fileName =
         generationMode === 'totalizers'
           ? `xml-s-5002-totalizadores-${dateTag}.xlsx`
           : `xml-consolidado-${dateTag}.xlsx`
-      XLSX.writeFile(workbook, fileName)
+
+      await exportBrandedWorkbook({
+        fileName,
+        title: 'Visitor Tools • XML para Excel',
+        subtitle: sheetName,
+        sheets: [{ sheetName, columns, rows: sheetRows }],
+      })
 
       setPreviewHeaders(headers)
       setPreviewRows(finalRows)

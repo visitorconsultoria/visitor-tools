@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import * as XLSX from 'xlsx'
 import { apiUrl } from '../lib/api'
+import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import RichTextEditor from './RichTextEditor'
 import AtendimentoReportsTool from './AtendimentoReportsTool'
 
@@ -3366,7 +3366,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
             .filter(Boolean),
         )).sort((a, b) => compareText(a, b))
 
-    const handleGenerateInvoiceSpreadsheet = () => {
+    const handleGenerateInvoiceSpreadsheet = async () => {
       const { clientes, contratos, emissaoDe, emissaoAte, previsaoDe, previsaoAte } = invoiceExportFilters
       const emissaoDeStamp = emissaoDe ? toSortableDate(emissaoDe) : null
       const emissaoAteStamp = emissaoAte ? toSortableDate(emissaoAte) : null
@@ -3396,12 +3396,33 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         'Data de Pagamento': formatDateDisplay(item.dataPagamento),
       }))
 
-      const worksheet = XLSX.utils.json_to_sheet(sheetRows)
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Faturamentos')
       const today = new Date().toISOString().slice(0, 10)
-      XLSX.writeFile(workbook, `faturamentos-${today}.xlsx`)
-      setInvoiceExportOpen(false)
+      try {
+        await exportBrandedWorkbook({
+          fileName: `faturamentos-${today}.xlsx`,
+          title: 'Visitor Tools • Central de Serviços',
+          subtitle: 'Cadastro de Faturamento',
+          sheets: [{
+            sheetName: 'Faturamentos',
+            columns: [
+              { header: 'Título', key: 'Título', width: 24 },
+              { header: 'Nota', key: 'Nota', width: 14 },
+              { header: 'Cliente', key: 'Cliente', width: 28 },
+              { header: 'Contrato', key: 'Contrato', width: 28 },
+              { header: 'Emissão', key: 'Emissão', width: 14 },
+              { header: 'Quantidade', key: 'Quantidade', width: 14 },
+              { header: 'Previsão de Pagamento', key: 'Previsão de Pagamento', width: 20 },
+              { header: 'Valor', key: 'Valor', width: 16 },
+              { header: 'Status', key: 'Status', width: 14 },
+              { header: 'Data de Pagamento', key: 'Data de Pagamento', width: 18 },
+            ],
+            rows: sheetRows,
+          }],
+        })
+        setInvoiceExportOpen(false)
+      } catch (exportError) {
+        invoiceState.setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar a planilha de faturamentos.')
+      }
     }
 
     const selectedInvoiceClientCount = invoiceExportFilters.clientes.length
@@ -3541,7 +3562,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 </label>
 
                 <div className="estimativas-actions estimativas-form__full">
-                  <button type="button" className="button-primary" onClick={handleGenerateInvoiceSpreadsheet}>
+                  <button type="button" className="button-primary" onClick={() => void handleGenerateInvoiceSpreadsheet()}>
                     Gerar planilha
                   </button>
                 </div>
@@ -3816,7 +3837,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     const paymentContractOptions = Array.from(new Set(paymentState.items.map((item) => item.contrato).filter(Boolean))).sort((a, b) => compareText(a, b))
 
-    const handleGeneratePaymentSpreadsheet = () => {
+    const handleGeneratePaymentSpreadsheet = async () => {
       const { recursos, contratos, emissaoDe, emissaoAte, previsaoDe, previsaoAte } = paymentExportFilters
       const emissaoDeStamp = emissaoDe ? toSortableDate(emissaoDe) : null
       const emissaoAteStamp = emissaoAte ? toSortableDate(emissaoAte) : null
@@ -3846,12 +3867,33 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         'Data de Pagamento': formatDateDisplay(item.dataPagamento),
       }))
 
-      const worksheet = XLSX.utils.json_to_sheet(sheetRows)
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Pagamentos')
       const today = new Date().toISOString().slice(0, 10)
-      XLSX.writeFile(workbook, `pagamentos-${today}.xlsx`)
-      setPaymentExportOpen(false)
+      try {
+        await exportBrandedWorkbook({
+          fileName: `pagamentos-${today}.xlsx`,
+          title: 'Visitor Tools • Central de Serviços',
+          subtitle: 'Cadastro de Pagamentos',
+          sheets: [{
+            sheetName: 'Pagamentos',
+            columns: [
+              { header: 'Título', key: 'Título', width: 24 },
+              { header: 'Nota', key: 'Nota', width: 14 },
+              { header: 'Tipo', key: 'Tipo', width: 14 },
+              { header: 'Relaciona', key: 'Relaciona', width: 28 },
+              { header: 'Contrato', key: 'Contrato', width: 28 },
+              { header: 'Emissão', key: 'Emissão', width: 14 },
+              { header: 'Previsão de Pagamento', key: 'Previsão de Pagamento', width: 20 },
+              { header: 'Valor', key: 'Valor', width: 16 },
+              { header: 'Status', key: 'Status', width: 14 },
+              { header: 'Data de Pagamento', key: 'Data de Pagamento', width: 18 },
+            ],
+            rows: sheetRows,
+          }],
+        })
+        setPaymentExportOpen(false)
+      } catch (exportError) {
+        paymentState.setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar a planilha de pagamentos.')
+      }
     }
 
     const selectedResourceCount = paymentExportFilters.recursos.length
@@ -3983,7 +4025,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 </label>
 
                 <div className="estimativas-actions estimativas-form__full">
-                  <button type="button" className="button-primary" onClick={handleGeneratePaymentSpreadsheet}>
+                  <button type="button" className="button-primary" onClick={() => void handleGeneratePaymentSpreadsheet()}>
                     Gerar planilha
                   </button>
                 </div>

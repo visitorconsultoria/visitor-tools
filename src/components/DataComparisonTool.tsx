@@ -1,5 +1,6 @@
 import { useMemo, useState, type ChangeEvent } from 'react'
 import * as XLSX from 'xlsx'
+import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 
 type ParsedRow = {
   rowNumber: number
@@ -583,8 +584,6 @@ function compareDatasets(
 }
 
 function exportComparisonToExcel(result: ComparisonResult, issues: ComparisonIssue[]) {
-  const workbook = XLSX.utils.book_new()
-
   const summaryRows = [
     {
       arquivo_a: result.baseFileName,
@@ -629,12 +628,49 @@ function exportComparisonToExcel(result: ComparisonResult, issues: ComparisonIss
       detalhe: 'Nenhuma divergência encontrada para os filtros selecionados.',
     }]
 
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Resumo')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(mappingRows), 'Mapeamentos')
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(issueRows), 'Divergencias')
-
   const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
-  XLSX.writeFile(workbook, `comparacao-arquivos-${stamp}.xlsx`)
+  return exportBrandedWorkbook({
+    fileName: `comparacao-arquivos-${stamp}.xlsx`,
+    title: 'Visitor Tools • Comparação de Dados',
+    subtitle: `${result.baseFileName} × ${result.targetFileName}`,
+    sheets: [
+      {
+        sheetName: 'Resumo',
+        columns: [
+          { header: 'Arquivo A', key: 'arquivo_a', width: 24 },
+          { header: 'Arquivo B', key: 'arquivo_b', width: 24 },
+          { header: 'Total divergências', key: 'total_divergencias', width: 18 },
+          { header: 'Ausentes no B', key: 'ausentes_no_b', width: 16 },
+          { header: 'Extras no B', key: 'extras_no_b', width: 16 },
+          { header: 'Valores divergentes', key: 'valores_divergentes', width: 18 },
+          { header: 'Chaves duplicadas A', key: 'chaves_duplicadas_a', width: 18 },
+          { header: 'Chaves duplicadas B', key: 'chaves_duplicadas_b', width: 18 },
+        ],
+        rows: summaryRows,
+      },
+      {
+        sheetName: 'Mapeamentos',
+        columns: [
+          { header: 'Tipo', key: 'tipo', width: 14 },
+          { header: 'Campo Arquivo A', key: 'campo_arquivo_a', width: 28 },
+          { header: 'Campo Arquivo B', key: 'campo_arquivo_b', width: 28 },
+        ],
+        rows: mappingRows,
+      },
+      {
+        sheetName: 'Divergencias',
+        columns: [
+          { header: 'Tipo', key: 'tipo', width: 22 },
+          { header: 'Chave', key: 'chave', width: 24 },
+          { header: 'Campo', key: 'campo', width: 28 },
+          { header: 'Valor Arquivo A', key: 'valor_arquivo_a', width: 28 },
+          { header: 'Valor Arquivo B', key: 'valor_arquivo_b', width: 28 },
+          { header: 'Detalhe', key: 'detalhe', width: 42 },
+        ],
+        rows: issueRows,
+      },
+    ],
+  })
 }
 
 function toFriendlyError(error: unknown, fallback: string): string {
@@ -881,13 +917,17 @@ export default function DataComparisonTool() {
     }
   }
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
     if (!result) {
       setError('Execute a comparação antes de exportar o Excel.')
       return
     }
 
-    exportComparisonToExcel(result, filteredIssues)
+    try {
+      await exportComparisonToExcel(result, filteredIssues)
+    } catch (exportError) {
+      setError(toFriendlyError(exportError, 'Falha ao exportar a planilha de comparação.'))
+    }
   }
 
   return (
@@ -1019,7 +1059,7 @@ export default function DataComparisonTool() {
           >
             {isComparing ? 'Comparando...' : 'Executar comparação'}
           </button>
-          <button type="button" className="button-secondary" onClick={exportExcel} disabled={!result}>
+          <button type="button" className="button-secondary" onClick={() => void exportExcel()} disabled={!result}>
             Gerar planilha Excel
           </button>
         </div>

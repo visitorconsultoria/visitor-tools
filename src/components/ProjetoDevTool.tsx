@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import * as XLSX from 'xlsx'
+import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import { apiUrl } from '../lib/api'
 
 type ProjectItemType = 'cadastro' | 'processo' | 'relatorio' | 'formula' | 'dicionario' | 'workflow' | 'outros'
@@ -481,7 +481,7 @@ export default function ProjetoDevTool() {
     }
   }
 
-  const handleExportItems = () => {
+  const handleExportItems = async () => {
     if (!selectedProject || !selectedProject.items.length) {
       setError('Nao ha itens cadastrados para exportar neste projeto.')
       return
@@ -497,10 +497,6 @@ export default function ProjetoDevTool() {
         Observacoes: item.notes || '',
       }))
 
-      const workbook = XLSX.utils.book_new()
-      const worksheet = XLSX.utils.json_to_sheet(rows)
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'itens-projeto')
-
       const dateTag = new Date().toISOString().slice(0, 10)
       const safeClient = selectedProject.client
         .normalize('NFD')
@@ -510,7 +506,23 @@ export default function ProjetoDevTool() {
         .replace(/^-|-$/g, '')
         || 'projeto'
 
-      XLSX.writeFile(workbook, `${safeClient}-itens-${dateTag}.xlsx`)
+      await exportBrandedWorkbook({
+        fileName: `${safeClient}-itens-${dateTag}.xlsx`,
+        title: 'Visitor Tools • Projeto de Desenvolvimento',
+        subtitle: selectedProject.client,
+        sheets: [{
+          sheetName: 'itens-projeto',
+          columns: [
+            { header: '#', key: '#', width: 8 },
+            { header: 'Modulo', key: 'Modulo', width: 20 },
+            { header: 'Tipo', key: 'Tipo', width: 16 },
+            { header: 'Complexidade', key: 'Complexidade', width: 16 },
+            { header: 'Descricao', key: 'Descricao', width: 42 },
+            { header: 'Observacoes', key: 'Observacoes', width: 32 },
+          ],
+          rows,
+        }],
+      })
       setSuccess('Planilha de itens gerada com sucesso.')
     } catch {
       setError('Falha ao gerar planilha de itens.')
@@ -869,7 +881,7 @@ export default function ProjetoDevTool() {
                       <button
                         type="button"
                         className="button-secondary"
-                        onClick={handleExportItems}
+                        onClick={() => void handleExportItems()}
                         disabled={!selectedProject || !selectedProject.items.length}
                       >
                         Exportar planilha

@@ -892,6 +892,10 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [paymentSort, setPaymentSort] = useState<{ key: PaymentSortKey; direction: SortDirection }>(PAYMENT_DEFAULT_SORT)
   const [paymentExportOpen, setPaymentExportOpen] = useState(false)
   const [paymentExportFilters, setPaymentExportFilters] = useState<PaymentExportFilters>(EMPTY_PAYMENT_EXPORT_FILTERS)
+  const [paymentExportResourceDropdownOpen, setPaymentExportResourceDropdownOpen] = useState(false)
+  const [paymentExportContractDropdownOpen, setPaymentExportContractDropdownOpen] = useState(false)
+  const paymentExportResourceDropdownRef = useRef<HTMLDivElement | null>(null)
+  const paymentExportContractDropdownRef = useRef<HTMLDivElement | null>(null)
   const agendaState = useCatalogState<AgendaItem, AgendaForm>(EMPTY_AGENDA_FORM)
   const [agendaEditorOpen, setAgendaEditorOpen] = useState(false)
   const [agendaIsViewMode, setAgendaIsViewMode] = useState(false)
@@ -989,6 +993,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setPaymentSort(PAYMENT_DEFAULT_SORT)
     setPaymentExportOpen(false)
     setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
+    setPaymentExportResourceDropdownOpen(false)
+    setPaymentExportContractDropdownOpen(false)
     paymentState.setError(null)
     paymentState.setSuccess(null)
     agendaState.setItems([])
@@ -1037,6 +1043,35 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [agendaResourceDropdownOpen])
+
+  useEffect(() => {
+    if (!paymentExportResourceDropdownOpen && !paymentExportContractDropdownOpen) return undefined
+
+    const closeOnOutsideInteraction = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (paymentExportResourceDropdownRef.current?.contains(target)) return
+      if (paymentExportContractDropdownRef.current?.contains(target)) return
+      setPaymentExportResourceDropdownOpen(false)
+      setPaymentExportContractDropdownOpen(false)
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setPaymentExportResourceDropdownOpen(false)
+      setPaymentExportContractDropdownOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideInteraction)
+    document.addEventListener('touchstart', closeOnOutsideInteraction)
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideInteraction)
+      document.removeEventListener('touchstart', closeOnOutsideInteraction)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [paymentExportResourceDropdownOpen, paymentExportContractDropdownOpen])
 
   const closeResourceEditor = () => {
     if (resourceState.isSaving) return
@@ -3725,6 +3760,19 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       setPaymentExportOpen(false)
     }
 
+    const selectedResourceCount = paymentExportFilters.recursos.length
+    const paymentResourceFilterLabel = selectedResourceCount === 0
+      ? 'Nenhum recurso selecionado'
+      : selectedResourceCount === resourceOptions.length
+        ? 'Todos os recursos'
+        : `${selectedResourceCount} recurso(s) selecionado(s)`
+    const selectedContractCount = paymentExportFilters.contratos.length
+    const paymentContractFilterLabel = selectedContractCount === 0
+      ? 'Nenhum contrato selecionado'
+      : selectedContractCount === paymentContractOptions.length
+        ? 'Todos os contratos'
+        : `${selectedContractCount} contrato(s) selecionado(s)`
+
     return (
       <div className="customer-hub central-servicos">
         {paymentExportOpen && createPortal(
@@ -3747,23 +3795,37 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                       <button type="button" className="button-secondary" onClick={() => setPaymentExportFilters((prev) => ({ ...prev, recursos: [] }))}>Limpar</button>
                     </div>
                   </div>
-                  <div className="payment-export-filter__list">
-                    {resourceOptions.map((resource) => (
-                      <label key={resource} className="payment-export-filter__option">
-                        <input
-                          type="checkbox"
-                          checked={paymentExportFilters.recursos.includes(resource)}
-                          onChange={(event) => setPaymentExportFilters((prev) => ({
-                            ...prev,
-                            recursos: event.target.checked
-                              ? Array.from(new Set([...prev.recursos, resource]))
-                              : prev.recursos.filter((item) => item !== resource),
-                          }))}
-                        />
-                        <span>{resource}</span>
-                      </label>
-                    ))}
-                    {resourceOptions.length === 0 && <span className="muted">Nenhum recurso cadastrado.</span>}
+                  <div className="agenda-resource-filter__dropdown" ref={paymentExportResourceDropdownRef}>
+                    <button
+                      type="button"
+                      className="agenda-resource-filter__trigger"
+                      aria-expanded={paymentExportResourceDropdownOpen}
+                      aria-controls="payment-export-resource-list"
+                      onClick={() => setPaymentExportResourceDropdownOpen((prev) => !prev)}
+                    >
+                      <span>{paymentResourceFilterLabel}</span>
+                      <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {paymentExportResourceDropdownOpen && (
+                      <div id="payment-export-resource-list" className="agenda-resource-filter__grid">
+                        {resourceOptions.map((resource) => (
+                          <label key={resource} className="agenda-resource-filter__option">
+                            <input
+                              type="checkbox"
+                              checked={paymentExportFilters.recursos.includes(resource)}
+                              onChange={(event) => setPaymentExportFilters((prev) => ({
+                                ...prev,
+                                recursos: event.target.checked
+                                  ? Array.from(new Set([...prev.recursos, resource]))
+                                  : prev.recursos.filter((item) => item !== resource),
+                              }))}
+                            />
+                            <span>{resource}</span>
+                          </label>
+                        ))}
+                        {resourceOptions.length === 0 && <span className="muted">Nenhum recurso cadastrado.</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3775,23 +3837,37 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                       <button type="button" className="button-secondary" onClick={() => setPaymentExportFilters((prev) => ({ ...prev, contratos: [] }))}>Limpar</button>
                     </div>
                   </div>
-                  <div className="payment-export-filter__list">
-                    {paymentContractOptions.map((contrato) => (
-                      <label key={contrato} className="payment-export-filter__option">
-                        <input
-                          type="checkbox"
-                          checked={paymentExportFilters.contratos.includes(contrato)}
-                          onChange={(event) => setPaymentExportFilters((prev) => ({
-                            ...prev,
-                            contratos: event.target.checked
-                              ? Array.from(new Set([...prev.contratos, contrato]))
-                              : prev.contratos.filter((item) => item !== contrato),
-                          }))}
-                        />
-                        <span>{contrato}</span>
-                      </label>
-                    ))}
-                    {paymentContractOptions.length === 0 && <span className="muted">Nenhum contrato encontrado.</span>}
+                  <div className="agenda-resource-filter__dropdown" ref={paymentExportContractDropdownRef}>
+                    <button
+                      type="button"
+                      className="agenda-resource-filter__trigger"
+                      aria-expanded={paymentExportContractDropdownOpen}
+                      aria-controls="payment-export-contract-list"
+                      onClick={() => setPaymentExportContractDropdownOpen((prev) => !prev)}
+                    >
+                      <span>{paymentContractFilterLabel}</span>
+                      <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {paymentExportContractDropdownOpen && (
+                      <div id="payment-export-contract-list" className="agenda-resource-filter__grid">
+                        {paymentContractOptions.map((contrato) => (
+                          <label key={contrato} className="agenda-resource-filter__option">
+                            <input
+                              type="checkbox"
+                              checked={paymentExportFilters.contratos.includes(contrato)}
+                              onChange={(event) => setPaymentExportFilters((prev) => ({
+                                ...prev,
+                                contratos: event.target.checked
+                                  ? Array.from(new Set([...prev.contratos, contrato]))
+                                  : prev.contratos.filter((item) => item !== contrato),
+                              }))}
+                            />
+                            <span>{contrato}</span>
+                          </label>
+                        ))}
+                        {paymentContractOptions.length === 0 && <span className="muted">Nenhum contrato encontrado.</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3928,6 +4004,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               </button>
               <button type="button" className="button-secondary" onClick={() => {
                 setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
+                setPaymentExportResourceDropdownOpen(false)
+                setPaymentExportContractDropdownOpen(false)
                 setPaymentExportOpen(true)
               }}>
                 Gerar Planilha

@@ -886,6 +886,10 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [invoiceSort, setInvoiceSort] = useState<{ key: InvoiceSortKey; direction: SortDirection }>(INVOICE_DEFAULT_SORT)
   const [invoiceExportOpen, setInvoiceExportOpen] = useState(false)
   const [invoiceExportFilters, setInvoiceExportFilters] = useState<InvoiceExportFilters>(EMPTY_INVOICE_EXPORT_FILTERS)
+  const [invoiceExportClientDropdownOpen, setInvoiceExportClientDropdownOpen] = useState(false)
+  const [invoiceExportContractDropdownOpen, setInvoiceExportContractDropdownOpen] = useState(false)
+  const invoiceExportClientDropdownRef = useRef<HTMLDivElement | null>(null)
+  const invoiceExportContractDropdownRef = useRef<HTMLDivElement | null>(null)
   const paymentState = useCatalogState<PaymentItem, PaymentForm>(EMPTY_PAYMENT_FORM)
   const [paymentEditorOpen, setPaymentEditorOpen] = useState(false)
   const [paymentIsViewMode, setPaymentIsViewMode] = useState(false)
@@ -979,6 +983,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setInvoiceSort(INVOICE_DEFAULT_SORT)
     setInvoiceExportOpen(false)
     setInvoiceExportFilters(EMPTY_INVOICE_EXPORT_FILTERS)
+    setInvoiceExportClientDropdownOpen(false)
+    setInvoiceExportContractDropdownOpen(false)
     setMonthlyHoverIndex(null)
     setCompetencyHoverIndex(null)
     setCompetencyYear(null)
@@ -1072,6 +1078,35 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [paymentExportResourceDropdownOpen, paymentExportContractDropdownOpen])
+
+  useEffect(() => {
+    if (!invoiceExportClientDropdownOpen && !invoiceExportContractDropdownOpen) return undefined
+
+    const closeOnOutsideInteraction = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (invoiceExportClientDropdownRef.current?.contains(target)) return
+      if (invoiceExportContractDropdownRef.current?.contains(target)) return
+      setInvoiceExportClientDropdownOpen(false)
+      setInvoiceExportContractDropdownOpen(false)
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setInvoiceExportClientDropdownOpen(false)
+      setInvoiceExportContractDropdownOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideInteraction)
+    document.addEventListener('touchstart', closeOnOutsideInteraction)
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideInteraction)
+      document.removeEventListener('touchstart', closeOnOutsideInteraction)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [invoiceExportClientDropdownOpen, invoiceExportContractDropdownOpen])
 
   const closeResourceEditor = () => {
     if (resourceState.isSaving) return
@@ -3322,6 +3357,14 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     const invoiceClientOptions = Array.from(new Set(invoiceState.items.map((item) => item.cliente).filter(Boolean))).sort((a, b) => compareText(a, b))
     const invoiceContractOptions = Array.from(new Set(invoiceState.items.map((item) => item.contrato).filter(Boolean))).sort((a, b) => compareText(a, b))
+    const invoiceAvailableContractOptions = invoiceExportFilters.clientes.length === 0
+      ? invoiceContractOptions
+      : Array.from(new Set(
+          invoiceState.items
+            .filter((item) => invoiceExportFilters.clientes.includes(item.cliente))
+            .map((item) => item.contrato)
+            .filter(Boolean),
+        )).sort((a, b) => compareText(a, b))
 
     const handleGenerateInvoiceSpreadsheet = () => {
       const { clientes, contratos, emissaoDe, emissaoAte, previsaoDe, previsaoAte } = invoiceExportFilters
@@ -3361,6 +3404,19 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       setInvoiceExportOpen(false)
     }
 
+    const selectedInvoiceClientCount = invoiceExportFilters.clientes.length
+    const invoiceClientFilterLabel = selectedInvoiceClientCount === 0
+      ? 'Nenhum cliente selecionado'
+      : selectedInvoiceClientCount === invoiceClientOptions.length
+        ? 'Todos os clientes'
+        : `${selectedInvoiceClientCount} cliente(s) selecionado(s)`
+    const selectedInvoiceContractCount = invoiceExportFilters.contratos.length
+    const invoiceContractFilterLabel = selectedInvoiceContractCount === 0
+      ? 'Nenhum contrato selecionado'
+      : selectedInvoiceContractCount === invoiceAvailableContractOptions.length
+        ? 'Todos os contratos'
+        : `${selectedInvoiceContractCount} contrato(s) selecionado(s)`
+
     return (
       <div className="customer-hub central-servicos">
         {invoiceExportOpen && createPortal(
@@ -3383,23 +3439,45 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                       <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, clientes: [] }))}>Limpar</button>
                     </div>
                   </div>
-                  <div className="payment-export-filter__list">
-                    {invoiceClientOptions.map((cliente) => (
-                      <label key={cliente} className="payment-export-filter__option">
-                        <input
-                          type="checkbox"
-                          checked={invoiceExportFilters.clientes.includes(cliente)}
-                          onChange={(event) => setInvoiceExportFilters((prev) => ({
-                            ...prev,
-                            clientes: event.target.checked
-                              ? Array.from(new Set([...prev.clientes, cliente]))
-                              : prev.clientes.filter((item) => item !== cliente),
-                          }))}
-                        />
-                        <span>{cliente}</span>
-                      </label>
-                    ))}
-                    {invoiceClientOptions.length === 0 && <span className="muted">Nenhum cliente encontrado.</span>}
+                  <div className="agenda-resource-filter__dropdown" ref={invoiceExportClientDropdownRef}>
+                    <button
+                      type="button"
+                      className="agenda-resource-filter__trigger"
+                      aria-expanded={invoiceExportClientDropdownOpen}
+                      aria-controls="invoice-export-client-list"
+                      onClick={() => setInvoiceExportClientDropdownOpen((prev) => !prev)}
+                    >
+                      <span>{invoiceClientFilterLabel}</span>
+                      <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {invoiceExportClientDropdownOpen && (
+                      <div id="invoice-export-client-list" className="agenda-resource-filter__grid">
+                        {invoiceClientOptions.map((cliente) => (
+                          <label key={cliente} className="agenda-resource-filter__option">
+                            <input
+                              type="checkbox"
+                              checked={invoiceExportFilters.clientes.includes(cliente)}
+                              onChange={(event) => setInvoiceExportFilters((prev) => {
+                                const clientes = event.target.checked
+                                  ? Array.from(new Set([...prev.clientes, cliente]))
+                                  : prev.clientes.filter((item) => item !== cliente)
+                                const availableContracts = clientes.length === 0
+                                  ? invoiceContractOptions
+                                  : Array.from(new Set(
+                                      invoiceState.items
+                                        .filter((item) => clientes.includes(item.cliente))
+                                        .map((item) => item.contrato)
+                                        .filter(Boolean),
+                                    ))
+                                return { ...prev, clientes, contratos: prev.contratos.filter((c) => availableContracts.includes(c)) }
+                              })}
+                            />
+                            <span>{cliente}</span>
+                          </label>
+                        ))}
+                        {invoiceClientOptions.length === 0 && <span className="muted">Nenhum cliente encontrado.</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3407,27 +3485,41 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                   <div className="payment-export-filter__header">
                     <strong>Contrato</strong>
                     <div className="ch-row-actions" style={{ gap: '0.45rem' }}>
-                      <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, contratos: invoiceContractOptions }))}>Todos</button>
+                      <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, contratos: invoiceAvailableContractOptions }))}>Todos</button>
                       <button type="button" className="button-secondary" onClick={() => setInvoiceExportFilters((prev) => ({ ...prev, contratos: [] }))}>Limpar</button>
                     </div>
                   </div>
-                  <div className="payment-export-filter__list">
-                    {invoiceContractOptions.map((contrato) => (
-                      <label key={contrato} className="payment-export-filter__option">
-                        <input
-                          type="checkbox"
-                          checked={invoiceExportFilters.contratos.includes(contrato)}
-                          onChange={(event) => setInvoiceExportFilters((prev) => ({
-                            ...prev,
-                            contratos: event.target.checked
-                              ? Array.from(new Set([...prev.contratos, contrato]))
-                              : prev.contratos.filter((item) => item !== contrato),
-                          }))}
-                        />
-                        <span>{contrato}</span>
-                      </label>
-                    ))}
-                    {invoiceContractOptions.length === 0 && <span className="muted">Nenhum contrato encontrado.</span>}
+                  <div className="agenda-resource-filter__dropdown" ref={invoiceExportContractDropdownRef}>
+                    <button
+                      type="button"
+                      className="agenda-resource-filter__trigger"
+                      aria-expanded={invoiceExportContractDropdownOpen}
+                      aria-controls="invoice-export-contract-list"
+                      onClick={() => setInvoiceExportContractDropdownOpen((prev) => !prev)}
+                    >
+                      <span>{invoiceContractFilterLabel}</span>
+                      <span className="agenda-resource-filter__chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {invoiceExportContractDropdownOpen && (
+                      <div id="invoice-export-contract-list" className="agenda-resource-filter__grid">
+                        {invoiceAvailableContractOptions.map((contrato) => (
+                          <label key={contrato} className="agenda-resource-filter__option">
+                            <input
+                              type="checkbox"
+                              checked={invoiceExportFilters.contratos.includes(contrato)}
+                              onChange={(event) => setInvoiceExportFilters((prev) => ({
+                                ...prev,
+                                contratos: event.target.checked
+                                  ? Array.from(new Set([...prev.contratos, contrato]))
+                                  : prev.contratos.filter((item) => item !== contrato),
+                              }))}
+                            />
+                            <span>{contrato}</span>
+                          </label>
+                        ))}
+                        {invoiceAvailableContractOptions.length === 0 && <span className="muted">Nenhum contrato encontrado.</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3567,6 +3659,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               </button>
               <button type="button" className="button-secondary" onClick={() => {
                 setInvoiceExportFilters(EMPTY_INVOICE_EXPORT_FILTERS)
+                setInvoiceExportClientDropdownOpen(false)
+                setInvoiceExportContractDropdownOpen(false)
                 setInvoiceExportOpen(true)
               }}>
                 Gerar Planilha

@@ -3751,20 +3751,22 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               <h2>{meta.title}</h2>
               <p className="muted">{meta.description}</p>
             </div>
-            <button type="button" className="button-primary" onClick={() => {
-              paymentState.setForm(EMPTY_PAYMENT_FORM)
-              paymentState.setEditingId(null)
-              setPaymentIsViewMode(false)
-              setPaymentEditorOpen(true)
-            }}>
-              + Novo Pagamento
-            </button>
-            <button type="button" className="button-secondary" onClick={() => {
-              setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
-              setPaymentExportOpen(true)
-            }}>
-              Gerar Planilha
-            </button>
+            <div className="ch-header-actions">
+              <button type="button" className="button-primary" onClick={() => {
+                paymentState.setForm(EMPTY_PAYMENT_FORM)
+                paymentState.setEditingId(null)
+                setPaymentIsViewMode(false)
+                setPaymentEditorOpen(true)
+              }}>
+                + Novo Pagamento
+              </button>
+              <button type="button" className="button-secondary" onClick={() => {
+                setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
+                setPaymentExportOpen(true)
+              }}>
+                Gerar Planilha
+              </button>
+            </div>
           </div>
           <div className="ch-table-toolbar ch-table-toolbar--single">
             <label className="ch-table-search">

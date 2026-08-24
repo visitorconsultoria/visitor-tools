@@ -3817,6 +3817,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                   <th>{renderSortableHeader('Relaciona', expenseSort.key === 'relaciona', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'relaciona', direction: getNextDirection(prev.key, 'relaciona', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Tipo Despesa', expenseSort.key === 'tipoDespesa', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'tipoDespesa', direction: getNextDirection(prev.key, 'tipoDespesa', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Valor', expenseSort.key === 'valorUnitario', expenseSort.direction, () => setExpenseSort((prev) => ({ key: 'valorUnitario', direction: getNextDirection(prev.key, 'valorUnitario', prev.direction) })))}</th>
+                  <th>Data de início</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -3828,6 +3829,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                     <td>{item.relaciona || '-'}</td>
                     <td>{item.tipoDespesa}</td>
                     <td>{formatCurrencyDisplay(item.valorUnitario)}</td>
+                    <td>{formatDateDisplay(item.dataInicio)}</td>
                     <td>
                       <div className="ch-row-actions ch-row-actions--icons">
                         <button type="button" className="ch-icon-action" aria-label="Visualizar despesa" title="Visualizar" onClick={() => {
@@ -3900,7 +3902,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                     </td>
                   </tr>
                 ))}
-                {sortedItems.length === 0 && <tr><td colSpan={6} className="ch-empty">Nenhuma despesa cadastrada.</td></tr>}
+                {sortedItems.length === 0 && <tr><td colSpan={7} className="ch-empty">Nenhuma despesa cadastrada.</td></tr>}
               </tbody>
             </table>
           </div>

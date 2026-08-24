@@ -289,7 +289,7 @@ export default function RubricasValidationTool({ catalogPageKey }: RubricasValid
   return (
     <div className="customer-hub">
       {modalOpen && createPortal(
-        <div className="estimativas-modal-overlay" role="presentation" onClick={closeModal}>
+        <div className="estimativas-modal-overlay" role="presentation">
           <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="estimativas-modal__header">
               <h3>{form.id ? 'Editar Cadastro' : 'Novo Cadastro'}</h3>

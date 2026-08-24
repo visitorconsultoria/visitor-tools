@@ -2103,7 +2103,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         )}
 
         {agendaEditorOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={closeAgendaEditor}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="agenda-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -2653,7 +2653,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     return (
       <div className="customer-hub central-servicos">
         {resourceExportOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setResourceExportOpen(false)}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="resource-export-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -2702,7 +2702,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         )}
 
         {resourceEditorOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={closeResourceEditor}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="resource-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -3020,7 +3020,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     return (
       <div className="customer-hub central-servicos">
         {contractExportOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setContractExportOpen(false)}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="contract-export-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -3148,7 +3148,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         )}
 
         {contractEditorOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={closeContractEditor}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="contract-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -3564,7 +3564,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     return (
       <div className="customer-hub central-servicos">
         {expenseExportOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setExpenseExportOpen(false)}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="expense-export-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -3692,7 +3692,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         )}
 
         {expenseEditorOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={closeExpenseEditor}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="expense-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -4022,7 +4022,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     return (
       <div className="customer-hub central-servicos">
         {invoiceExportOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setInvoiceExportOpen(false)}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-export-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -4154,7 +4154,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         )}
 
         {invoiceEditorOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={closeInvoiceEditor}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -4493,7 +4493,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     return (
       <div className="customer-hub central-servicos">
         {paymentExportOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setPaymentExportOpen(false)}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="payment-export-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>
@@ -4617,7 +4617,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         )}
 
         {paymentEditorOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={closePaymentEditor}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <div>

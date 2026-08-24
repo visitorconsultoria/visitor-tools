@@ -670,7 +670,7 @@ export default function RubricaRuleTool() {
   return (
     <div className={`customer-hub rule-tool ${currentScreen === 'workspace' ? 'rule-tool--workspace' : 'rule-tool--overview'}`}>
       {modalOpen && createPortal(
-        <div className="estimativas-modal-overlay" role="presentation" onClick={closeModal}>
+        <div className="estimativas-modal-overlay" role="presentation">
           <section className="estimativas-modal rule-tool__modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="estimativas-modal__header">
               <h3>{form.id ? 'Editar Regra' : 'Nova Regra'}</h3>

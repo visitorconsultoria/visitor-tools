@@ -380,19 +380,6 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
     setEditingId(null)
   }
 
-  useEffect(() => {
-    if (!isModalOpen) return
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closeModal()
-      }
-    }
-
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [isModalOpen, isSaving])
-
   const setFormValue = (key: keyof DailyActivityForm, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
   }

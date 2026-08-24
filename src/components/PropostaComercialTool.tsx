@@ -955,13 +955,6 @@ export default function PropostaComercialTool() {
     setShowImport(false); setSelectedEstimativaId('')
   }
 
-  useEffect(() => {
-    if (!isModalOpen) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') closeModal() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [isModalOpen, isSaving])
-
   const setF = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 

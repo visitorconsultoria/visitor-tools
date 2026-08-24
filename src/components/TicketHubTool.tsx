@@ -1012,11 +1012,6 @@ export default function TicketHubTool({ currentUsername, subPage }: TicketHubToo
     if (!selectedTicket) return
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closeTicketModal()
-        return
-      }
-
       if (event.key === 'ArrowLeft' && canGoToPrevTicket) {
         event.preventDefault()
         handleGoToPrevTicket()

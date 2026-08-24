@@ -586,21 +586,6 @@ export default function CustomerHubTool({
   const [processoModal, setProcessoModal] = useState<ModalState<Processo>>(emptyModal())
   const [atividadeModal, setAtividadeModal] = useState<ModalState<Atividade>>(emptyModal())
 
-  const closeAnyModal = () => {
-    setClienteModal(emptyModal())
-    setContatoModal(emptyModal())
-    setAcessoModal(emptyModal())
-    setSistemaModal(emptyModal())
-    setProcessoModal(emptyModal())
-    setAtividadeModal(emptyModal())
-    setStatusReportTicketModal(emptyModal())
-    setStatusReportTicketDetailModalOpen(false)
-    setStatusReportTicketDetailSource(null)
-    setStatusReportTicketDetail(null)
-    setStatusReportTicketDetailError(null)
-    setStatusReportTicketDetailLoading(false)
-  }
-
   const [filterClienteId, setFilterClienteId] = useState('')
   const [clienteSearch, setClienteSearch] = useState('')
   const [contatoSearch, setContatoSearch] = useState('')
@@ -721,30 +706,6 @@ export default function CustomerHubTool({
       cancelled = true
     }
   }, [requestHeaders])
-
-  useEffect(() => {
-    const hasOpenModal = (
-      clienteModal.open
-      || contatoModal.open
-      || acessoModal.open
-      || sistemaModal.open
-      || processoModal.open
-      || atividadeModal.open
-      || statusReportTicketModal.open
-      || statusReportTicketDetailModalOpen
-    )
-
-    if (!hasOpenModal) return
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closeAnyModal()
-      }
-    }
-
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [clienteModal.open, contatoModal.open, acessoModal.open, sistemaModal.open, processoModal.open, atividadeModal.open, statusReportTicketModal.open, statusReportTicketDetailModalOpen])
 
   useEffect(() => {
     if (!clienteModal.open) {
@@ -2505,7 +2466,7 @@ export default function CustomerHubTool({
     return (
       <div className="customer-hub">
         {statusReportTicketDetailModalOpen && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={closeStatusReportTicketDetailModal}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <h3>Detalhes do chamado #{statusReportTicketDetail?.protocol || statusReportTicketDetailSource?.protocol || statusReportTicketDetailSource?.id || '—'}</h3>
@@ -2585,7 +2546,7 @@ export default function CustomerHubTool({
         )}
 
         {statusReportTicketModal.open && createPortal(
-          <div className="estimativas-modal-overlay" role="presentation" onClick={() => setStatusReportTicketModal(emptyModal())}>
+          <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
               <div className="estimativas-modal__header">
                 <h3>Incluir status do chamado</h3>

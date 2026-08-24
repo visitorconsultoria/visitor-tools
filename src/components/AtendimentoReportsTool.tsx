@@ -271,19 +271,6 @@ export default function AtendimentoReportsTool() {
   }
 
   useEffect(() => {
-    if (!isModalOpen) return
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closeModal()
-      }
-    }
-
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [isModalOpen, isSaving])
-
-  useEffect(() => {
     if (!exportClientDropdownOpen) return undefined
 
     const closeOnOutsideInteraction = (event: MouseEvent | TouchEvent) => {
@@ -579,7 +566,7 @@ export default function AtendimentoReportsTool() {
       </section>
 
       {exportOpen && typeof document !== 'undefined' && createPortal(
-        <div className="estimativas-modal-overlay" role="presentation" onClick={() => setExportOpen(false)}>
+        <div className="estimativas-modal-overlay" role="presentation">
           <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="atendimento-export-modal-title" onClick={(e) => e.stopPropagation()}>
             <div className="estimativas-modal__header">
               <div>

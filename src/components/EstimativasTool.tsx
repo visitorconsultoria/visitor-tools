@@ -115,7 +115,7 @@ function toSafePdfFilename(input: string): string {
 function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
     .replace(/<\/li>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
@@ -532,11 +532,12 @@ export default function EstimativasTool() {
       const pageWidth = doc.internal.pageSize.getWidth()
       const pageHeight = doc.internal.pageSize.getHeight()
       const margin = 40
+      const bottomLimit = pageHeight - margin - 18
       const contentWidth = pageWidth - margin * 2
       let y = margin
 
       const ensureSpace = (required: number) => {
-        if (y + required <= pageHeight - margin) return
+        if (y + required <= bottomLimit) return
         doc.addPage()
         y = margin
       }
@@ -569,6 +570,164 @@ export default function EstimativasTool() {
         const lines = doc.splitTextToSize(text || '-', width)
         doc.text(lines, x, yPos, { lineHeightFactor: lineHeight })
         return lines.length * size * lineHeight
+      }
+
+      type ObservationLine = {
+        text: string
+        size: number
+        lineHeight: number
+        bold: boolean
+        indent: number
+        height: number
+      }
+
+      const parseObservationLines = (html: string): ObservationLine[] => {
+        const lines: ObservationLine[] = []
+        const addBlock = (element: Element, bullet = false) => {
+          const tag = element.tagName.toLowerCase()
+          const text = (element.textContent || '').replace(/\s+/g, ' ').trim()
+          if (!text) return
+
+          const isHeading = /^h[1-6]$/.test(tag)
+          const size = tag === 'h1' ? 20 : tag === 'h2' ? 17 : tag === 'h3' ? 14 : 10.5
+          const lineHeight = isHeading ? 1.2 : 1.55
+          const bold = isHeading || element.querySelector('strong, b') !== null
+          const indent = bullet ? 12 : 0
+          doc.setFont('helvetica', bold ? 'bold' : 'normal')
+          doc.setFontSize(size)
+          const wrapped = doc.splitTextToSize(text, contentWidth - 20 - indent)
+
+          wrapped.forEach((line: string, index: number) => {
+            lines.push({
+              text: bullet && index === 0 ? `• ${line}` : line,
+              size,
+              lineHeight,
+              bold,
+              indent,
+              height: size * lineHeight,
+            })
+          })
+
+          lines.push({
+            text: '',
+            size,
+            lineHeight,
+            bold: false,
+            indent: 0,
+            height: size * (isHeading ? 0.35 : 0.4),
+          })
+        }
+
+        try {
+          const parsed = new DOMParser().parseFromString(html, 'text/html')
+          const visit = (element: Element) => {
+            const tag = element.tagName.toLowerCase()
+            if (tag === 'ul' || tag === 'ol') {
+              Array.from(element.children).forEach((child) => {
+                if (child.tagName.toLowerCase() === 'li') addBlock(child, true)
+              })
+              return
+            }
+            if (tag === 'p' || /^h[1-6]$/.test(tag) || tag === 'blockquote' || tag === 'pre') {
+              addBlock(element)
+              return
+            }
+            Array.from(element.children).forEach(visit)
+          }
+
+          Array.from(parsed.body.children).forEach(visit)
+        } catch {
+          const fallback = stripHtml(html)
+          if (fallback) {
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10.5)
+            const wrapped = doc.splitTextToSize(fallback, contentWidth - 20)
+            wrapped.forEach((line: string) => lines.push({
+              text: line,
+              size: 10.5,
+              lineHeight: 1.55,
+              bold: false,
+              indent: 0,
+              height: 10.5 * 1.55,
+            }))
+          }
+        }
+
+        return lines.length ? lines : [{
+          text: '-',
+          size: 10.5,
+          lineHeight: 1.55,
+          bold: false,
+          indent: 0,
+          height: 10.5 * 1.55,
+        }]
+      }
+
+      const writeObservationBoxAcrossPages = (html: string) => {
+        const paddingX = 10
+        const paddingY = 8
+        let remainingLines = parseObservationLines(html)
+        let currentY = y
+
+        while (remainingLines.length > 0) {
+          const availableHeight = bottomLimit - currentY - paddingY
+          let usedHeight = 0
+          let lineCount = 0
+          while (lineCount < remainingLines.length && usedHeight + remainingLines[lineCount].height <= availableHeight) {
+            usedHeight += remainingLines[lineCount].height
+            lineCount += 1
+          }
+
+          if (lineCount <= 0) {
+            doc.addPage()
+            currentY = margin + paddingY
+            continue
+          }
+
+          const pageLines = remainingLines.slice(0, lineCount)
+          const boxHeight = usedHeight + paddingY * 2
+          doc.setDrawColor(branded ? 194 : 214, branded ? 221 : 214, branded ? 213 : 214)
+          doc.setFillColor(branded ? 246 : 248, branded ? 252 : 248, branded ? 249 : 248)
+          doc.roundedRect(margin, currentY - paddingY, contentWidth, boxHeight, 6, 6, 'FD')
+          pageLines.forEach((line) => {
+            if (line.text) {
+              doc.setFont('helvetica', line.bold ? 'bold' : 'normal')
+              doc.setFontSize(line.size)
+              doc.setTextColor(valueColor[0], valueColor[1], valueColor[2])
+              doc.text(line.text, margin + paddingX + line.indent, currentY)
+            }
+            currentY += line.height
+          })
+
+          currentY += paddingY
+          remainingLines = remainingLines.slice(lineCount)
+
+          if (remainingLines.length > 0) {
+            doc.addPage()
+            currentY = margin + paddingY
+          }
+        }
+
+        return currentY
+      }
+
+      const drawItemsTableHeader = () => {
+        const indexWidth = 56
+        const hoursWidth = 140
+        const detailWidth = contentWidth - indexWidth - hoursWidth
+        const headerHeight = 30
+
+        ensureSpace(headerHeight)
+        doc.setFillColor(branded ? 228 : 238, branded ? 242 : 238, branded ? 237 : 238)
+        doc.setDrawColor(branded ? 194 : 214, branded ? 221 : 214, branded ? 213 : 214)
+        doc.rect(margin, y, contentWidth, headerHeight, 'FD')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        doc.setTextColor(valueColor[0], valueColor[1], valueColor[2])
+        doc.text('#', margin + indexWidth / 2, y + 19, { align: 'center' })
+        doc.text('Detalhe', margin + indexWidth + 12, y + 19)
+        doc.text('Horas', margin + indexWidth + detailWidth + hoursWidth / 2, y + 19, { align: 'center' })
+        y += headerHeight
       }
 
       if (branded) {
@@ -663,15 +822,9 @@ export default function EstimativasTool() {
       doc.setTextColor(branded ? 21 : 44, branded ? 68 : 44, branded ? 58 : 44)
       doc.text('Observações', margin, y)
       y += 16
-      y += writeWrapped(estimate.notes ? stripHtml(estimate.notes) : '-', {
-        x: margin,
-        y,
-        width: contentWidth,
-        size: 10,
-        color: valueColor,
-      }) + 8
+      y = writeObservationBoxAcrossPages(estimate.notes || '-') + 8
 
-      ensureSpace(56)
+      ensureSpace(122)
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(12)
       doc.setTextColor(branded ? 21 : 44, branded ? 68 : 44, branded ? 58 : 44)
@@ -687,26 +840,38 @@ export default function EstimativasTool() {
           color: valueColor,
         })
       } else {
+        drawItemsTableHeader()
         estimate.items.forEach((item, index) => {
-          ensureSpace(40)
+          const indexWidth = 56
+          const hoursWidth = 140
+          const detailWidth = contentWidth - indexWidth - hoursWidth
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(10)
+          const detailLines = doc.splitTextToSize(item.detail || '-', detailWidth - 24)
+          const rowHeight = Math.max(36, detailLines.length * 14 + 18)
+
+          if (y + rowHeight > bottomLimit) {
+            doc.addPage()
+            y = margin
+            drawItemsTableHeader()
+          }
+
           doc.setDrawColor(branded ? 194 : 214, branded ? 221 : 214, branded ? 213 : 214)
           doc.setFillColor(branded ? 246 : 248, branded ? 252 : 248, branded ? 249 : 248)
-          doc.roundedRect(margin, y, contentWidth, 28, 6, 6, 'FD')
+          doc.rect(margin, y, contentWidth, rowHeight, 'FD')
 
           doc.setFont('helvetica', 'bold')
           doc.setFontSize(10)
           doc.setTextColor(valueColor[0], valueColor[1], valueColor[2])
-          doc.text(`#${index + 1}`, margin + 10, y + 18)
+          doc.text(String(index + 1), margin + indexWidth / 2, y + 22, { align: 'center' })
 
-          const detailPreview = item.detail || '-'
-          const detailLines = doc.splitTextToSize(detailPreview, contentWidth - 165)
           doc.setFont('helvetica', 'normal')
-          doc.text(detailLines[0] || '-', margin + 38, y + 18)
+          doc.text(detailLines, margin + indexWidth + 12, y + 22, { lineHeightFactor: 1.4 })
 
           doc.setFont('helvetica', 'bold')
-          doc.text(`Horas: ${item.hours || '-'}`, pageWidth - margin - 10, y + 18, { align: 'right' })
+          doc.text(item.hours || '-', margin + indexWidth + detailWidth + hoursWidth / 2, y + 22, { align: 'center' })
 
-          y += 34
+          y += rowHeight
         })
       }
 

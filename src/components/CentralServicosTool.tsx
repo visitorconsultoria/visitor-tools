@@ -1246,7 +1246,22 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     resetState()
 
     const load = async () => {
-      if (subPage === 'atendimentos') return
+      if (subPage === 'atendimentos') {
+        try {
+          const resources = await loadCatalogItems('/api/central-servicos/recursos', (item: unknown) => {
+            const resource = item as { nome?: unknown }
+            const name = String(resource.nome ?? '').trim()
+            return name || null
+          })
+          const visibleResources = canViewAllResources
+            ? resources
+            : resources.filter((resource) => resource.toLowerCase() === currentResourceName.trim().toLowerCase())
+          setResourceOptions(visibleResources.length || canViewAllResources ? visibleResources : [currentResourceName].filter(Boolean))
+        } catch {
+          setResourceOptions([currentResourceName].filter(Boolean))
+        }
+        return
+      }
 
       if (subPage === 'agenda') {
         agendaState.setIsLoading(true)
@@ -4848,7 +4863,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
   if (subPage === 'dashboard') return renderDashboardSection()
   if (subPage === 'agenda') return renderAgendaSection()
-  if (subPage === 'atendimentos') return <AtendimentoReportsTool />
+  if (subPage === 'atendimentos') return <AtendimentoReportsTool resourceOptions={resourceOptions} />
   if (subPage === 'recursos') return renderResourceSection()
   if (subPage === 'contratos-servicos') return renderContractSection()
   if (subPage === 'despesas') return renderExpenseSection()

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
-import { ASSIGNABLE_MENU_KEYS, ASSIGNABLE_MENU_OPTIONS, getEffectiveMenus, type AssignableMenu } from '../lib/menuConfig'
+import { ASSIGNABLE_MENU_KEYS, ASSIGNABLE_MENU_OPTIONS, getEffectiveMenus, MENU_PARENT_KEYS, type AssignableMenu } from '../lib/menuConfig'
 
 type MenuPermission = AssignableMenu
 type CentralServicosResourceScope = 'all' | 'self'
@@ -28,6 +28,7 @@ type UserAccessToolProps = {
 }
 
 const MENU_OPTIONS: ReadonlyArray<{ key: MenuPermission, label: string }> = ASSIGNABLE_MENU_OPTIONS
+  .filter(({ key }) => !Object.values(MENU_PARENT_KEYS).includes(key))
 
 const EMPTY_FORM: UserFormState = {
   username: '',

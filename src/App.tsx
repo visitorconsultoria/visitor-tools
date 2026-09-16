@@ -93,11 +93,31 @@ const CENTRAL_SERVICOS_PAGES: Array<{ id: CentralServicosPage; label: string }> 
   { id: 'pagamentos', label: 'Pagamentos' },
 ]
 
+const CUSTOMER_HUB_PERMISSION_PREFIX = 'customer-hub-'
+const CENTRAL_SERVICOS_PERMISSION_PREFIX = 'central-servicos-'
+
 const XML_EXCEL_ROUTINES: XmlExcelRoutineOption[] = [
   { id: 's-5002', label: 'Item S-5002', available: true },
   { id: 's-5011', label: 'Item S-5011', available: false },
   { id: 's-5501', label: 'Item S-5501', available: false },
 ]
+
+const RUBRICA_SUBMENU_KEYS: RubricaCatalogPageKey[] = [
+  'rubrica-natureza',
+  'rubrica-inc-cp',
+  'rubrica-inc-fgts',
+  'rubrica-inc-pis',
+  'rubrica-inc-rpps',
+  'rubrica-inc-irrf',
+  'rubrica-dirf',
+  'rubrica-id-calculo',
+  'rubrica-regra',
+  'rubrica-regra-comparacao',
+]
+
+function getSubmenuPermission(prefix: string, pageId: string): MenuPage {
+  return `${prefix}${pageId}` as MenuPage
+}
 
 type SidebarIconName =
   | 'home'
@@ -428,6 +448,45 @@ function App() {
     if (canAccessPage(currentPage, currentUser)) return
     setCurrentPage('home')
   }, [currentPage, currentUser])
+
+  useEffect(() => {
+    if (currentPage !== 'rubricas-validacao' || !currentUser) return
+    if (canAccessPage(selectedRubricaCatalogKey, currentUser)) return
+
+    const firstAllowedRoutine = RUBRICA_SUBMENU_KEYS.find((key) => canAccessPage(key, currentUser))
+    if (firstAllowedRoutine) {
+      setSelectedRubricaCatalogKey(firstAllowedRoutine)
+      return
+    }
+
+    setCurrentPage('home')
+  }, [currentPage, currentUser, selectedRubricaCatalogKey])
+
+  useEffect(() => {
+    if (!currentUser || currentPage !== 'customer-hub') return
+    if (canAccessPage(getSubmenuPermission(CUSTOMER_HUB_PERMISSION_PREFIX, customerHubPage), currentUser)) return
+
+    const firstAllowedPage = CUSTOMER_HUB_PAGES.find((page) => canAccessPage(getSubmenuPermission(CUSTOMER_HUB_PERMISSION_PREFIX, page.id), currentUser))
+    if (firstAllowedPage) {
+      setCustomerHubPage(firstAllowedPage.id)
+      return
+    }
+
+    setCurrentPage('home')
+  }, [currentPage, currentUser, customerHubPage])
+
+  useEffect(() => {
+    if (!currentUser || currentPage !== 'central-servicos') return
+    if (canAccessPage(getSubmenuPermission(CENTRAL_SERVICOS_PERMISSION_PREFIX, centralServicosPage), currentUser)) return
+
+    const firstAllowedPage = CENTRAL_SERVICOS_PAGES.find((page) => canAccessPage(getSubmenuPermission(CENTRAL_SERVICOS_PERMISSION_PREFIX, page.id), currentUser))
+    if (firstAllowedPage) {
+      setCentralServicosPage(firstAllowedPage.id)
+      return
+    }
+
+    setCurrentPage('home')
+  }, [centralServicosPage, currentPage, currentUser])
 
   useEffect(() => {
     if (!currentUser) return
@@ -899,7 +958,8 @@ function App() {
                 const isSamePage = currentPage === 'customer-hub'
                 const shouldCollapse = isSamePage && openSidebarSubmenu === 'customer-hub'
                 if (!isSamePage) {
-                  setCustomerHubPage('dashboard')
+                  const firstAllowedPage = CUSTOMER_HUB_PAGES.find((page) => canAccessPage(getSubmenuPermission(CUSTOMER_HUB_PERMISSION_PREFIX, page.id), currentUser))
+                  if (firstAllowedPage) setCustomerHubPage(firstAllowedPage.id)
                 }
                 setOpenSidebarSubmenu(shouldCollapse ? null : 'customer-hub')
                 setShowSourceMenu(false)
@@ -916,7 +976,7 @@ function App() {
           )}
           {canAccessPage('customer-hub', currentUser) && currentPage === 'customer-hub' && openSidebarSubmenu === 'customer-hub' && (
             <div className="sidebar__subnav" aria-label="Central de Clientes">
-              {CUSTOMER_HUB_PAGES.map((page) => (
+              {CUSTOMER_HUB_PAGES.filter((page) => canAccessPage(getSubmenuPermission(CUSTOMER_HUB_PERMISSION_PREFIX, page.id), currentUser)).map((page) => (
                 <button
                   key={page.id}
                   type="button"
@@ -943,7 +1003,8 @@ function App() {
                 const isSamePage = currentPage === 'central-servicos'
                 const shouldCollapse = isSamePage && openSidebarSubmenu === 'central-servicos'
                 if (!isSamePage) {
-                  setCentralServicosPage('dashboard')
+                  const firstAllowedPage = CENTRAL_SERVICOS_PAGES.find((page) => canAccessPage(getSubmenuPermission(CENTRAL_SERVICOS_PERMISSION_PREFIX, page.id), currentUser))
+                  if (firstAllowedPage) setCentralServicosPage(firstAllowedPage.id)
                   setOpenSidebarSubmenu('central-servicos')
                 } else {
                   setOpenSidebarSubmenu(shouldCollapse ? null : 'central-servicos')
@@ -962,7 +1023,7 @@ function App() {
           )}
           {canAccessPage('central-servicos', currentUser) && currentPage === 'central-servicos' && openSidebarSubmenu === 'central-servicos' && (
             <div className="sidebar__subnav" aria-label="Central de Serviços">
-              {CENTRAL_SERVICOS_PAGES.map((page) => (
+              {CENTRAL_SERVICOS_PAGES.filter((page) => canAccessPage(getSubmenuPermission(CENTRAL_SERVICOS_PERMISSION_PREFIX, page.id), currentUser)).map((page) => (
                 <button
                   key={page.id}
                   type="button"
@@ -1103,7 +1164,7 @@ function App() {
               </button>
               {openSidebarSubmenu === 'rubricas-cadastros' && (
                 <div className="sidebar__subnav sidebar__subnav--nested" aria-label="Cadastros de Rubricas">
-                  <button
+                  {canAccessPage('rubrica-natureza', currentUser) && <button
                     type="button"
                     className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-natureza' ? 'sidebar__sublink--active' : ''}`}
                     onClick={() => {
@@ -1114,50 +1175,50 @@ function App() {
                     aria-current={selectedRubricaCatalogKey === 'rubrica-natureza' ? 'page' : undefined}
                   >
                     Natureza de Rubricas
-                  </button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  </button>}
+                  {canAccessPage('rubrica-inc-cp', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-inc-cp')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'page' : undefined}>Inc. CP</button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-cp' ? 'page' : undefined}>Inc. CP</button>}
+                  {canAccessPage('rubrica-inc-fgts', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-inc-fgts')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'page' : undefined}>Inc. FGTS</button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-fgts' ? 'page' : undefined}>Inc. FGTS</button>}
+                  {canAccessPage('rubrica-inc-pis', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-inc-pis')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'page' : undefined}>Inc. PIS</button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-pis' ? 'page' : undefined}>Inc. PIS</button>}
+                  {canAccessPage('rubrica-inc-rpps', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-inc-rpps')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'page' : undefined}>Inc. RPPS</button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-rpps' ? 'page' : undefined}>Inc. RPPS</button>}
+                  {canAccessPage('rubrica-inc-irrf', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-inc-irrf')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'page' : undefined}>Inc. IRRF</button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-dirf' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-inc-irrf' ? 'page' : undefined}>Inc. IRRF</button>}
+                  {canAccessPage('rubrica-dirf', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-dirf' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-dirf')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-dirf' ? 'page' : undefined}>DIRF - Protheus</button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-dirf' ? 'page' : undefined}>DIRF - Protheus</button>}
+                  {canAccessPage('rubrica-id-calculo', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-id-calculo')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'page' : undefined}>ID CÁLCULO - Protheus</button>
-                  <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-regra' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-id-calculo' ? 'page' : undefined}>ID CÁLCULO - Protheus</button>}
+                  {canAccessPage('rubrica-regra', currentUser) && <button type="button" className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-regra' ? 'sidebar__sublink--active' : ''}`} onClick={() => {
                     setSelectedRubricaCatalogKey('rubrica-regra')
                     setOpenSidebarSubmenu('rubricas-cadastros')
                     setShowSourceMenu(false)
-                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-regra' ? 'page' : undefined}>Tabela de Regra</button>
+                  }} aria-current={selectedRubricaCatalogKey === 'rubrica-regra' ? 'page' : undefined}>Tabela de Regra</button>}
                 </div>
               )}
-              <button
+              {canAccessPage('rubrica-regra-comparacao', currentUser) && <button
                 type="button"
                 className={`sidebar__sublink ${selectedRubricaCatalogKey === 'rubrica-regra-comparacao' ? 'sidebar__sublink--active' : ''}`}
                 onClick={() => {
@@ -1168,7 +1229,7 @@ function App() {
                 aria-current={selectedRubricaCatalogKey === 'rubrica-regra-comparacao' ? 'page' : undefined}
               >
                 Comparação Tabela de Regra
-              </button>
+              </button>}
             </div>
           )}
           {canAccessPage('user-admin', currentUser) && (

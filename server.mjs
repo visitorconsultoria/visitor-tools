@@ -477,6 +477,17 @@ function parseDailyActivityIdInput(value) {
   return id
 }
 
+function parseDailyActivityAtendimentoIdInput(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+
+  const id = Number(text)
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('ID do atendimento invalido.')
+  }
+  return id
+}
+
 function normalizeDailyActivityRow(row) {
   return {
     id: Number(row.id ?? 0),
@@ -486,6 +497,7 @@ function normalizeDailyActivityRow(row) {
     hours: String(row.hours ?? ''),
     notes: String(row.notes ?? ''),
     demand: String(row.demand ?? ''),
+    atendimentoId: row.atendimento_id == null ? null : Number(row.atendimento_id),
   }
 }
 
@@ -497,6 +509,7 @@ function parseDailyActivityPayload(payload) {
     hours: String(payload.hours ?? '').replace(',', '.').trim(),
     notes: String(payload.notes ?? '').trim(),
     demand: String(payload.demand ?? '').trim(),
+    atendimentoId: parseDailyActivityAtendimentoIdInput(payload.atendimentoId ?? payload.atendimento_id),
   }
 }
 
@@ -516,12 +529,32 @@ function validateDailyActivityPayload(parsed) {
   }
 }
 
+async function validateDailyActivityAtendimento(parsed) {
+  if (!parsed.atendimentoId) return
+
+  const { client, centralServicosAtendimentosTable } = getSupabaseClient()
+  const { data: atendimento, error } = await client
+    .from(centralServicosAtendimentosTable)
+    .select('id, responsavel, status')
+    .eq('id', parsed.atendimentoId)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!atendimento) throw new Error('Atendimento nao encontrado.')
+  if (!['open', 'in_progress'].includes(String(atendimento.status || ''))) {
+    throw new Error('Somente atendimentos abertos ou em andamento podem ser vinculados.')
+  }
+  if (String(atendimento.responsavel || '').trim().toLowerCase() !== parsed.resource.trim().toLowerCase()) {
+    throw new Error('O atendimento selecionado nao pertence ao recurso informado.')
+  }
+}
+
 async function listDailyActivities(scope) {
   const { client, dailyActivitiesTable } = getSupabaseClient()
 
   let query = client
     .from(dailyActivitiesTable)
-    .select('id, date, resource, activity, hours, notes, demand, created_at')
+    .select('id, date, resource, activity, hours, notes, demand, atendimento_id, created_at')
     .order('date', { ascending: false })
     .order('id', { ascending: false })
 
@@ -544,6 +577,7 @@ async function createDailyActivity(payload, scope) {
     parsed.resource = scope.resourceName
   }
   validateDailyActivityPayload(parsed)
+  await validateDailyActivityAtendimento(parsed)
 
   const { client, dailyActivitiesTable } = getSupabaseClient()
   const insertPayload = {
@@ -553,12 +587,13 @@ async function createDailyActivity(payload, scope) {
     hours: Number(parsed.hours),
     notes: parsed.notes,
     demand: parsed.demand,
+    atendimento_id: parsed.atendimentoId,
   }
 
   const { data: row, error } = await client
     .from(dailyActivitiesTable)
     .insert(insertPayload)
-    .select('id, date, resource, activity, hours, notes, demand')
+    .select('id, date, resource, activity, hours, notes, demand, atendimento_id')
     .single()
 
   if (error) {
@@ -574,6 +609,7 @@ async function updateDailyActivity(id, payload, scope) {
     parsed.resource = scope.resourceName
   }
   validateDailyActivityPayload(parsed)
+  await validateDailyActivityAtendimento(parsed)
 
   const { client, dailyActivitiesTable } = getSupabaseClient()
 
@@ -601,13 +637,14 @@ async function updateDailyActivity(id, payload, scope) {
     hours: Number(parsed.hours),
     notes: parsed.notes,
     demand: parsed.demand,
+    atendimento_id: parsed.atendimentoId,
   }
 
   const { data: row, error } = await client
     .from(dailyActivitiesTable)
     .update(updatePayload)
     .eq('id', id)
-    .select('id, date, resource, activity, hours, notes, demand')
+    .select('id, date, resource, activity, hours, notes, demand, atendimento_id')
     .single()
 
   if (error) {
@@ -4003,13 +4040,21 @@ function validateCentralServicosAtendimentoPayload(parsed) {
   }
 }
 
-async function listCentralServicosAtendimentos() {
+async function listCentralServicosAtendimentos(resourceName = '') {
   const { client, centralServicosAtendimentosTable } = getSupabaseClient()
-  const { data: rows, error } = await client
+  let query = client
     .from(centralServicosAtendimentosTable)
     .select('id, numero, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes')
     .order('data', { ascending: false })
     .order('id', { ascending: false })
+
+  if (resourceName.trim()) {
+    query = query.ilike('responsavel', resourceName.trim())
+  }
+
+  query = query.in('status', ['open', 'in_progress'])
+
+  const { data: rows, error } = await query
 
   if (error) throw new Error(error.message)
   return (rows || []).map(normalizeCentralServicosAtendimentoRow)
@@ -4045,9 +4090,10 @@ async function deleteCentralServicosAtendimento(id) {
   await deleteCentralServicosItem(centralServicosAtendimentosTable, id)
 }
 
-app.get('/api/central-servicos/atendimentos', async (_req, res) => {
+app.get('/api/central-servicos/atendimentos', async (req, res) => {
   try {
-    const items = await listCentralServicosAtendimentos()
+    const resourceName = String(req.query.resource || '').trim()
+    const items = await listCentralServicosAtendimentos(resourceName)
     return res.json({ items })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'

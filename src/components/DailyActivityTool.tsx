@@ -10,6 +10,7 @@ type DailyActivityRow = {
   hours: string
   notes: string
   demand: string
+  atendimentoId: string
 }
 
 type DailyActivityForm = {
@@ -19,12 +20,21 @@ type DailyActivityForm = {
   hours: string
   notes: string
   demand: string
+  atendimentoId: string
 }
 
 type DailyDemandOption = {
   id: number
   number: string
   client: string
+}
+
+type DailyAtendimentoOption = {
+  id: number
+  numero: string
+  cliente: string
+  descricao: string
+  status: string
 }
 
 type DailyActivityToolProps = {
@@ -46,6 +56,7 @@ const EMPTY_FORM: DailyActivityForm = {
   hours: '',
   notes: '',
   demand: '',
+  atendimentoId: '',
 }
 
 function getCurrentMonthKey(): string {
@@ -115,6 +126,7 @@ function normalizeActivityResponse(input: unknown): DailyActivityRow {
     hours: String(row.hours ?? ''),
     notes: String(row.notes ?? ''),
     demand: String(row.demand ?? ''),
+    atendimentoId: row.atendimentoId == null ? '' : String(row.atendimentoId),
   }
 }
 
@@ -131,6 +143,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
   const [success, setSuccess] = useState<string | null>(null)
   const [resourceOptions, setResourceOptions] = useState<string[]>([])
   const [demandOptions, setDemandOptions] = useState<DailyDemandOption[]>([])
+  const [atendimentoOptions, setAtendimentoOptions] = useState<DailyAtendimentoOption[]>([])
 
   const normalizedUsername = currentUsername.trim().toLowerCase()
   const loggedResourceName = currentDisplayName.trim() || currentUsername.trim()
@@ -249,6 +262,45 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
     if (!hasDigteDemandsAccess) return
     void fetchDemandOptions()
   }, [hasDigteDemandsAccess])
+
+  useEffect(() => {
+    const resource = form.resource.trim() || loggedResourceName.trim()
+    if (!isModalOpen || !resource) {
+      setAtendimentoOptions([])
+      return
+    }
+
+    const fetchAtendimentoOptions = async () => {
+      try {
+        const response = await fetch(apiUrl(`/api/central-servicos/atendimentos?resource=${encodeURIComponent(resource)}`))
+        if (!response.ok) return
+        const data = await response.json() as { items?: unknown[] }
+        const options = (Array.isArray(data.items) ? data.items : [])
+          .map((input) => {
+            const atendimento = input as Partial<DailyAtendimentoOption>
+            return {
+              id: Number(atendimento.id ?? 0),
+              numero: String(atendimento.numero ?? ''),
+              cliente: String(atendimento.cliente ?? ''),
+              descricao: String(atendimento.descricao ?? ''),
+              status: String(atendimento.status ?? ''),
+            }
+          })
+          .filter((atendimento) => atendimento.id > 0 && (atendimento.status === 'open' || atendimento.status === 'in_progress'))
+        setAtendimentoOptions(options)
+        setForm((previous) => (
+          previous.atendimentoId && !options.some((option) => String(option.id) === previous.atendimentoId)
+            ? { ...previous, atendimentoId: '' }
+            : previous
+        ))
+      } catch {
+        setAtendimentoOptions([])
+        setForm((previous) => ({ ...previous, atendimentoId: '' }))
+      }
+    }
+
+    void fetchAtendimentoOptions()
+  }, [form.resource, isModalOpen, loggedResourceName])
 
   const monthItems = useMemo(() => {
     if (!monthFilter) return items
@@ -370,6 +422,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       hours: item.hours,
       notes: item.notes,
       demand: item.demand,
+      atendimentoId: item.atendimentoId,
     })
     setIsModalOpen(true)
   }
@@ -436,6 +489,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
       hours: numericHours,
       notes: form.notes.trim(),
       demand: form.demand.trim(),
+      atendimentoId: form.atendimentoId,
     }
 
     try {
@@ -540,6 +594,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                 <th>Atividade</th>
                 <th>Horas</th>
                 {hasDigteDemandsAccess && <th>Demanda</th>}
+                <th>Atendimento</th>
                 <th>Observacoes</th>
                 <th>Acoes</th>
               </tr>
@@ -553,6 +608,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                   <td>{item.activity}</td>
                   <td>{formatHoursValue(parseHoursValue(item.hours))}</td>
                   {hasDigteDemandsAccess && <td>{item.demand || '-'}</td>}
+                  <td>{item.atendimentoId || '-'}</td>
                   <td>{item.notes || '-'}</td>
                   <td>
                     <div className="ch-row-actions ch-row-actions--icons">
@@ -635,6 +691,17 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                   </select>
                 </label>
               )}
+              <label>
+                Atendimento
+                <select value={form.atendimentoId} onChange={(event) => setFormValue('atendimentoId', event.target.value)}>
+                  <option value="">Sem atendimento vinculado</option>
+                  {atendimentoOptions.map((atendimento) => (
+                    <option key={atendimento.id} value={atendimento.id}>
+                      {atendimento.numero || `Atendimento ${atendimento.id}`}{atendimento.cliente ? ` - ${atendimento.cliente}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="estimativas-form__full">
                 Observacoes
                 <textarea rows={2} value={form.notes} onChange={(event) => setFormValue('notes', event.target.value)} placeholder="Informacoes adicionais" />

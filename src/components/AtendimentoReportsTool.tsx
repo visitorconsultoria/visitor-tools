@@ -31,6 +31,10 @@ type AtendimentoForm = {
   observacoes: string
 }
 
+type AtendimentoReportsToolProps = {
+  resourceOptions?: string[]
+}
+
 const EMPTY_FORM: AtendimentoForm = {
   numero: '',
   data: '',
@@ -156,7 +160,7 @@ function generateNextNumber(items: AtendimentoRow[]): string {
   return `${prefix}${next}`
 }
 
-export default function AtendimentoReportsTool() {
+export default function AtendimentoReportsTool({ resourceOptions = [] }: AtendimentoReportsToolProps) {
   const [items, setItems] = useState<AtendimentoRow[]>([])
   const [clientOptions, setClientOptions] = useState<string[]>([])
   const [search, setSearch] = useState('')
@@ -753,13 +757,19 @@ export default function AtendimentoReportsTool() {
               </label>
               <label>
                 Responsável *
-                <input
-                  type="text"
+                <select
                   value={form.responsavel}
                   onChange={(e) => handleFormChange('responsavel', e.target.value)}
-                  placeholder="Responsável pelo atendimento"
                   required
-                />
+                >
+                  <option value="">Selecione o recurso</option>
+                  {form.responsavel && !resourceOptions.includes(form.responsavel) && (
+                    <option value={form.responsavel}>{form.responsavel}</option>
+                  )}
+                  {resourceOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
               </label>
               <div className="estimativas-form__full" style={{ display: 'grid', gap: '0.38rem', fontSize: '0.88rem', fontWeight: 700, color: 'var(--ink-primary)' }}>
                 Descrição *

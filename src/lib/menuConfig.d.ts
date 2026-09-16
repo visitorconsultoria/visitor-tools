@@ -22,6 +22,7 @@ export type AllowedMenu =
   | 'rubrica-dirf'
   | 'rubrica-id-calculo'
   | 'rubrica-regra'
+  | 'rubrica-regra-comparacao'
   | 'user-admin'
   | 'change-password'
 
@@ -43,6 +44,7 @@ export declare const MENU_LABELS: Readonly<Record<AllowedMenu, string>>
 export declare const ALL_MENU_KEYS: readonly AllowedMenu[]
 export declare const ASSIGNABLE_MENU_KEYS: readonly AssignableMenu[]
 export declare const ASSIGNABLE_MENU_OPTIONS: readonly AssignableMenuOption[]
+export declare const MENU_PARENT_KEYS: Readonly<Record<string, AllowedMenu>>
 export declare function isVisitorUsername(username: string): boolean
 export declare function normalizeMenuPermissions<TAllowedKey extends string = AssignableMenu>(
   value: unknown,

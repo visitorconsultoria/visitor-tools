@@ -9,6 +9,7 @@ type AtendimentoStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
 type AtendimentoRow = {
   id: number
   numero: string
+  titulo: string
   data: string
   tipo: string
   cliente: string
@@ -21,6 +22,7 @@ type AtendimentoRow = {
 
 type AtendimentoForm = {
   numero: string
+  titulo: string
   data: string
   tipo: string
   cliente: string
@@ -37,6 +39,7 @@ type AtendimentoReportsToolProps = {
 
 const EMPTY_FORM: AtendimentoForm = {
   numero: '',
+  titulo: '',
   data: '',
   tipo: '',
   cliente: '',
@@ -92,6 +95,7 @@ function normalizeAtendimentoResponse(input: unknown): AtendimentoRow {
   return {
     id: Number(row.id ?? 0),
     numero: String(row.numero ?? ''),
+    titulo: String(row.titulo ?? ''),
     data: String(row.data ?? ''),
     tipo: String(row.tipo ?? ''),
     cliente: String(row.cliente ?? ''),
@@ -227,7 +231,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
       .filter((item) => {
         if (statusFilter !== 'all' && item.status !== statusFilter) return false
         if (!term) return true
-        return [item.id, item.numero, item.data, item.tipo, item.cliente, item.solicitante, item.descricao, item.responsavel, item.observacoes]
+        return [item.id, item.numero, item.titulo, item.data, item.tipo, item.cliente, item.solicitante, item.descricao, item.responsavel, item.observacoes]
           .join(' ')
           .toLowerCase()
           .includes(term)
@@ -252,6 +256,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
     setEditingId(item.id)
     setForm({
       numero: item.numero,
+      titulo: item.titulo,
       data: normalizeDateInput(item.data),
       tipo: item.tipo,
       cliente: item.cliente,
@@ -410,6 +415,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
 
     const sheetRows = rows.map((item) => ({
       Número: item.numero,
+      Título: item.titulo,
       Data: toDisplayDate(item.data),
       Tipo: item.tipo,
       Cliente: item.cliente,
@@ -430,6 +436,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
           sheetName: 'Atendimentos',
           columns: [
             { header: 'Número', key: 'Número', width: 16 },
+            { header: 'Título', key: 'Título', width: 32 },
             { header: 'Data', key: 'Data', width: 14 },
             { header: 'Tipo', key: 'Tipo', width: 16 },
             { header: 'Cliente', key: 'Cliente', width: 28 },
@@ -518,6 +525,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
             <thead>
               <tr>
                 <th>Número</th>
+                <th>Título</th>
                 <th>Data</th>
                 <th>Tipo</th>
                 <th>Cliente</th>
@@ -532,6 +540,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
               {filteredItems.map((item) => (
                 <tr key={item.id}>
                   <td>{item.numero || `#${item.id}`}</td>
+                  <td>{item.titulo || '-'}</td>
                   <td>{toDisplayDate(item.data)}</td>
                   <td>{item.tipo || '-'}</td>
                   <td>{item.cliente || '-'}</td>
@@ -701,6 +710,15 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
                   onChange={(e) => handleFormChange('numero', e.target.value)}
                   placeholder="Gerado automaticamente"
                   style={editingId === null ? { background: '#f0f7f5', cursor: 'default' } : undefined}
+                />
+              </label>
+              <label className="estimativas-form__full">
+                Título
+                <input
+                  type="text"
+                  value={form.titulo}
+                  onChange={(e) => handleFormChange('titulo', e.target.value)}
+                  placeholder="Título do atendimento"
                 />
               </label>
               <label>

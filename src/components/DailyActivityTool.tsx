@@ -32,6 +32,7 @@ type DailyDemandOption = {
 type DailyAtendimentoOption = {
   id: number
   numero: string
+  titulo: string
   cliente: string
   descricao: string
   status: string
@@ -281,6 +282,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
             return {
               id: Number(atendimento.id ?? 0),
               numero: String(atendimento.numero ?? ''),
+              titulo: String(atendimento.titulo ?? ''),
               cliente: String(atendimento.cliente ?? ''),
               descricao: String(atendimento.descricao ?? ''),
               status: String(atendimento.status ?? ''),
@@ -697,7 +699,7 @@ export default function DailyActivityTool({ currentUsername, currentDisplayName 
                   <option value="">Sem atendimento vinculado</option>
                   {atendimentoOptions.map((atendimento) => (
                     <option key={atendimento.id} value={atendimento.id}>
-                      {atendimento.numero || `Atendimento ${atendimento.id}`}{atendimento.cliente ? ` - ${atendimento.cliente}` : ''}
+                      {[atendimento.numero || `Atendimento ${atendimento.id}`, atendimento.titulo, atendimento.cliente].filter(Boolean).join(' - ')}
                     </option>
                   ))}
                 </select>

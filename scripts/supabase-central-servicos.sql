@@ -235,6 +235,7 @@ create index if not exists idx_central_servicos_agendas_contrato
 create table if not exists public.central_servicos_atendimentos (
   id bigint generated always as identity primary key,
   numero text not null default '',
+  titulo text not null default '',
   data date,
   tipo text not null default '',
   cliente text not null default '',
@@ -246,6 +247,9 @@ create table if not exists public.central_servicos_atendimentos (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.central_servicos_atendimentos
+  add column if not exists titulo text not null default '';
 
 alter table public.central_servicos_atendimentos disable row level security;
 

@@ -4004,6 +4004,7 @@ function normalizeCentralServicosAtendimentoRow(row) {
   return {
     id: Number(row.id ?? 0),
     numero: String(row.numero ?? ''),
+    titulo: String(row.titulo ?? ''),
     data: String(row.data ?? ''),
     tipo: String(row.tipo ?? ''),
     cliente: String(row.cliente ?? ''),
@@ -4018,6 +4019,7 @@ function normalizeCentralServicosAtendimentoRow(row) {
 function parseCentralServicosAtendimentoPayload(payload) {
   return {
     numero: parseCentralServicosTextInput(payload?.numero),
+    titulo: parseCentralServicosTextInput(payload?.titulo),
     data: parseCentralServicosNullableDateInput(payload?.data),
     tipo: parseCentralServicosTextInput(payload?.tipo),
     cliente: parseCentralServicosTextInput(payload?.cliente),
@@ -4044,7 +4046,7 @@ async function listCentralServicosAtendimentos(resourceName = '') {
   const { client, centralServicosAtendimentosTable } = getSupabaseClient()
   let query = client
     .from(centralServicosAtendimentosTable)
-    .select('id, numero, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes')
+    .select('id, numero, titulo, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes')
     .order('data', { ascending: false })
     .order('id', { ascending: false })
 
@@ -4065,7 +4067,7 @@ async function createCentralServicosAtendimento(payload) {
   return createCentralServicosItem(
     centralServicosAtendimentosTable,
     payload,
-    'id, numero, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
+    'id, numero, titulo, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
     parseCentralServicosAtendimentoPayload,
     validateCentralServicosAtendimentoPayload,
     normalizeCentralServicosAtendimentoRow,
@@ -4078,7 +4080,7 @@ async function updateCentralServicosAtendimento(id, payload) {
     centralServicosAtendimentosTable,
     id,
     payload,
-    'id, numero, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
+    'id, numero, titulo, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
     parseCentralServicosAtendimentoPayload,
     validateCentralServicosAtendimentoPayload,
     normalizeCentralServicosAtendimentoRow,

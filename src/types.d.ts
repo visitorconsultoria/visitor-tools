@@ -32,6 +32,7 @@ export type AllowedMenu =
   | 'central-servicos-despesas'
   | 'central-servicos-faturamento'
   | 'central-servicos-pagamentos'
+  | 'central-servicos-controle-horas'
   | 'ticket-hub'
   | 'propostas'
   | 'rubricas-validacao'

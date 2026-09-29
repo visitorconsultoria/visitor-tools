@@ -91,6 +91,7 @@ const CENTRAL_SERVICOS_PAGES: Array<{ id: CentralServicosPage; label: string }> 
   { id: 'despesas', label: 'Despesas' },
   { id: 'faturamento', label: 'Faturamento' },
   { id: 'pagamentos', label: 'Pagamentos' },
+  { id: 'controle-horas', label: 'Controle de Banco de Horas' },
 ]
 
 const CUSTOMER_HUB_PERMISSION_PREFIX = 'customer-hub-'

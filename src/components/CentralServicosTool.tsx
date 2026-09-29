@@ -4,8 +4,9 @@ import { apiUrl } from '../lib/api'
 import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import RichTextEditor from './RichTextEditor'
 import AtendimentoReportsTool from './AtendimentoReportsTool'
+import ControleHorasTool from './ControleHorasTool'
 
-export type CentralServicosPage = 'dashboard' | 'agenda' | 'atendimentos' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos'
+export type CentralServicosPage = 'dashboard' | 'agenda' | 'atendimentos' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos' | 'controle-horas'
 
 type ApiListResponse = {
   items?: unknown[]
@@ -477,6 +478,12 @@ const PAGE_META: Record<CentralServicosPage, { title: string; description: strin
     emptyLabel: 'Pagamento',
     searchPlaceholder: 'Buscar por título, tipo, contrato ou status',
   },
+  'controle-horas': {
+    title: 'Controle de Banco de Horas',
+    description: 'Controle das horas contratadas pelo cliente, movimentos por consultor, custos, impostos e margem.',
+    emptyLabel: 'Controle',
+    searchPlaceholder: 'Buscar por título, cliente, competência ou consultor',
+  },
 }
 
 function readApiError(response: Response, fallback: string): Promise<never> {
@@ -525,6 +532,36 @@ function formatMonthKeyLabel(value: string): string {
   const [, year, month] = match
   const date = new Date(Number(year), Number(month) - 1, 1)
   return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+}
+
+type PeriodFilter = { mode: 'mes' | 'todos'; month: string }
+
+function getCurrentMonthKey(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+function createDefaultPeriodFilter(): PeriodFilter {
+  return { mode: 'mes', month: getCurrentMonthKey() }
+}
+
+function shiftMonthKey(monthKey: string, delta: number): string {
+  const match = String(monthKey || '').match(/^(\d{4})-(\d{2})$/)
+  const base = match ? new Date(Number(match[1]), Number(match[2]) - 1 + delta, 1) : new Date()
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}`
+}
+
+function toMonthKey(value: string): string {
+  const text = String(value || '').trim()
+  const iso = text.match(/^(\d{4})-(\d{2})/)
+  if (iso) return `${iso[1]}-${iso[2]}`
+  const br = text.match(/^\d{2}\/(\d{2})\/(\d{4})/)
+  return br ? `${br[2]}-${br[1]}` : ''
+}
+
+function matchesPeriodFilter(value: string, filter: PeriodFilter): boolean {
+  if (filter.mode === 'todos') return true
+  return toMonthKey(value) === filter.month
 }
 
 function compareText(a: string, b: string): number {
@@ -963,6 +1000,55 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [clientOptions, setClientOptions] = useState<string[]>([])
   const [resourceOptions, setResourceOptions] = useState<string[]>([])
   const [contractsForLinking, setContractsForLinking] = useState<ContractItem[]>([])
+  const [expensePeriod, setExpensePeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
+  const [invoicePeriod, setInvoicePeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
+  const [paymentPeriod, setPaymentPeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
+
+  const renderPeriodFilter = (
+    filter: PeriodFilter,
+    setFilter: (updater: (prev: PeriodFilter) => PeriodFilter) => void,
+    dateLabel: string,
+    visibleCount: number,
+    totalCount: number,
+  ) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--ink-secondary)' }}>Período ({dateLabel}):</span>
+      <select
+        value={filter.mode}
+        onChange={(event) => {
+          const mode = event.target.value === 'todos' ? 'todos' : 'mes'
+          setFilter((prev) => ({ ...prev, mode }))
+        }}
+        aria-label={`Visualização por ${dateLabel}`}
+        style={{ width: 'auto' }}
+      >
+        <option value="mes">Por mês</option>
+        <option value="todos">Todos os registros</option>
+      </select>
+      {filter.mode === 'mes' && (
+        <>
+          <button type="button" className="button-secondary" title="Mês anterior" aria-label="Mês anterior" onClick={() => setFilter((prev) => ({ ...prev, month: shiftMonthKey(prev.month, -1) }))}>‹</button>
+          <input
+            type="month"
+            value={filter.month}
+            onChange={(event) => {
+              const month = event.target.value || getCurrentMonthKey()
+              setFilter((prev) => ({ ...prev, month }))
+            }}
+            aria-label={`Mês de ${dateLabel}`}
+            style={{ width: 'auto' }}
+          />
+          <button type="button" className="button-secondary" title="Próximo mês" aria-label="Próximo mês" onClick={() => setFilter((prev) => ({ ...prev, month: shiftMonthKey(prev.month, 1) }))}>›</button>
+          {filter.month !== getCurrentMonthKey() && (
+            <button type="button" className="button-secondary" onClick={() => setFilter((prev) => ({ ...prev, month: getCurrentMonthKey() }))}>Mês atual</button>
+          )}
+        </>
+      )}
+      <span className="muted" style={{ marginLeft: 'auto', fontSize: '0.85rem' }}>
+        {visibleCount} de {totalCount} registro(s)
+      </span>
+    </div>
+  )
 
   const renderSortableHeader = (
     label: string,
@@ -1246,6 +1332,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     resetState()
 
     const load = async () => {
+      if (subPage === 'controle-horas') return
+
       if (subPage === 'atendimentos') {
         try {
           const resources = await loadCatalogItems('/api/central-servicos/recursos', (item: unknown) => {
@@ -3495,7 +3583,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
   const renderExpenseSection = () => {
     const term = expenseState.search.trim().toLowerCase()
-    const filteredItems = !term ? expenseState.items : expenseState.items.filter((item) => (
+    const periodItems = expenseState.items.filter((item) => matchesPeriodFilter(item.dataInicio, expensePeriod))
+    const filteredItems = !term ? periodItems : periodItems.filter((item) => (
         item.titulo.toLowerCase().includes(term)
         || item.relaciona.toLowerCase().includes(term)
         || item.tipoDespesa.toLowerCase().includes(term)
@@ -3822,6 +3911,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               </span>
               <input type="search" value={expenseState.search} onChange={(event) => expenseState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar despesa" />
             </label>
+            {renderPeriodFilter(expensePeriod, setExpensePeriod, 'data de início', sortedItems.length, expenseState.items.length)}
           </div>
           <div className="csv-table ch-table-theme">
             <table>
@@ -3928,7 +4018,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
   const renderInvoiceSection = () => {
     const term = invoiceState.search.trim().toLowerCase()
-    const filteredItems = !term ? invoiceState.items : invoiceState.items.filter((item) => (
+    const periodItems = invoiceState.items.filter((item) => matchesPeriodFilter(item.emissao, invoicePeriod))
+    const filteredItems = !term ? periodItems : periodItems.filter((item) => (
         item.titulo.toLowerCase().includes(term)
         || item.nota.toLowerCase().includes(term)
         || item.cliente.toLowerCase().includes(term)
@@ -4291,6 +4382,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               </span>
               <input type="search" value={invoiceState.search} onChange={(event) => invoiceState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar faturamento" />
             </label>
+            {renderPeriodFilter(invoicePeriod, setInvoicePeriod, 'emissão', sortedItems.length, invoiceState.items.length)}
           </div>
           <div className="csv-table ch-table-theme">
             <table>
@@ -4406,7 +4498,8 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
   const renderPaymentSection = () => {
     const term = paymentState.search.trim().toLowerCase()
-    const filteredItems = !term ? paymentState.items : paymentState.items.filter((item) => (
+    const periodItems = paymentState.items.filter((item) => matchesPeriodFilter(item.emissao, paymentPeriod))
+    const filteredItems = !term ? periodItems : periodItems.filter((item) => (
         item.titulo.toLowerCase().includes(term)
         || item.nota.toLowerCase().includes(term)
         || item.tipo.toLowerCase().includes(term)
@@ -4751,6 +4844,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               </span>
               <input type="search" value={paymentState.search} onChange={(event) => paymentState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar pagamento" />
             </label>
+            {renderPeriodFilter(paymentPeriod, setPaymentPeriod, 'emissão', sortedItems.length, paymentState.items.length)}
           </div>
           <div className="csv-table ch-table-theme">
             <table>
@@ -4864,6 +4958,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   if (subPage === 'dashboard') return renderDashboardSection()
   if (subPage === 'agenda') return renderAgendaSection()
   if (subPage === 'atendimentos') return <AtendimentoReportsTool resourceOptions={resourceOptions} />
+  if (subPage === 'controle-horas') return <ControleHorasTool />
   if (subPage === 'recursos') return renderResourceSection()
   if (subPage === 'contratos-servicos') return renderContractSection()
   if (subPage === 'despesas') return renderExpenseSection()

@@ -265,3 +265,33 @@ create index if not exists idx_central_servicos_atendimentos_status
 -- migration: add relaciona to existing installations
 alter table public.central_servicos_pagamentos
   add column if not exists relaciona text not null default '';
+
+-- Controle de Banco de Horas (movimentos vinculados ao cadastro de Recursos)
+create table if not exists public.central_servicos_controles_horas (
+  id bigint generated always as identity primary key,
+  titulo text not null default '',
+  cliente text not null default '',
+  contrato_id bigint,
+  contrato text not null default '',
+  competencia text not null default '',
+  horas_contratadas numeric(14,2),
+  valor_hora_cliente numeric(14,2),
+  valor_hora_consultor numeric(14,2),
+  percentual_impostos numeric(7,2),
+  percentual_margem numeric(7,2),
+  horas_reserva numeric(14,2),
+  consultores_pagos text[] not null default '{}',
+  movimentos jsonb not null default '[]'::jsonb,
+  observacoes text not null default '',
+  status text not null default 'Aberto' check (status in ('Aberto', 'Fechado')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.central_servicos_controles_horas disable row level security;
+
+create index if not exists idx_central_servicos_controles_horas_cliente
+  on public.central_servicos_controles_horas (cliente);
+
+create index if not exists idx_central_servicos_controles_horas_competencia
+  on public.central_servicos_controles_horas (competencia);

@@ -77,6 +77,7 @@ function getSupabaseConfig() {
     centralServicosPagamentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_PAGAMENTOS_TABLE || 'central_servicos_pagamentos',
     centralServicosAgendasTable: process.env.SUPABASE_CENTRAL_SERVICOS_AGENDAS_TABLE || 'central_servicos_agendas',
     centralServicosAtendimentosTable: process.env.SUPABASE_CENTRAL_SERVICOS_ATENDIMENTOS_TABLE || 'central_servicos_atendimentos',
+    centralServicosControlesHorasTable: process.env.SUPABASE_CENTRAL_SERVICOS_CONTROLES_HORAS_TABLE || 'central_servicos_controles_horas',
     ticketHubAccessesTable: process.env.SUPABASE_TICKET_HUB_ACCESSES_TABLE || 'ticket_hub_accesses',
     propostasTable: process.env.SUPABASE_PROPOSTAS_TABLE || 'propostas_comerciais',
     devProjectsTable: process.env.SUPABASE_DEV_PROJECTS_TABLE || 'dev_projects',
@@ -136,6 +137,7 @@ function getSupabaseClient() {
     centralServicosPagamentosTable: config.centralServicosPagamentosTable,
     centralServicosAgendasTable: config.centralServicosAgendasTable,
     centralServicosAtendimentosTable: config.centralServicosAtendimentosTable,
+    centralServicosControlesHorasTable: config.centralServicosControlesHorasTable,
     ticketHubAccessesTable: config.ticketHubAccessesTable,
     propostasTable: config.propostasTable,
     devProjectsTable: config.devProjectsTable,
@@ -4132,6 +4134,212 @@ app.delete('/api/central-servicos/atendimentos/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir atendimento: ${detail}` })
+  }
+})
+
+// ---- Central de Serviços: Controle de Banco de Horas ----
+
+const CENTRAL_SERVICOS_CONTROLE_HORAS_STATUS = ['Aberto', 'Fechado']
+const CENTRAL_SERVICOS_CONTROLE_HORAS_TIPOS = ['Prévia', 'Débito']
+const CENTRAL_SERVICOS_CONTROLE_HORAS_COLUMNS = 'id, titulo, cliente, contrato_id, contrato, competencia, horas_contratadas, valor_hora_cliente, valor_hora_consultor, percentual_impostos, percentual_margem, horas_reserva, consultores_pagos, movimentos, observacoes, status, updated_at'
+
+function parseCentralServicosControleHorasIdInput(value) {
+  const id = Number(String(value ?? '').trim())
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('ID do controle invalido.')
+  }
+  return id
+}
+
+function toCentralServicosNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(String(value).replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeCentralServicosControleHorasMovimento(input, index) {
+  const item = input && typeof input === 'object' ? input : {}
+  const tipo = String(item.tipo ?? '').trim()
+  const recursoId = Number(item.recursoId ?? item.recurso_id)
+  return {
+    id: String(item.id ?? '').trim() || `mov-${index + 1}`,
+    movimento: String(item.movimento ?? '').trim() || 'AGENDA',
+    data: String(item.data ?? '').trim(),
+    tipo: CENTRAL_SERVICOS_CONTROLE_HORAS_TIPOS.includes(tipo) ? tipo : 'Prévia',
+    referencia: String(item.referencia ?? '').trim(),
+    recursoId: Number.isInteger(recursoId) && recursoId > 0 ? recursoId : null,
+    consultor: String(item.consultor ?? '').trim(),
+    horas: toCentralServicosNumberOrNull(item.horas) ?? 0,
+    valorHoraConsultor: toCentralServicosNumberOrNull(item.valorHoraConsultor ?? item.valor_hora_consultor),
+  }
+}
+
+function normalizeCentralServicosControleHorasRow(row) {
+  const status = String(row?.status ?? '').trim()
+  const movimentos = Array.isArray(row?.movimentos) ? row.movimentos : []
+  return {
+    id: Number(row?.id ?? 0),
+    titulo: String(row?.titulo ?? ''),
+    cliente: String(row?.cliente ?? ''),
+    contratoId: row?.contrato_id == null ? null : Number(row.contrato_id),
+    contrato: String(row?.contrato ?? ''),
+    competencia: String(row?.competencia ?? ''),
+    horasContratadas: toCentralServicosNumberOrNull(row?.horas_contratadas),
+    valorHoraCliente: toCentralServicosNumberOrNull(row?.valor_hora_cliente),
+    valorHoraConsultor: toCentralServicosNumberOrNull(row?.valor_hora_consultor),
+    percentualImpostos: toCentralServicosNumberOrNull(row?.percentual_impostos),
+    percentualMargem: toCentralServicosNumberOrNull(row?.percentual_margem),
+    horasReserva: toCentralServicosNumberOrNull(row?.horas_reserva),
+    consultoresPagos: Array.isArray(row?.consultores_pagos) ? row.consultores_pagos.map((v) => String(v)) : [],
+    movimentos: movimentos.map(normalizeCentralServicosControleHorasMovimento),
+    observacoes: String(row?.observacoes ?? ''),
+    status: CENTRAL_SERVICOS_CONTROLE_HORAS_STATUS.includes(status) ? status : 'Aberto',
+    updatedAt: String(row?.updated_at ?? ''),
+  }
+}
+
+function parseCentralServicosControleHorasPayload(payload) {
+  const status = parseCentralServicosTextInput(payload?.status)
+  const contratoId = Number(payload?.contratoId ?? payload?.contrato_id)
+  const movimentos = Array.isArray(payload?.movimentos) ? payload.movimentos : []
+  const pagos = Array.isArray(payload?.consultoresPagos) ? payload.consultoresPagos : []
+  return {
+    titulo: parseCentralServicosTextInput(payload?.titulo),
+    cliente: parseCentralServicosTextInput(payload?.cliente),
+    contrato_id: Number.isInteger(contratoId) && contratoId > 0 ? contratoId : null,
+    contrato: parseCentralServicosTextInput(payload?.contrato),
+    competencia: parseCentralServicosTextInput(payload?.competencia),
+    horas_contratadas: parseCentralServicosNullableNumberInput(payload?.horasContratadas),
+    valor_hora_cliente: parseCentralServicosNullableNumberInput(payload?.valorHoraCliente),
+    valor_hora_consultor: parseCentralServicosNullableNumberInput(payload?.valorHoraConsultor),
+    percentual_impostos: parseCentralServicosNullableNumberInput(payload?.percentualImpostos),
+    percentual_margem: parseCentralServicosNullableNumberInput(payload?.percentualMargem),
+    horas_reserva: parseCentralServicosNullableNumberInput(payload?.horasReserva),
+    consultores_pagos: Array.from(new Set(pagos.map((v) => String(v ?? '').trim()).filter(Boolean))),
+    movimentos: movimentos.map(normalizeCentralServicosControleHorasMovimento),
+    observacoes: parseCentralServicosTextInput(payload?.observacoes),
+    status: CENTRAL_SERVICOS_CONTROLE_HORAS_STATUS.includes(status) ? status : 'Aberto',
+  }
+}
+
+async function resolveCentralServicosControleHorasPayload(payload) {
+  const parsed = parseCentralServicosControleHorasPayload(payload)
+
+  const missing = []
+  if (!parsed.titulo) missing.push('titulo')
+  if (!parsed.cliente) missing.push('cliente')
+  if (missing.length) {
+    throw new Error(`Campos obrigatorios ausentes: ${missing.join(', ')}`)
+  }
+
+  // O consultor de cada movimento precisa existir no cadastro de Recursos.
+  const { client, centralServicosRecursosTable } = getSupabaseClient()
+  const { data: resources, error } = await client
+    .from(centralServicosRecursosTable)
+    .select('id, nome')
+
+  if (error) throw new Error(error.message)
+
+  const resourcesById = new Map((resources || []).map((row) => [Number(row.id), String(row.nome ?? '').trim()]))
+  const resourcesByName = new Map((resources || []).map((row) => [String(row.nome ?? '').trim().toLowerCase(), Number(row.id)]))
+
+  parsed.movimentos = parsed.movimentos.map((movimento, index) => {
+    let recursoId = movimento.recursoId
+    if (!recursoId && movimento.consultor) {
+      recursoId = resourcesByName.get(movimento.consultor.toLowerCase()) ?? null
+    }
+    const nome = recursoId ? resourcesById.get(recursoId) : undefined
+    if (!recursoId || !nome) {
+      throw new Error(`Movimento ${index + 1}: consultor nao encontrado no cadastro de Recursos.`)
+    }
+    if (!(movimento.horas > 0)) {
+      throw new Error(`Movimento ${index + 1}: informe a quantidade de horas.`)
+    }
+    return { ...movimento, recursoId, consultor: nome }
+  })
+
+  return parsed
+}
+
+async function listCentralServicosControlesHoras() {
+  const { client, centralServicosControlesHorasTable } = getSupabaseClient()
+  const { data: rows, error } = await client
+    .from(centralServicosControlesHorasTable)
+    .select(CENTRAL_SERVICOS_CONTROLE_HORAS_COLUMNS)
+    .order('competencia', { ascending: false })
+    .order('id', { ascending: false })
+
+  if (error) throw new Error(error.message)
+  return (rows || []).map(normalizeCentralServicosControleHorasRow)
+}
+
+async function createCentralServicosControleHoras(payload) {
+  const parsed = await resolveCentralServicosControleHorasPayload(payload)
+  const { client, centralServicosControlesHorasTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(centralServicosControlesHorasTable)
+    .insert(parsed)
+    .select(CENTRAL_SERVICOS_CONTROLE_HORAS_COLUMNS)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCentralServicosControleHorasRow(row)
+}
+
+async function updateCentralServicosControleHoras(id, payload) {
+  const parsed = await resolveCentralServicosControleHorasPayload(payload)
+  const { client, centralServicosControlesHorasTable } = getSupabaseClient()
+  const { data: row, error } = await client
+    .from(centralServicosControlesHorasTable)
+    .update({ ...parsed, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(CENTRAL_SERVICOS_CONTROLE_HORAS_COLUMNS)
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeCentralServicosControleHorasRow(row)
+}
+
+app.get('/api/central-servicos/controles-horas', async (_req, res) => {
+  try {
+    const items = await listCentralServicosControlesHoras()
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar controles de horas: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/controles-horas', async (req, res) => {
+  try {
+    const item = await createCentralServicosControleHoras(req.body || {})
+    return res.status(201).json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar controle de horas: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/controles-horas/:id', async (req, res) => {
+  try {
+    const id = parseCentralServicosControleHorasIdInput(req.params.id)
+    const item = await updateCentralServicosControleHoras(id, req.body || {})
+    return res.json({ ok: true, item })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao atualizar controle de horas: ${detail}` })
+  }
+})
+
+app.delete('/api/central-servicos/controles-horas/:id', async (req, res) => {
+  try {
+    const id = parseCentralServicosControleHorasIdInput(req.params.id)
+    const { centralServicosControlesHorasTable } = getSupabaseClient()
+    await deleteCentralServicosItem(centralServicosControlesHorasTable, id)
+    return res.json({ ok: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao excluir controle de horas: ${detail}` })
   }
 })
 

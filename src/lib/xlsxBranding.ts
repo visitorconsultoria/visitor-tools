@@ -109,6 +109,43 @@ const THIN_BORDER = {
   right: { style: 'thin', color: { argb: BRAND_BORDER_COLOR } },
 }
 
+export const BRAND_COLORS = Object.freeze({
+  title: BRAND_TITLE_FILL,
+  header: BRAND_HEADER_FILL,
+  stripe: BRAND_STRIPE_FILL,
+  border: BRAND_BORDER_COLOR,
+  white: WHITE,
+})
+
+function downloadWorkbookBuffer(buffer: ArrayBuffer, fileName: string): void {
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+export type CustomWorkbookContext = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  workbook: any
+  logoImageId: number
+}
+
+/** Gera uma planilha com layout livre, reaproveitando o carregamento do ExcelJS e o logo da marca. */
+export async function exportCustomWorkbook(fileName: string, build: (context: CustomWorkbookContext) => void): Promise<void> {
+  const [ExcelJSRuntime, logoBase64] = await Promise.all([loadExcelJSRuntime(), loadLogoBase64()])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const workbook = new ExcelJSRuntime.Workbook() as any
+  const logoImageId = workbook.addImage({ base64: logoBase64, extension: 'png' }) as number
+  build({ workbook, logoImageId })
+  const buffer = await workbook.xlsx.writeBuffer()
+  downloadWorkbookBuffer(buffer, fileName)
+}
+
 export async function exportBrandedWorkbook(options: BrandedWorkbookOptions): Promise<void> {
   const { fileName, title, subtitle, sheets } = options
   const [ExcelJSRuntime, logoBase64] = await Promise.all([loadExcelJSRuntime(), loadLogoBase64()])
@@ -182,13 +219,5 @@ export async function exportBrandedWorkbook(options: BrandedWorkbookOptions): Pr
   })
 
   const buffer = await workbook.xlsx.writeBuffer()
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
+  downloadWorkbookBuffer(buffer, fileName)
 }

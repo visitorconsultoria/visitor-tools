@@ -7,6 +7,7 @@ import RichTextEditor from './RichTextEditor'
 import AtendimentoReportsTool from './AtendimentoReportsTool'
 import ControleHorasTool from './ControleHorasTool'
 import InvoiceRepassesTab from './InvoiceRepassesTab'
+import SpreadsheetExportChoiceDialog from './SpreadsheetExportChoiceDialog'
 
 export type CentralServicosPage = 'dashboard' | 'agenda' | 'atendimentos' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos' | 'controle-horas'
 
@@ -977,6 +978,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [resourceEditorOpen, setResourceEditorOpen] = useState(false)
   const [resourceIsViewMode, setResourceIsViewMode] = useState(false)
   const [resourceSort, setResourceSort] = useState<{ key: ResourceSortKey; direction: SortDirection }>(RESOURCE_DEFAULT_SORT)
+  const [resourceExportChoiceOpen, setResourceExportChoiceOpen] = useState(false)
   const [resourceExportOpen, setResourceExportOpen] = useState(false)
   const [resourceExportFilters, setResourceExportFilters] = useState<ResourceExportFilters>(EMPTY_RESOURCE_EXPORT_FILTERS)
   const contractState = useCatalogState<ContractItem, ContractForm>(EMPTY_CONTRACT_FORM)
@@ -985,6 +987,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [contractEditorTab, setContractEditorTab] = useState<'dados' | 'faturamento'>('dados')
   const [contractVersioningFromId, setContractVersioningFromId] = useState<number | null>(null)
   const [contractSort, setContractSort] = useState<{ key: ContractSortKey; direction: SortDirection }>(CONTRACT_DEFAULT_SORT)
+  const [contractExportChoiceOpen, setContractExportChoiceOpen] = useState(false)
   const [contractExportOpen, setContractExportOpen] = useState(false)
   const [contractExportFilters, setContractExportFilters] = useState<ContractExportFilters>(EMPTY_CONTRACT_EXPORT_FILTERS)
   const [contractExportRelacionaDropdownOpen, setContractExportRelacionaDropdownOpen] = useState(false)
@@ -993,6 +996,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [expenseEditorOpen, setExpenseEditorOpen] = useState(false)
   const [expenseIsViewMode, setExpenseIsViewMode] = useState(false)
   const [expenseSort, setExpenseSort] = useState<{ key: ExpenseSortKey; direction: SortDirection }>(EXPENSE_DEFAULT_SORT)
+  const [expenseExportChoiceOpen, setExpenseExportChoiceOpen] = useState(false)
   const [expenseExportOpen, setExpenseExportOpen] = useState(false)
   const [expenseExportFilters, setExpenseExportFilters] = useState<ExpenseExportFilters>(EMPTY_EXPENSE_EXPORT_FILTERS)
   const [expenseExportRelacionaDropdownOpen, setExpenseExportRelacionaDropdownOpen] = useState(false)
@@ -1004,6 +1008,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [invoiceRepassesBusy, setInvoiceRepassesBusy] = useState(false)
   const [invoiceIsViewMode, setInvoiceIsViewMode] = useState(false)
   const [invoiceSort, setInvoiceSort] = useState<{ key: InvoiceSortKey; direction: SortDirection }>(INVOICE_DEFAULT_SORT)
+  const [invoiceExportChoiceOpen, setInvoiceExportChoiceOpen] = useState(false)
   const [invoiceExportOpen, setInvoiceExportOpen] = useState(false)
   const [invoiceExportFilters, setInvoiceExportFilters] = useState<InvoiceExportFilters>(EMPTY_INVOICE_EXPORT_FILTERS)
   const [invoiceExportClientDropdownOpen, setInvoiceExportClientDropdownOpen] = useState(false)
@@ -1014,6 +1019,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [paymentEditorOpen, setPaymentEditorOpen] = useState(false)
   const [paymentIsViewMode, setPaymentIsViewMode] = useState(false)
   const [paymentSort, setPaymentSort] = useState<{ key: PaymentSortKey; direction: SortDirection }>(PAYMENT_DEFAULT_SORT)
+  const [paymentExportChoiceOpen, setPaymentExportChoiceOpen] = useState(false)
   const [paymentExportOpen, setPaymentExportOpen] = useState(false)
   const [paymentExportFilters, setPaymentExportFilters] = useState<PaymentExportFilters>(EMPTY_PAYMENT_EXPORT_FILTERS)
   const [paymentExportResourceDropdownOpen, setPaymentExportResourceDropdownOpen] = useState(false)
@@ -1122,6 +1128,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setResourceEditorOpen(false)
     setResourceIsViewMode(false)
     setResourceSort(RESOURCE_DEFAULT_SORT)
+    setResourceExportChoiceOpen(false)
     setResourceExportOpen(false)
     setResourceExportFilters(EMPTY_RESOURCE_EXPORT_FILTERS)
     resourceState.setError(null)
@@ -1135,6 +1142,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setContractEditorTab('dados')
     setContractVersioningFromId(null)
     setContractSort(CONTRACT_DEFAULT_SORT)
+    setContractExportChoiceOpen(false)
     setContractExportOpen(false)
     setContractExportFilters(EMPTY_CONTRACT_EXPORT_FILTERS)
     setContractExportRelacionaDropdownOpen(false)
@@ -1147,6 +1155,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setExpenseEditorOpen(false)
     setExpenseIsViewMode(false)
     setExpenseSort(EXPENSE_DEFAULT_SORT)
+    setExpenseExportChoiceOpen(false)
     setExpenseExportOpen(false)
     setExpenseExportFilters(EMPTY_EXPENSE_EXPORT_FILTERS)
     setExpenseExportRelacionaDropdownOpen(false)
@@ -1162,6 +1171,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setInvoiceRepassesBusy(false)
     setInvoiceIsViewMode(false)
     setInvoiceSort(INVOICE_DEFAULT_SORT)
+    setInvoiceExportChoiceOpen(false)
     setInvoiceExportOpen(false)
     setInvoiceExportFilters(EMPTY_INVOICE_EXPORT_FILTERS)
     setInvoiceExportClientDropdownOpen(false)
@@ -1178,6 +1188,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setPaymentEditorOpen(false)
     setPaymentIsViewMode(false)
     setPaymentSort(PAYMENT_DEFAULT_SORT)
+    setPaymentExportChoiceOpen(false)
     setPaymentExportOpen(false)
     setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
     setPaymentExportResourceDropdownOpen(false)
@@ -2796,9 +2807,11 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       resourceState.setItems(await loadCatalogItems('/api/central-servicos/recursos', normalizeResource))
     }
 
-    const handleGenerateResourceSpreadsheet = async () => {
+    const handleGenerateResourceSpreadsheet = async (useTableFilters = false) => {
       const { status } = resourceExportFilters
-      const rows = resourceState.items.filter((item) => status.length === 0 || status.includes(item.status))
+      const rows = useTableFilters
+        ? sortedItems
+        : resourceState.items.filter((item) => status.length === 0 || status.includes(item.status))
 
       const sheetRows = rows.map((item) => ({
         Nome: item.nome,
@@ -2838,6 +2851,23 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     return (
       <div className="customer-hub central-servicos">
+        {resourceExportChoiceOpen && createPortal(
+          <SpreadsheetExportChoiceDialog
+            routineName="recursos"
+            filteredRowCount={sortedItems.length}
+            onExportFilteredRows={() => {
+              setResourceExportChoiceOpen(false)
+              void handleGenerateResourceSpreadsheet(true)
+            }}
+            onConfigureFilters={() => {
+              setResourceExportChoiceOpen(false)
+              setResourceExportFilters(EMPTY_RESOURCE_EXPORT_FILTERS)
+              setResourceExportOpen(true)
+            }}
+            onCancel={() => setResourceExportChoiceOpen(false)}
+          />,
+          document.body,
+        )}
         {resourceExportOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="resource-export-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -2975,8 +3005,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 + Novo Recurso
               </button>
               <button type="button" className="button-secondary" onClick={() => {
-                setResourceExportFilters(EMPTY_RESOURCE_EXPORT_FILTERS)
-                setResourceExportOpen(true)
+                setResourceExportChoiceOpen(true)
               }}>
                 Gerar Planilha
               </button>
@@ -3142,12 +3171,12 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     const contractRelacionaOptions = Array.from(new Set(contractState.items.map((item) => item.relaciona).filter(Boolean))).sort((a, b) => compareText(a, b))
 
-    const handleGenerateContractSpreadsheet = async () => {
+    const handleGenerateContractSpreadsheet = async (useTableFilters = false) => {
       const { tipos, relaciona, status, vigenciaDe, vigenciaAte } = contractExportFilters
       const vigenciaDeStamp = vigenciaDe ? toSortableDate(vigenciaDe) : null
       const vigenciaAteStamp = vigenciaAte ? toSortableDate(vigenciaAte) : null
 
-      const rows = contractState.items.filter((item) => {
+      const rows = useTableFilters ? sortedItems : contractState.items.filter((item) => {
         if (tipos.length > 0 && !tipos.includes(item.tipo)) return false
         if (relaciona.length > 0 && !relaciona.includes(item.relaciona)) return false
         if (status.length > 0 && !status.includes(item.status)) return false
@@ -3205,6 +3234,24 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     return (
       <div className="customer-hub central-servicos">
+        {contractExportChoiceOpen && createPortal(
+          <SpreadsheetExportChoiceDialog
+            routineName="contratos e serviços"
+            filteredRowCount={sortedItems.length}
+            onExportFilteredRows={() => {
+              setContractExportChoiceOpen(false)
+              void handleGenerateContractSpreadsheet(true)
+            }}
+            onConfigureFilters={() => {
+              setContractExportChoiceOpen(false)
+              setContractExportFilters(EMPTY_CONTRACT_EXPORT_FILTERS)
+              setContractExportRelacionaDropdownOpen(false)
+              setContractExportOpen(true)
+            }}
+            onCancel={() => setContractExportChoiceOpen(false)}
+          />,
+          document.body,
+        )}
         {contractExportOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="contract-export-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -3486,9 +3533,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 + Novo Contrato
               </button>
               <button type="button" className="button-secondary" onClick={() => {
-                setContractExportFilters(EMPTY_CONTRACT_EXPORT_FILTERS)
-                setContractExportRelacionaDropdownOpen(false)
-                setContractExportOpen(true)
+                setContractExportChoiceOpen(true)
               }}>
                 Gerar Planilha
               </button>
@@ -3689,12 +3734,12 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     const expenseRelacionaOptions = Array.from(new Set(expenseState.items.map((item) => item.relaciona).filter(Boolean))).sort((a, b) => compareText(a, b))
 
-    const handleGenerateExpenseSpreadsheet = async () => {
+    const handleGenerateExpenseSpreadsheet = async (useTableFilters = false) => {
       const { tipos, relaciona, tiposDespesa, vigenciaDe, vigenciaAte } = expenseExportFilters
       const vigenciaDeStamp = vigenciaDe ? toSortableDate(vigenciaDe) : null
       const vigenciaAteStamp = vigenciaAte ? toSortableDate(vigenciaAte) : null
 
-      const rows = expenseState.items.filter((item) => {
+      const rows = useTableFilters ? sortedItems : expenseState.items.filter((item) => {
         if (tipos.length > 0 && !tipos.includes(item.tipo)) return false
         if (relaciona.length > 0 && !relaciona.includes(item.relaciona)) return false
         if (tiposDespesa.length > 0 && !tiposDespesa.includes(item.tipoDespesa)) return false
@@ -3750,6 +3795,24 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     return (
       <div className="customer-hub central-servicos">
+        {expenseExportChoiceOpen && createPortal(
+          <SpreadsheetExportChoiceDialog
+            routineName="despesas"
+            filteredRowCount={sortedItems.length}
+            onExportFilteredRows={() => {
+              setExpenseExportChoiceOpen(false)
+              void handleGenerateExpenseSpreadsheet(true)
+            }}
+            onConfigureFilters={() => {
+              setExpenseExportChoiceOpen(false)
+              setExpenseExportFilters(EMPTY_EXPENSE_EXPORT_FILTERS)
+              setExpenseExportRelacionaDropdownOpen(false)
+              setExpenseExportOpen(true)
+            }}
+            onCancel={() => setExpenseExportChoiceOpen(false)}
+          />,
+          document.body,
+        )}
         {expenseExportOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="expense-export-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -3979,9 +4042,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 + Nova Despesa
               </button>
               <button type="button" className="button-secondary" onClick={() => {
-                setExpenseExportFilters(EMPTY_EXPENSE_EXPORT_FILTERS)
-                setExpenseExportRelacionaDropdownOpen(false)
-                setExpenseExportOpen(true)
+                setExpenseExportChoiceOpen(true)
               }}>
                 Gerar Planilha
               </button>
@@ -4142,14 +4203,14 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
             .filter(Boolean),
         )).sort((a, b) => compareText(a, b))
 
-    const handleGenerateInvoiceSpreadsheet = async () => {
+    const handleGenerateInvoiceSpreadsheet = async (useTableFilters = false) => {
       const { clientes, contratos, emissaoDe, emissaoAte, previsaoDe, previsaoAte } = invoiceExportFilters
       const emissaoDeStamp = emissaoDe ? toSortableDate(emissaoDe) : null
       const emissaoAteStamp = emissaoAte ? toSortableDate(emissaoAte) : null
       const previsaoDeStamp = previsaoDe ? toSortableDate(previsaoDe) : null
       const previsaoAteStamp = previsaoAte ? toSortableDate(previsaoAte) : null
 
-      const rows = invoiceState.items.filter((item) => {
+      const rows = useTableFilters ? sortedItems : invoiceState.items.filter((item) => {
         if (clientes.length > 0 && item.cliente && !clientes.includes(item.cliente)) return false
         if (contratos.length > 0 && item.contrato && !contratos.includes(item.contrato)) return false
         if (emissaoDeStamp !== null && toSortableDate(item.emissao) < emissaoDeStamp) return false
@@ -4218,6 +4279,25 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     return (
       <div className="customer-hub central-servicos">
+        {invoiceExportChoiceOpen && createPortal(
+          <SpreadsheetExportChoiceDialog
+            routineName="faturamentos"
+            filteredRowCount={sortedItems.length}
+            onExportFilteredRows={() => {
+              setInvoiceExportChoiceOpen(false)
+              void handleGenerateInvoiceSpreadsheet(true)
+            }}
+            onConfigureFilters={() => {
+              setInvoiceExportChoiceOpen(false)
+              setInvoiceExportFilters(EMPTY_INVOICE_EXPORT_FILTERS)
+              setInvoiceExportClientDropdownOpen(false)
+              setInvoiceExportContractDropdownOpen(false)
+              setInvoiceExportOpen(true)
+            }}
+            onCancel={() => setInvoiceExportChoiceOpen(false)}
+          />,
+          document.body,
+        )}
         {invoiceExportOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-export-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -4501,10 +4581,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 + Novo Faturamento
               </button>
               <button type="button" className="button-secondary" onClick={() => {
-                setInvoiceExportFilters(EMPTY_INVOICE_EXPORT_FILTERS)
-                setInvoiceExportClientDropdownOpen(false)
-                setInvoiceExportContractDropdownOpen(false)
-                setInvoiceExportOpen(true)
+                setInvoiceExportChoiceOpen(true)
               }}>
                 Gerar Planilha
               </button>
@@ -4688,14 +4765,14 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     const paymentContractOptions = Array.from(new Set(paymentState.items.map((item) => item.contrato).filter(Boolean))).sort((a, b) => compareText(a, b))
 
-    const handleGeneratePaymentSpreadsheet = async () => {
+    const handleGeneratePaymentSpreadsheet = async (useTableFilters = false) => {
       const { recursos, contratos, emissaoDe, emissaoAte, previsaoDe, previsaoAte } = paymentExportFilters
       const emissaoDeStamp = emissaoDe ? toSortableDate(emissaoDe) : null
       const emissaoAteStamp = emissaoAte ? toSortableDate(emissaoAte) : null
       const previsaoDeStamp = previsaoDe ? toSortableDate(previsaoDe) : null
       const previsaoAteStamp = previsaoAte ? toSortableDate(previsaoAte) : null
 
-      const rows = paymentState.items.filter((item) => {
+      const rows = useTableFilters ? sortedItems : paymentState.items.filter((item) => {
         if (recursos.length > 0 && item.tipo === 'Recurso' && !recursos.includes(item.relaciona)) return false
         if (contratos.length > 0 && item.contrato && !contratos.includes(item.contrato)) return false
         if (emissaoDeStamp !== null && toSortableDate(item.emissao) < emissaoDeStamp) return false
@@ -4762,6 +4839,25 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
     return (
       <div className="customer-hub central-servicos">
+        {paymentExportChoiceOpen && createPortal(
+          <SpreadsheetExportChoiceDialog
+            routineName="pagamentos"
+            filteredRowCount={sortedItems.length}
+            onExportFilteredRows={() => {
+              setPaymentExportChoiceOpen(false)
+              void handleGeneratePaymentSpreadsheet(true)
+            }}
+            onConfigureFilters={() => {
+              setPaymentExportChoiceOpen(false)
+              setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
+              setPaymentExportResourceDropdownOpen(false)
+              setPaymentExportContractDropdownOpen(false)
+              setPaymentExportOpen(true)
+            }}
+            onCancel={() => setPaymentExportChoiceOpen(false)}
+          />,
+          document.body,
+        )}
         {paymentExportOpen && createPortal(
           <div className="estimativas-modal-overlay" role="presentation">
             <section className="estimativas-modal" role="dialog" aria-modal="true" aria-labelledby="payment-export-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -4993,10 +5089,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 + Novo Pagamento
               </button>
               <button type="button" className="button-secondary" onClick={() => {
-                setPaymentExportFilters(EMPTY_PAYMENT_EXPORT_FILTERS)
-                setPaymentExportResourceDropdownOpen(false)
-                setPaymentExportContractDropdownOpen(false)
-                setPaymentExportOpen(true)
+                setPaymentExportChoiceOpen(true)
               }}>
                 Gerar Planilha
               </button>

@@ -3064,6 +3064,39 @@ button:disabled {
   font-weight: 700;
 }
 
+.spreadsheet-export-choice__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.central-servicos .spreadsheet-export-choice__actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.3rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 72px;
+  height: auto;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  white-space: normal;
+}
+
+.spreadsheet-export-choice__actions button strong {
+  font-size: 0.98rem;
+}
+
+.spreadsheet-export-choice__actions button span {
+  font-size: 0.84rem;
+  font-weight: 400;
+  line-height: 1.4;
+  opacity: 0.88;
+}
+
 .invoice-repasses {
   min-width: 0;
 }

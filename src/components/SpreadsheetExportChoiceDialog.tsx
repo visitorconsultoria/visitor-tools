@@ -1,6 +1,5 @@
 type SpreadsheetExportChoiceDialogProps = {
   routineName: string
-  filteredRowCount: number
   onExportFilteredRows: () => void
   onConfigureFilters: () => void
   onCancel: () => void
@@ -8,7 +7,6 @@ type SpreadsheetExportChoiceDialogProps = {
 
 export default function SpreadsheetExportChoiceDialog({
   routineName,
-  filteredRowCount,
   onExportFilteredRows,
   onConfigureFilters,
   onCancel,
@@ -27,11 +25,9 @@ export default function SpreadsheetExportChoiceDialog({
           <div className="spreadsheet-export-choice__actions">
             <button type="button" className="button-primary" onClick={onExportFilteredRows}>
               <strong>Usar dados em tela</strong>
-              <span>{filteredRowCount} {filteredRowCount === 1 ? 'registro visível' : 'registros visíveis'} na tabela</span>
             </button>
             <button type="button" className="button-secondary" onClick={onConfigureFilters}>
               <strong>Usar filtros Avançados</strong>
-              <span>Definir critérios específicos para a planilha</span>
             </button>
           </div>
         </div>

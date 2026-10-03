@@ -2854,7 +2854,6 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         {resourceExportChoiceOpen && createPortal(
           <SpreadsheetExportChoiceDialog
             routineName="recursos"
-            filteredRowCount={sortedItems.length}
             onExportFilteredRows={() => {
               setResourceExportChoiceOpen(false)
               void handleGenerateResourceSpreadsheet(true)
@@ -3237,7 +3236,6 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         {contractExportChoiceOpen && createPortal(
           <SpreadsheetExportChoiceDialog
             routineName="contratos e serviços"
-            filteredRowCount={sortedItems.length}
             onExportFilteredRows={() => {
               setContractExportChoiceOpen(false)
               void handleGenerateContractSpreadsheet(true)
@@ -3798,7 +3796,6 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         {expenseExportChoiceOpen && createPortal(
           <SpreadsheetExportChoiceDialog
             routineName="despesas"
-            filteredRowCount={sortedItems.length}
             onExportFilteredRows={() => {
               setExpenseExportChoiceOpen(false)
               void handleGenerateExpenseSpreadsheet(true)
@@ -4282,7 +4279,6 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         {invoiceExportChoiceOpen && createPortal(
           <SpreadsheetExportChoiceDialog
             routineName="faturamentos"
-            filteredRowCount={sortedItems.length}
             onExportFilteredRows={() => {
               setInvoiceExportChoiceOpen(false)
               void handleGenerateInvoiceSpreadsheet(true)
@@ -4842,7 +4838,6 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         {paymentExportChoiceOpen && createPortal(
           <SpreadsheetExportChoiceDialog
             routineName="pagamentos"
-            filteredRowCount={sortedItems.length}
             onExportFilteredRows={() => {
               setPaymentExportChoiceOpen(false)
               void handleGeneratePaymentSpreadsheet(true)

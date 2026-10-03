@@ -1038,7 +1038,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [contractsForLinking, setContractsForLinking] = useState<ContractItem[]>([])
   const [expensePeriod, setExpensePeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
   const [invoicePeriod, setInvoicePeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
-  const [invoicePeriodField, setInvoicePeriodField] = useState<'emissao' | 'competencia'>('emissao')
+  const [invoicePeriodField, setInvoicePeriodField] = useState<'emissao' | 'competencia'>('competencia')
   const [paymentPeriod, setPaymentPeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
 
   const renderPeriodFilter = (

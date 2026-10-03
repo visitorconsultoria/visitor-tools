@@ -2,6 +2,7 @@
 import { createPortal } from 'react-dom'
 import { jsPDF } from 'jspdf'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 
 const STATUS_REPORT_PDF_LOGO_SRC = '/logo.png'
 
@@ -1488,7 +1489,7 @@ export default function CustomerHubTool({
   }
 
   const handleDeleteCliente = async (id: string) => {
-    if (!window.confirm('Excluir este cliente e todos os registros vinculados?')) return
+    if (!await confirmAction('Excluir este cliente e todos os registros vinculados?')) return
     try {
       const res = await fetch(apiUrl(`/api/customer-hub/clients/${id}`), { method: 'DELETE' })
       if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
@@ -1541,7 +1542,7 @@ export default function CustomerHubTool({
   }
 
   const handleDeleteContato = async (id: string) => {
-    if (!window.confirm('Excluir este contato?')) return
+    if (!await confirmAction('Excluir este contato?')) return
     try {
       const res = await fetch(apiUrl(`/api/customer-hub/contacts/${id}`), { method: 'DELETE' })
       if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
@@ -1575,7 +1576,7 @@ export default function CustomerHubTool({
   }
 
   const handleDeleteAcesso = async (id: string) => {
-    if (!window.confirm('Excluir este acesso?')) return
+    if (!await confirmAction('Excluir este acesso?')) return
     try {
       const res = await fetch(apiUrl(`/api/customer-hub/accesses/${id}`), {
         method: 'DELETE',
@@ -1608,7 +1609,7 @@ export default function CustomerHubTool({
   }
 
   const handleDeleteSistema = async (id: string) => {
-    if (!window.confirm('Excluir este sistema?')) return
+    if (!await confirmAction('Excluir este sistema?')) return
     try {
       const res = await fetch(apiUrl(`/api/customer-hub/systems/${id}`), { method: 'DELETE' })
       if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
@@ -1638,7 +1639,7 @@ export default function CustomerHubTool({
   }
 
   const handleDeleteProcesso = async (id: string) => {
-    if (!window.confirm('Excluir este processo?')) return
+    if (!await confirmAction('Excluir este processo?')) return
     try {
       const res = await fetch(apiUrl(`/api/customer-hub/processes/${id}`), { method: 'DELETE' })
       if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }
@@ -1668,7 +1669,7 @@ export default function CustomerHubTool({
   }
 
   const handleDeleteAtividade = async (id: string) => {
-    if (!window.confirm('Excluir esta atividade?')) return
+    if (!await confirmAction('Excluir esta atividade?')) return
     try {
       const res = await fetch(apiUrl(`/api/customer-hub/activities/${id}`), { method: 'DELETE' })
       if (!res.ok) { const b = await res.json(); throw new Error(b.error ?? `HTTP ${res.status}`) }

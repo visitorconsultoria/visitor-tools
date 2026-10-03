@@ -120,6 +120,11 @@ create table if not exists public.central_servicos_faturamentos (
   cliente text not null default '',
   contrato text not null default '',
   descricao text not null default '',
+  faturamento_corpo_nota text not null default '',
+  faturamento_documentos text not null default '',
+  faturamento_prazo_emissao text not null default '',
+  faturamento_data_vencimento date,
+  faturamento_codigo_servico text not null default '',
   quantidade numeric(14,2),
   valor numeric(14,2),
   status text not null default 'Pendente' check (status in ('Pendente', 'Faturado', 'Pago')),
@@ -133,6 +138,13 @@ alter table public.central_servicos_faturamentos
 
 alter table public.central_servicos_faturamentos
   add column if not exists quantidade numeric(14,2);
+
+alter table public.central_servicos_faturamentos
+  add column if not exists faturamento_corpo_nota text not null default '',
+  add column if not exists faturamento_documentos text not null default '',
+  add column if not exists faturamento_prazo_emissao text not null default '',
+  add column if not exists faturamento_data_vencimento date,
+  add column if not exists faturamento_codigo_servico text not null default '';
 
 create table if not exists public.central_servicos_pagamentos (
   id bigint generated always as identity primary key,

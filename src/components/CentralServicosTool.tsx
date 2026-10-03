@@ -1,10 +1,12 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import RichTextEditor from './RichTextEditor'
 import AtendimentoReportsTool from './AtendimentoReportsTool'
 import ControleHorasTool from './ControleHorasTool'
+import InvoiceRepassesTab from './InvoiceRepassesTab'
 
 export type CentralServicosPage = 'dashboard' | 'agenda' | 'atendimentos' | 'recursos' | 'contratos-servicos' | 'despesas' | 'faturamento' | 'pagamentos' | 'controle-horas'
 
@@ -23,7 +25,7 @@ type SortDirection = 'asc' | 'desc'
 type ResourceSortKey = 'nome' | 'cpf' | 'cnpj' | 'sexo' | 'status'
 type ContractSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoContrato' | 'valorUnitario' | 'status'
 type ExpenseSortKey = 'titulo' | 'tipo' | 'relaciona' | 'tipoDespesa' | 'valorUnitario'
-type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'valor' | 'status'
+type InvoiceSortKey = 'titulo' | 'nota' | 'cliente' | 'contrato' | 'emissao' | 'referencia' | 'valor' | 'status'
 type InvoiceExportFilters = {
   clientes: string[]
   contratos: string[]
@@ -176,7 +178,25 @@ type ExpenseForm = {
   observacoes: string
 }
 
-type InvoiceItem = {
+type InvoiceBillingDetails = {
+  faturamentoCorpoNota: string
+  faturamentoDocumentos: string
+  faturamentoPrazoEmissao: string
+  faturamentoDataVencimento: string
+  faturamentoCodigoServico: string
+}
+
+function copyInvoiceBillingDetails(source?: InvoiceBillingDetails): InvoiceBillingDetails {
+  return {
+    faturamentoCorpoNota: source?.faturamentoCorpoNota ?? '',
+    faturamentoDocumentos: source?.faturamentoDocumentos ?? '',
+    faturamentoPrazoEmissao: source?.faturamentoPrazoEmissao ?? '',
+    faturamentoDataVencimento: source?.faturamentoDataVencimento ?? '',
+    faturamentoCodigoServico: source?.faturamentoCodigoServico ?? '',
+  }
+}
+
+type InvoiceItem = InvoiceBillingDetails & {
   id: number
   contratoId: number | null
   titulo: string
@@ -193,7 +213,7 @@ type InvoiceItem = {
   dataPagamento: string
 }
 
-type InvoiceForm = {
+type InvoiceForm = InvoiceBillingDetails & {
   contratoId: string
   titulo: string
   nota: string
@@ -211,6 +231,7 @@ type InvoiceForm = {
 
 type PaymentItem = {
   id: number
+  repasseId: number | null
   titulo: string
   nota: string
   emissao: string
@@ -320,6 +341,7 @@ const EMPTY_EXPENSE_FORM: ExpenseForm = {
 }
 
 const EMPTY_INVOICE_FORM: InvoiceForm = {
+  ...copyInvoiceBillingDetails(),
   contratoId: '',
   titulo: '',
   nota: '',
@@ -486,16 +508,15 @@ const PAGE_META: Record<CentralServicosPage, { title: string; description: strin
   },
 }
 
-function readApiError(response: Response, fallback: string): Promise<never> {
-  return response
-    .json()
-    .then((payload) => {
-      const detail = (payload as { error?: string })?.error ?? fallback
-      throw new Error(detail)
-    })
-    .catch(() => {
-      throw new Error(response.statusText || fallback)
-    })
+async function readApiError(response: Response, fallback: string): Promise<never> {
+  let detail: string
+  try {
+    const payload = await response.json() as { error?: string }
+    detail = payload.error || fallback
+  } catch {
+    detail = response.statusText || fallback
+  }
+  throw new Error(detail)
 }
 
 function formatDateDisplay(value: string): string {
@@ -562,6 +583,12 @@ function toMonthKey(value: string): string {
 function matchesPeriodFilter(value: string, filter: PeriodFilter): boolean {
   if (filter.mode === 'todos') return true
   return toMonthKey(value) === filter.month
+}
+
+function matchesInvoiceSearch(item: InvoiceItem, search: string): boolean {
+  const term = search.trim().toLowerCase()
+  return !term || [item.titulo, item.nota, item.cliente, item.contrato, item.referencia, item.status]
+    .some((value) => value.toLowerCase().includes(term))
 }
 
 function compareText(a: string, b: string): number {
@@ -721,6 +748,11 @@ function normalizeInvoice(input: unknown): InvoiceItem | null {
       ? normalizeText(item.status) as InvoiceStatus
       : 'Pendente',
     dataPagamento: normalizeText(item.dataPagamento ?? (item as { data_pagamento?: unknown }).data_pagamento),
+    faturamentoCorpoNota: normalizeText(item.faturamentoCorpoNota),
+    faturamentoDocumentos: normalizeText(item.faturamentoDocumentos),
+    faturamentoPrazoEmissao: normalizeText(item.faturamentoPrazoEmissao),
+    faturamentoDataVencimento: normalizeText(item.faturamentoDataVencimento),
+    faturamentoCodigoServico: normalizeText(item.faturamentoCodigoServico),
   }
 }
 
@@ -732,6 +764,7 @@ function normalizePayment(input: unknown): PaymentItem | null {
 
   return {
     id,
+    repasseId: item.repasseId == null ? null : Number(item.repasseId),
     titulo,
     nota: normalizeText(item.nota),
     emissao: normalizeText(item.emissao),
@@ -966,6 +999,9 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const expenseExportRelacionaDropdownRef = useRef<HTMLDivElement | null>(null)
   const invoiceState = useCatalogState<InvoiceItem, InvoiceForm>(EMPTY_INVOICE_FORM)
   const [invoiceEditorOpen, setInvoiceEditorOpen] = useState(false)
+  const [invoiceEditorTab, setInvoiceEditorTab] = useState<'dados' | 'faturamento' | 'repasses'>('dados')
+  const [invoiceRepassesDirty, setInvoiceRepassesDirty] = useState(false)
+  const [invoiceRepassesBusy, setInvoiceRepassesBusy] = useState(false)
   const [invoiceIsViewMode, setInvoiceIsViewMode] = useState(false)
   const [invoiceSort, setInvoiceSort] = useState<{ key: InvoiceSortKey; direction: SortDirection }>(INVOICE_DEFAULT_SORT)
   const [invoiceExportOpen, setInvoiceExportOpen] = useState(false)
@@ -1002,6 +1038,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const [contractsForLinking, setContractsForLinking] = useState<ContractItem[]>([])
   const [expensePeriod, setExpensePeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
   const [invoicePeriod, setInvoicePeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
+  const [invoicePeriodField, setInvoicePeriodField] = useState<'emissao' | 'competencia'>('emissao')
   const [paymentPeriod, setPaymentPeriod] = useState<PeriodFilter>(createDefaultPeriodFilter)
 
   const renderPeriodFilter = (
@@ -1120,6 +1157,9 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     invoiceState.setForm(EMPTY_INVOICE_FORM)
     invoiceState.setEditingId(null)
     setInvoiceEditorOpen(false)
+    setInvoiceEditorTab('dados')
+    setInvoiceRepassesDirty(false)
+    setInvoiceRepassesBusy(false)
     setInvoiceIsViewMode(false)
     setInvoiceSort(INVOICE_DEFAULT_SORT)
     setInvoiceExportOpen(false)
@@ -1304,12 +1344,16 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setExpenseEditorOpen(false)
   }
 
-  const closeInvoiceEditor = () => {
-    if (invoiceState.isSaving) return
+  const closeInvoiceEditor = async () => {
+    if (invoiceState.isSaving || invoiceRepassesBusy) return
+    if (invoiceRepassesDirty && !await confirmAction('Descartar as alterações não salvas dos repasses?')) return
     invoiceState.setForm(EMPTY_INVOICE_FORM)
     invoiceState.setEditingId(null)
     setInvoiceIsViewMode(false)
     setInvoiceEditorOpen(false)
+    setInvoiceEditorTab('dados')
+    setInvoiceRepassesDirty(false)
+    setInvoiceRepassesBusy(false)
   }
 
   const closePaymentEditor = () => {
@@ -1708,6 +1752,12 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   const handleSaveInvoice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (invoiceIsViewMode) return
+    if (invoiceRepassesBusy) return
+    if (invoiceRepassesDirty && invoiceState.editingId !== null) {
+      invoiceState.setError('Salve os repasses antes de salvar os dados do faturamento.')
+      setInvoiceEditorTab('repasses')
+      return
+    }
     const { form, editingId } = invoiceState
     const titulo = form.titulo.trim()
     if (!titulo) {
@@ -1734,6 +1784,11 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       cliente: form.cliente.trim(),
       contrato: form.contrato.trim(),
       descricao: form.descricao.trim(),
+      faturamento_corpo_nota: form.faturamentoCorpoNota,
+      faturamento_documentos: form.faturamentoDocumentos,
+      faturamento_prazo_emissao: form.faturamentoPrazoEmissao.trim(),
+      faturamento_data_vencimento: parseNullableDate(form.faturamentoDataVencimento),
+      faturamento_codigo_servico: form.faturamentoCodigoServico.trim(),
       quantidade: linkedContract?.tipoContrato === 'Banco de Horas' ? parseNullableNumber(form.quantidade) : null,
       valor: parseNullableNumber(form.valor),
       status: form.status,
@@ -1751,11 +1806,36 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         await readApiError(response, 'Falha ao salvar faturamento.')
       }
 
-      invoiceState.setItems(await loadCatalogItems('/api/central-servicos/faturamentos', normalizeInvoice))
+      const data = await response.json() as { item?: unknown }
+      const saved = data.item ? normalizeInvoice(data.item) : null
+      if (!saved) throw new Error('A API não retornou o faturamento salvo. Recarregue a listagem antes de tentar novamente.')
+      invoiceState.setItems((prev) => {
+        const exists = prev.some((item) => item.id === saved.id)
+        return exists ? prev.map((item) => item.id === saved.id ? saved : item) : [...prev, saved]
+      })
+
+      const periodValue = invoicePeriodField === 'competencia' ? saved.referencia : saved.emissao
+      const adjustPeriod = !matchesPeriodFilter(periodValue, invoicePeriod)
+      const adjustSearch = !matchesInvoiceSearch(saved, invoiceState.search)
+      if (adjustPeriod) {
+        const month = toMonthKey(periodValue)
+        setInvoicePeriod((prev) => month ? { mode: 'mes', month } : { ...prev, mode: 'todos' })
+      }
+      if (adjustSearch) invoiceState.setSearch('')
+      const filterMessage = adjustPeriod || adjustSearch ? ' O filtro foi ajustado para exibir o faturamento salvo.' : ''
+
+      if (editingId === null && invoiceRepassesDirty) {
+        invoiceState.setEditingId(saved.id)
+        setInvoiceEditorTab('repasses')
+        invoiceState.setSuccess(`Faturamento cadastrado. Os repasses digitados foram mantidos; clique em Salvar repasses e depois em Confirmar repasses.${filterMessage}`)
+        return
+      }
+
       invoiceState.setForm(EMPTY_INVOICE_FORM)
       invoiceState.setEditingId(null)
       setInvoiceEditorOpen(false)
-      invoiceState.setSuccess(editingId ? 'Faturamento atualizado com sucesso.' : 'Faturamento cadastrado com sucesso.')
+      setInvoiceEditorTab('dados')
+      invoiceState.setSuccess(`${editingId ? 'Faturamento atualizado com sucesso.' : 'Faturamento cadastrado com sucesso.'}${filterMessage}`)
     } catch (saveError) {
       invoiceState.setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar faturamento.')
     } finally {
@@ -1824,7 +1904,10 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
     setSuccess: (value: string | null) => void,
   ) => {
     try {
-      if (typeof window !== 'undefined' && !window.confirm('Confirma a exclusão deste registro?')) {
+      const confirmationMessage = endpoint === '/api/central-servicos/faturamentos'
+        ? 'Confirma a exclusão do faturamento? Seus repasses e os pagamentos Pendentes vinculados também serão excluídos. Se houver pagamento Pago, a exclusão será bloqueada.'
+        : 'Confirma a exclusão deste registro?'
+      if (!await confirmAction(confirmationMessage)) {
         return
       }
 
@@ -3264,7 +3347,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               <form onSubmit={handleSaveContract} className="estimativas-form">
                 <div className="central-servicos-tabs estimativas-form__full" role="tablist" aria-label="Seções do contrato">
                   <button type="button" className={contractEditorTab === 'dados' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setContractEditorTab('dados')} role="tab" aria-selected={contractEditorTab === 'dados'}>Dados do contrato</button>
-                  <button type="button" className={contractEditorTab === 'faturamento' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setContractEditorTab('faturamento')} role="tab" aria-selected={contractEditorTab === 'faturamento'}>Detalhes do faturamento</button>
+                  <button type="button" className={contractEditorTab === 'faturamento' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setContractEditorTab('faturamento')} role="tab" aria-selected={contractEditorTab === 'faturamento'}>Detalhes para Faturamento</button>
                 </div>
                 {contractEditorTab === 'dados' && (
                   <>
@@ -4017,15 +4100,20 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   }
 
   const renderInvoiceSection = () => {
-    const term = invoiceState.search.trim().toLowerCase()
-    const periodItems = invoiceState.items.filter((item) => matchesPeriodFilter(item.emissao, invoicePeriod))
-    const filteredItems = !term ? periodItems : periodItems.filter((item) => (
-        item.titulo.toLowerCase().includes(term)
-        || item.nota.toLowerCase().includes(term)
-        || item.cliente.toLowerCase().includes(term)
-        || item.contrato.toLowerCase().includes(term)
-        || item.status.toLowerCase().includes(term)
-      ))
+    const savedInvoice = invoiceState.items.find((item) => item.id === invoiceState.editingId)
+    const invoiceHasChanges = !savedInvoice || (
+      invoiceState.form.titulo !== savedInvoice.titulo
+      || invoiceState.form.nota !== savedInvoice.nota
+      || invoiceState.form.emissao !== savedInvoice.emissao
+      || invoiceState.form.referencia !== savedInvoice.referencia
+      || invoiceState.form.previsaoPagamento !== savedInvoice.previsaoPagamento
+      || invoiceState.form.contrato !== savedInvoice.contrato
+      || invoiceState.form.contratoId !== (savedInvoice.contratoId === null ? '' : String(savedInvoice.contratoId))
+    )
+    const periodItems = invoiceState.items.filter((item) => (
+      matchesPeriodFilter(invoicePeriodField === 'emissao' ? item.emissao : item.referencia, invoicePeriod)
+    ))
+    const filteredItems = periodItems.filter((item) => matchesInvoiceSearch(item, invoiceState.search))
     const sortedItems = [...filteredItems].sort((a, b) => {
       let result = 0
       if (invoiceSort.key === 'titulo') result = compareText(a.titulo, b.titulo)
@@ -4033,6 +4121,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
       if (invoiceSort.key === 'cliente') result = compareText(a.cliente, b.cliente)
       if (invoiceSort.key === 'contrato') result = compareText(a.contrato, b.contrato)
       if (invoiceSort.key === 'emissao') result = toSortableDate(a.emissao) - toSortableDate(b.emissao)
+      if (invoiceSort.key === 'referencia') result = toSortableDate(a.referencia) - toSortableDate(b.referencia)
       if (invoiceSort.key === 'valor') result = compareNullableNumber(a.valor, b.valor)
       if (invoiceSort.key === 'status') result = compareText(a.status, b.status)
       return applyDirection(result, invoiceSort.direction)
@@ -4076,6 +4165,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
         Cliente: item.cliente,
         Contrato: item.contrato,
         Emissão: formatDateDisplay(item.emissao),
+        Competência: formatMonthKeyLabel(item.referencia),
         Quantidade: item.quantidade,
         'Previsão de Pagamento': formatDateDisplay(item.previsaoPagamento),
         Valor: item.valor,
@@ -4097,6 +4187,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               { header: 'Cliente', key: 'Cliente', width: 28 },
               { header: 'Contrato', key: 'Contrato', width: 28 },
               { header: 'Emissão', key: 'Emissão', width: 14 },
+              { header: 'Competência', key: 'Competência', width: 16 },
               { header: 'Quantidade', key: 'Quantidade', width: 14 },
               { header: 'Previsão de Pagamento', key: 'Previsão de Pagamento', width: 20 },
               { header: 'Valor', key: 'Valor', width: 16, numFmt: '#,##0.00' },
@@ -4265,12 +4356,18 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               <div className="estimativas-modal__header">
                 <div>
                   <h3 id="invoice-modal-title">{invoiceIsViewMode ? 'Visualizar Faturamento' : invoiceState.editingId ? 'Editar Faturamento' : 'Novo Faturamento'}</h3>
-                  <p className="muted">Controle notas, emissão, referência, previsão de pagamento e status.</p>
+                  <p className="muted">Controle notas, emissão, competência, previsão de pagamento e status.</p>
                 </div>
-                <button type="button" className="button-secondary" onClick={closeInvoiceEditor}>Fechar</button>
+                <button type="button" className="button-secondary" onClick={closeInvoiceEditor} disabled={invoiceState.isSaving || invoiceRepassesBusy}>Fechar</button>
               </div>
 
-              <form onSubmit={handleSaveInvoice} className="estimativas-form">
+              <form onSubmit={handleSaveInvoice} onInvalidCapture={() => setInvoiceEditorTab('dados')} className="estimativas-form invoice-form">
+                <div className="central-servicos-tabs estimativas-form__full" role="tablist" aria-label="Seções do faturamento">
+                  <button type="button" className={invoiceEditorTab === 'dados' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setInvoiceEditorTab('dados')} role="tab" aria-selected={invoiceEditorTab === 'dados'}>Dados do faturamento</button>
+                  <button type="button" className={invoiceEditorTab === 'faturamento' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setInvoiceEditorTab('faturamento')} role="tab" aria-selected={invoiceEditorTab === 'faturamento'}>Detalhes para Faturamento</button>
+                  <button type="button" className={invoiceEditorTab === 'repasses' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setInvoiceEditorTab('repasses')} role="tab" aria-selected={invoiceEditorTab === 'repasses'}>Repasses</button>
+                </div>
+                <div style={{ display: invoiceEditorTab === 'dados' ? 'contents' : 'none' }}>
                 <label>
                   Título
                   <input value={invoiceState.form.titulo} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, titulo: event.target.value }))} readOnly={invoiceIsViewMode} required />
@@ -4284,7 +4381,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                   <input type="date" value={invoiceState.form.emissao} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, emissao: event.target.value }))} disabled={invoiceIsViewMode} />
                 </label>
                 <label>
-                  Referência
+                  Competência
                   <input type="month" value={invoiceState.form.referencia} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, referencia: event.target.value }))} disabled={invoiceIsViewMode} />
                 </label>
                 <label>
@@ -4293,7 +4390,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 </label>
                 <label>
                   Cliente
-                  <select value={invoiceState.form.cliente} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, cliente: event.target.value, contrato: '', contratoId: '', quantidade: '' }))} disabled={invoiceIsViewMode}>
+                  <select value={invoiceState.form.cliente} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, ...copyInvoiceBillingDetails(), cliente: event.target.value, contrato: '', contratoId: '', quantidade: '' }))} disabled={invoiceIsViewMode}>
                     <option value="">— Selecione —</option>
                     {clientOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
@@ -4302,11 +4399,11 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                   Contrato
                   <select value={invoiceState.form.contratoId} onChange={(event) => {
                     const selected = contractsForLinking.find((contract) => String(contract.id) === event.target.value)
-                    invoiceState.setForm((prev) => ({ ...prev, contratoId: event.target.value, contrato: selected?.titulo ?? '', quantidade: selected?.tipoContrato === 'Banco de Horas' ? prev.quantidade : '' }))
+                    invoiceState.setForm((prev) => ({ ...prev, ...copyInvoiceBillingDetails(selected), contratoId: event.target.value, contrato: selected?.titulo ?? '', quantidade: selected?.tipoContrato === 'Banco de Horas' ? prev.quantidade : '' }))
                   }} disabled={invoiceIsViewMode || !invoiceState.form.cliente}>
                     <option value="">— Selecione —</option>
                     {contractsForLinking
-                      .filter((c) => c.status === 'Ativo' && c.tipo === 'Cliente' && c.relaciona === invoiceState.form.cliente)
+                      .filter((c) => String(c.id) === invoiceState.form.contratoId || (c.status === 'Ativo' && c.tipo === 'Cliente' && c.relaciona === invoiceState.form.cliente))
                       .map((c) => <option key={c.id} value={String(c.id)}>{c.titulo} v{c.versao}{c.tipoContrato === 'Banco de Horas' ? ` (saldo: ${c.saldoQuantidade ?? 0} h)` : ''}</option>)}
                   </select>
                 </label>
@@ -4334,9 +4431,46 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                   <span className="rich-field__label">Descrição</span>
                   <RichTextEditor value={invoiceState.form.descricao} onChange={(value) => invoiceState.setForm((prev) => ({ ...prev, descricao: value }))} placeholder="Descreva o faturamento." rows={4} disabled={invoiceIsViewMode} />
                 </div>
-                {!invoiceIsViewMode && (
-                  <div className="estimativas-actions estimativas-form__full">
-                    <button type="submit" className="button-primary" disabled={invoiceState.isSaving}>
+                </div>
+                {invoiceEditorTab === 'faturamento' && (
+                  <>
+                    <p className="muted estimativas-form__full">Os detalhes são copiados ao selecionar o contrato. Alterações nesta aba são salvas somente neste faturamento.</p>
+                    {!invoiceState.form.contratoId && <p className="muted estimativas-form__full">Selecione um contrato na aba Dados do faturamento para copiar seus detalhes.</p>}
+                    <div className="estimativas-form__full rich-field">
+                      <span className="rich-field__label">Corpo da Nota</span>
+                      <RichTextEditor value={invoiceState.form.faturamentoCorpoNota} onChange={(value) => invoiceState.setForm((prev) => ({ ...prev, faturamentoCorpoNota: value }))} placeholder="Texto que deverá constar no corpo da nota fiscal." rows={6} disabled={invoiceIsViewMode} />
+                    </div>
+                    <div className="estimativas-form__full rich-field">
+                      <span className="rich-field__label">Documentos para Anexar</span>
+                      <RichTextEditor value={invoiceState.form.faturamentoDocumentos} onChange={(value) => invoiceState.setForm((prev) => ({ ...prev, faturamentoDocumentos: value }))} placeholder="Liste os documentos necessários para anexar à nota." rows={5} disabled={invoiceIsViewMode} />
+                    </div>
+                    <label>
+                      Prazo de Emissão
+                      <input value={invoiceState.form.faturamentoPrazoEmissao} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, faturamentoPrazoEmissao: event.target.value }))} readOnly={invoiceIsViewMode} placeholder="Ex.: até o 5º dia útil" />
+                    </label>
+                    <label>
+                      Data de Vencimento
+                      <input type="date" value={invoiceState.form.faturamentoDataVencimento} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, faturamentoDataVencimento: event.target.value }))} disabled={invoiceIsViewMode} />
+                    </label>
+                    <label>
+                      Código de Serviço
+                      <input value={invoiceState.form.faturamentoCodigoServico} onChange={(event) => invoiceState.setForm((prev) => ({ ...prev, faturamentoCodigoServico: event.target.value }))} readOnly={invoiceIsViewMode} />
+                    </label>
+                  </>
+                )}
+                <div className="estimativas-form__full" style={{ display: invoiceEditorTab === 'repasses' ? 'block' : 'none' }}>
+                  <InvoiceRepassesTab
+                    invoiceId={invoiceState.editingId}
+                    readOnly={invoiceIsViewMode}
+                    invoiceHasChanges={invoiceHasChanges}
+                    invoiceIsSaving={invoiceState.isSaving}
+                    onDirtyChange={setInvoiceRepassesDirty}
+                    onBusyChange={setInvoiceRepassesBusy}
+                  />
+                </div>
+                {!invoiceIsViewMode && (invoiceEditorTab !== 'repasses' || invoiceState.editingId === null) && (
+                  <div className={`estimativas-actions estimativas-form__full${invoiceEditorTab === 'repasses' ? ' invoice-repasses-footer' : ''}`}>
+                    <button type="submit" className="button-primary" disabled={invoiceState.isSaving || invoiceRepassesBusy}>
                       {invoiceState.editingId ? 'Salvar alterações' : 'Cadastrar faturamento'}
                     </button>
                   </div>
@@ -4361,6 +4495,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 invoiceState.setForm(EMPTY_INVOICE_FORM)
                 invoiceState.setEditingId(null)
                 setInvoiceIsViewMode(false)
+                setInvoiceEditorTab('dados')
                 setInvoiceEditorOpen(true)
               }}>
                 + Novo Faturamento
@@ -4382,7 +4517,25 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               </span>
               <input type="search" value={invoiceState.search} onChange={(event) => invoiceState.setSearch(event.target.value)} placeholder={meta.searchPlaceholder} aria-label="Buscar faturamento" />
             </label>
-            {renderPeriodFilter(invoicePeriod, setInvoicePeriod, 'emissão', sortedItems.length, invoiceState.items.length)}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--ink-secondary)' }}>Filtrar por:</span>
+              <select
+                value={invoicePeriodField}
+                onChange={(event) => setInvoicePeriodField(event.target.value === 'competencia' ? 'competencia' : 'emissao')}
+                aria-label="Filtrar faturamento por período"
+                style={{ width: 'auto' }}
+              >
+                <option value="competencia">Período (competência)</option>
+                <option value="emissao">Período (emissão)</option>
+              </select>
+            </label>
+            {renderPeriodFilter(
+              invoicePeriod,
+              setInvoicePeriod,
+              invoicePeriodField === 'emissao' ? 'emissão' : 'competência',
+              sortedItems.length,
+              invoiceState.items.length,
+            )}
           </div>
           <div className="csv-table ch-table-theme">
             <table>
@@ -4393,6 +4546,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                   <th>{renderSortableHeader('Cliente', invoiceSort.key === 'cliente', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'cliente', direction: getNextDirection(prev.key, 'cliente', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Contrato', invoiceSort.key === 'contrato', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'contrato', direction: getNextDirection(prev.key, 'contrato', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Emissão', invoiceSort.key === 'emissao', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'emissao', direction: getNextDirection(prev.key, 'emissao', prev.direction) })))}</th>
+                  <th>{renderSortableHeader('Competência', invoiceSort.key === 'referencia', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'referencia', direction: getNextDirection(prev.key, 'referencia', prev.direction) })))}</th>
                   <th>Quantidade</th>
                   <th>{renderSortableHeader('Valor', invoiceSort.key === 'valor', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'valor', direction: getNextDirection(prev.key, 'valor', prev.direction) })))}</th>
                   <th>{renderSortableHeader('Status', invoiceSort.key === 'status', invoiceSort.direction, () => setInvoiceSort((prev) => ({ key: 'status', direction: getNextDirection(prev.key, 'status', prev.direction) })))}</th>
@@ -4407,6 +4561,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                     <td>{item.cliente || '-'}</td>
                     <td>{item.contrato || '-'}</td>
                     <td>{formatDateDisplay(item.emissao)}</td>
+                    <td>{formatMonthKeyLabel(item.referencia)}</td>
                     <td>{item.quantidade === null ? '-' : item.quantidade}</td>
                     <td>{formatCurrencyDisplay(item.valor)}</td>
                     <td>
@@ -4416,6 +4571,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                       <div className="ch-row-actions ch-row-actions--icons">
                         <button type="button" className="ch-icon-action" aria-label="Visualizar faturamento" title="Visualizar" onClick={() => {
                           invoiceState.setForm({
+                            ...copyInvoiceBillingDetails(item),
                             titulo: item.titulo,
                             nota: item.nota,
                             emissao: item.emissao,
@@ -4432,12 +4588,14 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                           })
                           invoiceState.setEditingId(item.id)
                           setInvoiceIsViewMode(true)
+                          setInvoiceEditorTab('dados')
                           setInvoiceEditorOpen(true)
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                         </button>
                         <button type="button" className="ch-icon-action" aria-label="Editar faturamento" title="Editar" onClick={() => {
                           invoiceState.setForm({
+                            ...copyInvoiceBillingDetails(item),
                             titulo: item.titulo,
                             nota: item.nota,
                             emissao: item.emissao,
@@ -4454,12 +4612,14 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                           })
                           invoiceState.setEditingId(item.id)
                           setInvoiceIsViewMode(false)
+                          setInvoiceEditorTab('dados')
                           setInvoiceEditorOpen(true)
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                         </button>
                           <button type="button" className="ch-icon-action" aria-label="Duplicar faturamento" title="Duplicar" onClick={() => {
                             invoiceState.setForm({
+                              ...copyInvoiceBillingDetails(item),
                               titulo: item.titulo,
                               nota: item.nota,
                               emissao: item.emissao,
@@ -4476,6 +4636,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                             })
                             invoiceState.setEditingId(null)
                             setInvoiceIsViewMode(false)
+                            setInvoiceEditorTab('dados')
                             setInvoiceEditorOpen(true)
                           }}>
                             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
@@ -4497,6 +4658,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
   }
 
   const renderPaymentSection = () => {
+    const linkedRepasse = paymentState.items.find((item) => item.id === paymentState.editingId)?.repasseId != null
     const term = paymentState.search.trim().toLowerCase()
     const periodItems = paymentState.items.filter((item) => matchesPeriodFilter(item.emissao, paymentPeriod))
     const filteredItems = !term ? periodItems : periodItems.filter((item) => (
@@ -4736,6 +4898,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
               </div>
 
               <form onSubmit={handleSavePayment} className="estimativas-form">
+                {linkedRepasse && <p className="muted estimativas-form__full">Pagamento gerado por repasse. Altere recurso e valor ou remova o pagamento pela aba Repasses do faturamento. A baixa pode ser feita nesta rotina.</p>}
                 <label>
                   Título
                   <input value={paymentState.form.titulo} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, titulo: event.target.value }))} readOnly={paymentIsViewMode} required />
@@ -4758,29 +4921,31 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                 </label>
                 <label>
                   Tipo
-                  <select value={paymentState.form.tipo} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, tipo: event.target.value as RelationType, relaciona: '', contrato: '' }))} disabled={paymentIsViewMode}>
+                  <select value={paymentState.form.tipo} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, tipo: event.target.value as RelationType, relaciona: '', contrato: '' }))} disabled={paymentIsViewMode || linkedRepasse}>
                     {RELATION_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                 </label>
                 <label>
                   Relaciona
-                  <select value={paymentState.form.relaciona} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, relaciona: event.target.value, contrato: '' }))} disabled={paymentIsViewMode}>
+                  <select value={paymentState.form.relaciona} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, relaciona: event.target.value, contrato: '' }))} disabled={paymentIsViewMode || linkedRepasse}>
                     <option value="">— Selecione —</option>
+                    {paymentState.form.relaciona && !(paymentState.form.tipo === 'Cliente' ? clientOptions : resourceOptions).includes(paymentState.form.relaciona) && <option value={paymentState.form.relaciona}>{paymentState.form.relaciona}</option>}
                     {(paymentState.form.tipo === 'Cliente' ? clientOptions : resourceOptions).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </label>
                 <label>
                   Contrato
-                  <select value={paymentState.form.contrato} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} disabled={paymentIsViewMode || !paymentState.form.relaciona}>
+                  <select value={paymentState.form.contrato} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, contrato: event.target.value }))} disabled={paymentIsViewMode || linkedRepasse || !paymentState.form.relaciona}>
                     <option value="">— Nenhum —</option>
+                    {linkedRepasse && paymentState.form.contrato && <option value={paymentState.form.contrato}>{paymentState.form.contrato}</option>}
                     {contractsForLinking
-                      .filter((c) => c.status === 'Ativo' && c.tipo === paymentState.form.tipo && c.relaciona === paymentState.form.relaciona)
+                      .filter((c) => !linkedRepasse && c.status === 'Ativo' && c.tipo === paymentState.form.tipo && c.relaciona === paymentState.form.relaciona)
                       .map((c) => <option key={c.id} value={c.titulo}>{c.titulo}</option>)}
                   </select>
                 </label>
                 <label>
                   Valor
-                  <input type="text" inputMode="decimal" value={formatCurrencyInputBrl(paymentState.form.valor)} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, valor: parseCurrencyInputBrl(event.target.value) }))} readOnly={paymentIsViewMode} placeholder="R$ 0,00" />
+                  <input type="text" inputMode="decimal" value={formatCurrencyInputBrl(paymentState.form.valor)} onChange={(event) => paymentState.setForm((prev) => ({ ...prev, valor: parseCurrencyInputBrl(event.target.value) }))} readOnly={paymentIsViewMode || linkedRepasse} placeholder="R$ 0,00" />
                 </label>
                 <label>
                   Status
@@ -4939,7 +5104,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
                         }}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#315f53" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="1" /><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4" /></svg>
                         </button>
-                        <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir pagamento" title="Excluir" onClick={() => void handleDeleteItem('/api/central-servicos/pagamentos', item.id, reload, 'Pagamento removido com sucesso.', paymentState.setError, paymentState.setSuccess)} disabled={paymentState.isSaving}>
+                        <button type="button" className="ch-icon-action ch-icon-action--danger" aria-label="Excluir pagamento" title={item.repasseId !== null ? 'Remova pela aba Repasses do faturamento' : 'Excluir'} onClick={() => void handleDeleteItem('/api/central-servicos/pagamentos', item.id, reload, 'Pagamento removido com sucesso.', paymentState.setError, paymentState.setSuccess)} disabled={paymentState.isSaving || item.repasseId !== null}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c0392b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
                         </button>
                       </div>

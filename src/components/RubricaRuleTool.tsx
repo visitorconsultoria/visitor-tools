@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
 import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 import {
   RUBRICA_RULE_FIELD_DEFINITIONS,
   type RubricaRuleFieldDefinition,
@@ -521,7 +522,7 @@ export default function RubricaRuleTool() {
 
   const handleDeleteRuleSet = async (targetRuleSet: RuleSet | null = selectedRuleSet) => {
     if (!targetRuleSet) return
-    if (!window.confirm(`Excluir o cadastro "${targetRuleSet.name}" e todas as suas regras?`)) return
+    if (!await confirmAction(`Excluir o cadastro "${targetRuleSet.name}" e todas as suas regras?`)) return
 
     setError(null)
     setSuccess(null)
@@ -645,7 +646,7 @@ export default function RubricaRuleTool() {
 
   const handleDeleteItem = async (itemId: number) => {
     if (!selectedRuleSetId) return
-    if (!window.confirm('Excluir esta regra?')) return
+    if (!await confirmAction('Excluir esta regra?')) return
 
     setError(null)
     setSuccess(null)

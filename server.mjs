@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import XLSX from 'xlsx'
 import { ASSIGNABLE_MENU_KEYS, getEffectiveMenus, isVisitorUsername, normalizeMenuPermissions } from './src/lib/menuConfig.mjs'
 import { RUBRICA_RULE_FIELD_DEFINITIONS } from './src/lib/rubricaRuleConfig.mjs'
+import { invoiceRepassesOperation } from './lib/faturamentoRepasses.mjs'
 
 dotenv.config()
 
@@ -1366,6 +1367,8 @@ function validateCentralServicosExpensePayload(parsed) {
   }
 }
 
+const CENTRAL_SERVICOS_INVOICE_COLUMNS = 'id, contrato_id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, quantidade, valor, status, data_pagamento, faturamento_corpo_nota, faturamento_documentos, faturamento_prazo_emissao, faturamento_data_vencimento, faturamento_codigo_servico'
+
 function normalizeCentralServicosInvoiceRow(row) {
   const id = Number(row?.id)
   const titulo = parseCentralServicosTextInput(row?.titulo)
@@ -1388,6 +1391,11 @@ function normalizeCentralServicosInvoiceRow(row) {
     valor: row?.valor === null || row?.valor === undefined ? null : Number(row.valor),
     status: CENTRAL_SERVICOS_INVOICE_STATUS.includes(status) ? status : 'Pendente',
     dataPagamento: parseCentralServicosTextInput(row?.data_pagamento),
+    faturamentoCorpoNota: parseCentralServicosTextInput(row?.faturamento_corpo_nota),
+    faturamentoDocumentos: parseCentralServicosTextInput(row?.faturamento_documentos),
+    faturamentoPrazoEmissao: parseCentralServicosTextInput(row?.faturamento_prazo_emissao),
+    faturamentoDataVencimento: parseCentralServicosTextInput(row?.faturamento_data_vencimento),
+    faturamentoCodigoServico: parseCentralServicosTextInput(row?.faturamento_codigo_servico),
   }
 }
 
@@ -1408,6 +1416,11 @@ function parseCentralServicosInvoicePayload(payload) {
     valor: parseCentralServicosNullableNumberInput(payload?.valor),
     status: CENTRAL_SERVICOS_INVOICE_STATUS.includes(status) ? status : 'Pendente',
     data_pagamento: parseCentralServicosNullableDateInput(payload?.data_pagamento ?? payload?.dataPagamento),
+    faturamento_corpo_nota: parseCentralServicosTextInput(payload?.faturamento_corpo_nota ?? payload?.faturamentoCorpoNota),
+    faturamento_documentos: parseCentralServicosTextInput(payload?.faturamento_documentos ?? payload?.faturamentoDocumentos),
+    faturamento_prazo_emissao: parseCentralServicosTextInput(payload?.faturamento_prazo_emissao ?? payload?.faturamentoPrazoEmissao),
+    faturamento_data_vencimento: parseCentralServicosNullableDateInput(payload?.faturamento_data_vencimento ?? payload?.faturamentoDataVencimento),
+    faturamento_codigo_servico: parseCentralServicosTextInput(payload?.faturamento_codigo_servico ?? payload?.faturamentoCodigoServico),
   }
 }
 
@@ -1461,6 +1474,7 @@ function normalizeCentralServicosPaymentRow(row) {
 
   return {
     id,
+    repasseId: row?.repasse_id == null ? null : Number(row.repasse_id),
     titulo,
     nota: parseCentralServicosTextInput(row?.nota),
     emissao: parseCentralServicosTextInput(row?.emissao),
@@ -1728,7 +1742,7 @@ async function listCentralServicosFaturamentos() {
   const { centralServicosFaturamentosTable } = getSupabaseClient()
   return listCentralServicosItems(
     centralServicosFaturamentosTable,
-    'id, contrato_id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, quantidade, valor, status, data_pagamento',
+    CENTRAL_SERVICOS_INVOICE_COLUMNS,
     'titulo',
     normalizeCentralServicosInvoiceRow,
   )
@@ -1743,7 +1757,7 @@ async function createCentralServicosFaturamento(payload) {
   const { data: row, error } = await client
     .from(centralServicosFaturamentosTable)
     .insert(parsed)
-    .select('id, contrato_id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, quantidade, valor, status, data_pagamento')
+    .select(CENTRAL_SERVICOS_INVOICE_COLUMNS)
     .single()
   if (error) throw new Error(error.message)
   if (contract) await adjustBancoDeHorasBalance(contract, parsed, -1)
@@ -1765,7 +1779,7 @@ async function updateCentralServicosFaturamento(id, payload) {
     }
     if (nextContract) validateBancoDeHorasBalance(nextContract, parsed)
     const { data: row, error } = await client.from(centralServicosFaturamentosTable).update(parsed).eq('id', id)
-      .select('id, contrato_id, titulo, nota, emissao, referencia, previsao_pagamento, cliente, contrato, descricao, quantidade, valor, status, data_pagamento').single()
+      .select(CENTRAL_SERVICOS_INVOICE_COLUMNS).single()
     if (error) throw new Error(error.message)
     if (nextContract) await adjustBancoDeHorasBalance(nextContract, parsed, -1)
     return normalizeCentralServicosInvoiceRow(row)
@@ -1776,20 +1790,28 @@ async function updateCentralServicosFaturamento(id, payload) {
 }
 
 async function deleteCentralServicosFaturamento(id) {
-  const { client, centralServicosFaturamentosTable } = getSupabaseClient()
-  const { data: previous, error: previousError } = await client.from(centralServicosFaturamentosTable).select('id, contrato_id, quantidade, valor').eq('id', id).single()
-  if (previousError) throw new Error(previousError.message)
-  const contract = await getBancoDeHorasContractForInvoice(previous)
-  const { error } = await client.from(centralServicosFaturamentosTable).delete().eq('id', id)
-  if (error) throw new Error(error.message)
-  if (contract) await adjustBancoDeHorasBalance(contract, previous, 1)
+  const config = getSupabaseClient()
+  if (config.centralServicosFaturamentosTable !== 'central_servicos_faturamentos'
+      || config.centralServicosPagamentosTable !== 'central_servicos_pagamentos'
+      || config.centralServicosRecursosTable !== 'central_servicos_recursos'
+      || config.centralServicosContratosServicosTable !== 'central_servicos_contratos_servicos') {
+    throw new Error('A exclusão transacional exige os nomes padrão das tabelas de Faturamentos, Pagamentos, Recursos e Contratos.')
+  }
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('ID do faturamento inválido.')
+  const { error } = await config.client.rpc('central_servicos_excluir_faturamento', { p_faturamento_id: id })
+  if (error) {
+    const migrationHint = ['PGRST202', '42P01', '42703', '42883'].includes(error.code)
+      ? ' Verifique a migração supabase-faturamento-repasses.sql.'
+      : ''
+    throw new Error(`Falha ao excluir faturamento: ${error.message}.${migrationHint}`)
+  }
 }
 
 async function listCentralServicosPagamentos() {
   const { centralServicosPagamentosTable } = getSupabaseClient()
   return listCentralServicosItems(
     centralServicosPagamentosTable,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
+    'id, repasse_id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
     'titulo',
     normalizeCentralServicosPaymentRow,
   )
@@ -1800,7 +1822,7 @@ async function createCentralServicosPagamento(payload) {
   return createCentralServicosItem(
     centralServicosPagamentosTable,
     payload,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
+    'id, repasse_id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
     parseCentralServicosPaymentPayload,
     validateCentralServicosPaymentPayload,
     normalizeCentralServicosPaymentRow,
@@ -1813,7 +1835,7 @@ async function updateCentralServicosPagamento(id, payload) {
     centralServicosPagamentosTable,
     id,
     payload,
-    'id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
+    'id, repasse_id, titulo, nota, emissao, referencia, previsao_pagamento, tipo, relaciona, contrato, descricao, valor, status, data_pagamento',
     parseCentralServicosPaymentPayload,
     validateCentralServicosPaymentPayload,
     normalizeCentralServicosPaymentRow,
@@ -3727,6 +3749,39 @@ app.delete('/api/central-servicos/faturamentos/:id', async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(500).json({ error: `Falha ao excluir faturamento: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/faturamentos/:id/repasses', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do faturamento')
+    const items = await invoiceRepassesOperation(getSupabaseClient(), id)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao carregar repasses: ${detail}` })
+  }
+})
+
+app.put('/api/central-servicos/faturamentos/:id/repasses', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do faturamento')
+    const items = await invoiceRepassesOperation(getSupabaseClient(), id, req.body?.items ?? null)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao salvar repasses: ${detail}` })
+  }
+})
+
+app.post('/api/central-servicos/faturamentos/:id/repasses/confirmar', async (req, res) => {
+  try {
+    const id = parseProjectDevIdInput(req.params.id, 'ID do faturamento')
+    const items = await invoiceRepassesOperation(getSupabaseClient(), id, undefined, true)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(400).json({ error: `Falha ao confirmar repasses: ${detail}` })
   }
 })
 

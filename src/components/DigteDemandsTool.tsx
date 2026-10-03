@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 import RichTextEditor from './RichTextEditor'
 
 type DemandStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
@@ -283,7 +284,7 @@ export default function DigteDemandsTool() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Confirma a exclusao desta demanda?')) return
+    if (!await confirmAction('Confirma a exclusao desta demanda?')) return
     setError(null)
     setSuccess(null)
     setIsDeleting(id)
@@ -550,4 +551,3 @@ export default function DigteDemandsTool() {
     </div>
   )
 }
-

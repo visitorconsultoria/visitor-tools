@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 
 type RubricaCatalog = {
   catalogKey: string
@@ -264,7 +265,7 @@ export default function RubricasValidationTool({ catalogPageKey }: RubricasValid
   }
 
   const handleDelete = async (itemId: number) => {
-    if (!window.confirm('Excluir este registro?')) return
+    if (!await confirmAction('Excluir este registro?')) return
 
     setError(null)
 

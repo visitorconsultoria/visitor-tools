@@ -390,6 +390,83 @@ SUPABASE_DAILY_ACTIVITIES_TABLE=daily_activities
 
 3. Libere o menu `Apontamento Diario` no cadastro de usuarios para quem deve acessar a rotina.
 
+## Confirmacoes da interface
+
+As confirmacoes de exclusao, descarte de alteracoes e geracao de repasses utilizam
+um modal com o layout da aplicacao, sem as caixas nativas do navegador.
+`Confirmar` executa a acao; `Cancelar` ou a tecla Escape mantem os dados inalterados.
+O foco inicial fica em `Cancelar`, permanece dentro da confirmacao e retorna ao
+elemento de origem ao fechar. A confirmacao tambem funciona sobre outros modais.
+As mensagens e regras de cada rotina foram preservadas.
+
+Teste: `node --test tests/confirmDialog.test.mjs`.
+
+## Detalhes para Faturamento
+
+Na Central de Servicos, a aba `Detalhes para Faturamento` copia do contrato selecionado
+o Corpo da Nota, Documentos para Anexar, Prazo de Emissao, Data de Vencimento e Codigo
+de Servico. Os campos podem ser editados e sao salvos no faturamento, sem alterar o
+contrato. Visualizar, editar e duplicar usam a copia salva, nao os valores atuais do
+contrato. Trocar o contrato substitui os detalhes pelos do novo contrato; trocar o
+cliente ou remover o contrato limpa os detalhes.
+
+Ao cadastrar ou editar um faturamento, a listagem utiliza o registro retornado pela
+API, incluindo os detalhes salvos. Se o filtro de periodo ocultar esse registro,
+o mes e ajustado para sua emissao ou competencia, conforme o criterio selecionado.
+Quando essa data esta vazia, a visualizacao muda para `Todos os registros`.
+A busca textual so e limpa se ocultar o registro salvo; a mensagem de sucesso
+informa quando os filtros foram ajustados. Sem essas mudancas, os filtros continuam
+como estavam. Ao voltar a rotina, o filtro inicial continua sendo o mes atual;
+use `Todos os registros` para consultar faturamentos sem data ou de outros meses.
+
+Antes de atualizar a API de uma instalacao existente, execute
+[scripts/supabase-faturamento-detalhes.sql](scripts/supabase-faturamento-detalhes.sql)
+no SQL Editor do Supabase. Novas instalacoes ja incluem as colunas em
+[scripts/supabase-central-servicos.sql](scripts/supabase-central-servicos.sql).
+Faturamentos existentes ficam com os novos campos vazios; selecionar novamente o
+contrato copia os detalhes para eles.
+
+### Repasses do faturamento
+
+Execute [scripts/supabase-faturamento-repasses.sql](scripts/supabase-faturamento-repasses.sql)
+no SQL Editor do Supabase antes de atualizar a API. Em novas instalacoes, execute-o
+apos [scripts/supabase-central-servicos.sql](scripts/supabase-central-servicos.sql).
+As funcoes transacionais utilizam os nomes padrao das tabelas e a chave
+`SUPABASE_SERVICE_ROLE_KEY` apenas no backend.
+
+1. Abra `Novo Faturamento` ou `Editar` > `Repasses`.
+2. Clique em `Adicionar repasse` e informe recurso e valor (um repasse por recurso,
+   ate 100 por faturamento). No novo faturamento, clique em `Cadastrar faturamento`;
+   a janela permanece aberta e os repasses digitados sao mantidos.
+3. Clique em `Salvar repasses`; isso salva os vinculos sem gerar novos pagamentos.
+4. Clique em `Confirmar repasses` para gerar um pagamento `Pendente` por recurso.
+   Os pagamentos recebem nota, emissao, competencia, previsao de pagamento e
+   contrato dos dados ja salvos do faturamento.
+
+A confirmacao e transacional e pode ser repetida sem duplicar pagamentos.
+Alterar recurso ou valor de um repasse confirmado sincroniza seu pagamento
+`Pendente` ao salvar os repasses. Remover um repasse exclui o pagamento Pendente
+vinculado na mesma transacao. Repasses cujo pagamento esta `Pago` nao podem ser
+alterados ou removidos. Excluir um faturamento remove automaticamente seus repasses
+e os pagamentos Pendentes vinculados. Se qualquer pagamento vinculado estiver
+`Pago`, toda a exclusao e bloqueada e nenhum registro e removido.
+A exclusao e transacional, incluindo a devolucao de horas e valor ao saldo do
+contrato de Banco de Horas. Pagamentos sem vinculo com esses repasses sao preservados.
+Reexecute [scripts/supabase-faturamento-repasses.sql](scripts/supabase-faturamento-repasses.sql)
+nas instalacoes existentes para disponibilizar a funcao de exclusao transacional
+antes de atualizar a API. O script pode ser executado novamente sem apagar dados.
+Duplicar um faturamento nao copia repasses nem pagamentos.
+
+Na rotina `Pagamentos`, a baixa e as datas continuam editaveis. Recurso e valor de
+pagamentos gerados por repasses devem ser alterados na aba `Repasses`; a exclusao
+tambem deve ser realizada nessa aba. Alteracoes posteriores nos dados gerais do
+faturamento nao substituem as datas ja gravadas nos pagamentos.
+
+Testes de validacao/API: `node --test tests/faturamentoRepasses.test.mjs tests/invoiceDelete.test.mjs`.
+O teste transacional em [tests/faturamentoRepasses.sql.test.mjs](tests/faturamentoRepasses.sql.test.mjs)
+usa PostgreSQL isolado via PGlite e requer `REPASSE_PGLITE_MODULE` com a URL do
+modulo PGlite instalado em um ambiente de testes.
+
 ## Central de Clientes
 
 Backend implementado com CRUD completo para as rotinas:

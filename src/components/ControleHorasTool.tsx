@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 import { BRAND_COLORS, exportCustomWorkbook } from '../lib/xlsxBranding'
 
 type ControleStatus = 'Aberto' | 'Fechado'
@@ -123,9 +124,32 @@ const DEFAULT_VALOR_HORA_CONSULTOR = '70'
 const DEFAULT_PERCENTUAL_IMPOSTOS = '22'
 const DEFAULT_PERCENTUAL_MARGEM = '35'
 
+function toCanonicalCompetencia(value: string): string {
+  const input = String(value || '').trim()
+  const inputMatch = input.match(/^(\d{2})(\d{4})$/)
+  if (inputMatch && Number(inputMatch[1]) >= 1 && Number(inputMatch[1]) <= 12) {
+    return `${inputMatch[2]}-${inputMatch[1]}`
+  }
+  const storedMatch = input.match(/^(\d{4})-(\d{2})$/)
+  if (storedMatch && Number(storedMatch[2]) >= 1 && Number(storedMatch[2]) <= 12) return input
+  return input
+}
+
+function toCompetenciaInput(value: string): string {
+  const canonical = toCanonicalCompetencia(value)
+  const match = canonical.match(/^(\d{4})-(\d{2})$/)
+  return match ? `${match[2]}${match[1]}` : canonical
+}
+
+function isValidCompetenciaInput(value: string): boolean {
+  if (!value) return true
+  const match = value.match(/^(\d{2})(\d{4})$/)
+  return Boolean(match && Number(match[1]) >= 1 && Number(match[1]) <= 12 && Number(match[2]) > 0)
+}
+
 function getCurrentCompetencia(): string {
   const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  return `${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`
 }
 
 function createEmptyForm(): ControleForm {
@@ -188,15 +212,11 @@ function formatHours(value: number): string {
 }
 
 function formatCompetencia(value: string): string {
-  const match = String(value || '').match(/^(\d{4})-(\d{2})$/)
-  if (!match) return value || '-'
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1)
-  const label = date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-  return label.charAt(0).toUpperCase() + label.slice(1)
+  return toCompetenciaInput(value) || '-'
 }
 
 function buildSuggestedTitle(competencia: string): string {
-  const match = String(competencia || '').match(/^(\d{4})-(\d{2})$/)
+  const match = toCanonicalCompetencia(competencia).match(/^(\d{4})-(\d{2})$/)
   if (!match) return 'BANCO DE HORAS'
   const month = new Date(Number(match[1]), Number(match[2]) - 1, 1).toLocaleDateString('pt-BR', { month: 'long' })
   return `BANCO DE HORAS - FAT. ${month.toUpperCase()}`
@@ -231,7 +251,7 @@ function normalizeControle(input: unknown): ControleItem | null {
     cliente: String(item.cliente ?? ''),
     contratoId: Number.isInteger(contratoId) && contratoId > 0 ? contratoId : null,
     contrato: String(item.contrato ?? ''),
-    competencia: String(item.competencia ?? ''),
+    competencia: toCanonicalCompetencia(String(item.competencia ?? '')),
     horasContratadas: toNumberOrNull(item.horasContratadas),
     valorHoraCliente: toNumberOrNull(item.valorHoraCliente),
     valorHoraConsultor: toNumberOrNull(item.valorHoraConsultor),
@@ -339,7 +359,7 @@ function formToControle(form: ControleForm, resources: ResourceOption[], id = 0)
     cliente: form.cliente.trim(),
     contratoId: toNumberOrNull(form.contratoId),
     contrato: form.contrato.trim(),
-    competencia: form.competencia,
+    competencia: toCanonicalCompetencia(form.competencia),
     horasContratadas: toNumberOrNull(form.horasContratadas),
     valorHoraCliente: toNumberOrNull(form.valorHoraCliente),
     valorHoraConsultor: toNumberOrNull(form.valorHoraConsultor),
@@ -373,7 +393,7 @@ function controleToForm(item: ControleItem, resources: ResourceOption[]): Contro
     cliente: item.cliente,
     contratoId: item.contratoId ? String(item.contratoId) : '',
     contrato: item.contrato,
-    competencia: item.competencia,
+    competencia: toCompetenciaInput(item.competencia),
     horasContratadas: numberToInput(item.horasContratadas),
     valorHoraCliente: numberToInput(item.valorHoraCliente),
     valorHoraConsultor: numberToInput(item.valorHoraConsultor),
@@ -609,6 +629,7 @@ export default function ControleHorasTool() {
   const [clientOptions, setClientOptions] = useState<string[]>([])
   const [contracts, setContracts] = useState<ContractOption[]>([])
   const [search, setSearch] = useState('')
+  const [competenciaFilter, setCompetenciaFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ControleStatus>('all')
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -676,15 +697,17 @@ export default function ControleHorasTool() {
 
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase()
+    const competenciaTerm = competenciaFilter.trim()
     return items.filter((item) => {
       if (statusFilter !== 'all' && item.status !== statusFilter) return false
+      if (competenciaTerm && !formatCompetencia(item.competencia).startsWith(competenciaTerm)) return false
       if (!term) return true
       return [item.titulo, item.cliente, item.contrato, item.competencia, formatCompetencia(item.competencia), item.status, ...item.movimentos.map((m) => `${m.consultor} ${m.referencia}`)]
         .join(' ')
         .toLowerCase()
         .includes(term)
     })
-  }, [items, search, statusFilter])
+  }, [items, search, competenciaFilter, statusFilter])
 
   const overview = useMemo(() => {
     return filteredItems.reduce((acc, item) => {
@@ -755,9 +778,10 @@ export default function ControleHorasTool() {
   }
 
   const handleCompetenciaChange = (value: string) => {
+    const competencia = value.replace(/\D/g, '').slice(0, 6)
     setForm((prev) => {
       const shouldUpdateTitle = !prev.titulo.trim() || prev.titulo === buildSuggestedTitle(prev.competencia)
-      return { ...prev, competencia: value, titulo: shouldUpdateTitle ? buildSuggestedTitle(value) : prev.titulo }
+      return { ...prev, competencia, titulo: shouldUpdateTitle ? buildSuggestedTitle(competencia) : prev.titulo }
     })
   }
 
@@ -786,7 +810,8 @@ export default function ControleHorasTool() {
   const addMovimento = () => {
     setForm((prev) => {
       const last = prev.movimentos[prev.movimentos.length - 1]
-      const defaultDate = last?.data || (prev.competencia ? `${prev.competencia}-01` : '')
+      const competencia = toCanonicalCompetencia(prev.competencia)
+      const defaultDate = last?.data || (/^\d{4}-\d{2}$/.test(competencia) ? `${competencia}-01` : '')
       return { ...prev, movimentos: [...prev.movimentos, createEmptyMovimento(defaultDate)] }
     })
   }
@@ -822,6 +847,7 @@ export default function ControleHorasTool() {
   const validateForm = (): string | null => {
     if (!form.titulo.trim()) return 'Informe o título do controle.'
     if (!form.cliente.trim()) return 'Informe o cliente.'
+    if (!isValidCompetenciaInput(form.competencia)) return 'Informe a competência no formato MMAAAA, com mês entre 01 e 12.'
     for (let index = 0; index < form.movimentos.length; index += 1) {
       const movimento = form.movimentos[index]
       if (!movimento.recursoId) return `Movimento ${index + 1}: selecione o consultor (cadastro de Recursos).`
@@ -871,7 +897,7 @@ export default function ControleHorasTool() {
   }
 
   const handleDelete = async (item: ControleItem) => {
-    if (!window.confirm(`Confirma a exclusão do controle "${item.titulo}"?`)) return
+    if (!await confirmAction(`Confirma a exclusão do controle "${item.titulo}"?`)) return
     setError(null)
     setSuccess(null)
     setIsDeleting(item.id)
@@ -935,6 +961,15 @@ export default function ControleHorasTool() {
               <option value="all">Todos os status</option>
               {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="Competência (MMAAAA)"
+              aria-label="Filtrar por competência no formato MMAAAA"
+              value={competenciaFilter}
+              onChange={(e) => setCompetenciaFilter(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
             <button type="button" className="button-secondary" onClick={() => { void loadData() }} disabled={isLoading}>
               {isLoading ? 'Atualizando...' : 'Atualizar'}
             </button>
@@ -1041,8 +1076,16 @@ export default function ControleHorasTool() {
                 <input type="text" value={form.titulo} onChange={(e) => updateForm('titulo', e.target.value)} placeholder="Ex: BANCO DE HORAS - FAT. JUNHO" required />
               </label>
               <label>
-                Competência
-                <input type="month" value={form.competencia} onChange={(e) => handleCompetenciaChange(e.target.value)} />
+                Competência (MMAAAA)
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="032026"
+                  value={form.competencia}
+                  onChange={(e) => handleCompetenciaChange(e.target.value)}
+                  aria-label="Competência no formato MMAAAA"
+                />
               </label>
               <label>
                 Status

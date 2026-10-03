@@ -1275,6 +1275,37 @@ button:disabled {
   color: var(--ink-primary);
 }
 
+.app-confirm-dialog {
+  width: min(480px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  color: var(--ink-primary);
+}
+
+.app-confirm-dialog::backdrop {
+  background: rgba(7, 26, 22, 0.5);
+}
+
+.app-confirm-dialog__message {
+  margin: 1rem 0 1.5rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.app-confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .app-confirm-dialog__actions > button {
+    flex: 1;
+  }
+}
+
 .estimativas-modal .estimativas-table table {
   table-layout: fixed;
 }
@@ -3031,6 +3062,57 @@ button:disabled {
   border-radius: 11px;
   font-size: 1rem;
   font-weight: 700;
+}
+
+.invoice-repasses {
+  min-width: 0;
+}
+
+.invoice-repasses-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.invoice-repasses-actions__group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.invoice-repasses-actions button {
+  min-height: 40px;
+}
+
+.estimativas-actions.invoice-repasses-footer {
+  justify-content: flex-end;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (max-width: 640px) {
+  .estimativas-form.invoice-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .invoice-repasses-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .invoice-repasses-actions__group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .invoice-repasses-actions__group button,
+  .invoice-repasses-footer button {
+    width: 100%;
+  }
 }
 
 .central-servicos {

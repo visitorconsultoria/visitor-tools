@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { jsPDF } from 'jspdf'
 import internalPartnerLogo from '../assets/logo_3.png'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 import RichTextEditor from './RichTextEditor'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1009,7 +1010,7 @@ export default function PropostaComercialTool() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Excluir esta proposta? Esta ação não pode ser desfeita.')) return
+    if (!await confirmAction('Excluir esta proposta? Esta ação não pode ser desfeita.')) return
     setError(null)
     try {
       const res = await fetch(apiUrl(`/api/propostas/${encodeURIComponent(String(id))}`), { method: 'DELETE' })

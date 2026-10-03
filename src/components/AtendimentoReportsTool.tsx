@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { apiUrl } from '../lib/api'
+import { confirmAction } from '../lib/confirmDialog'
 import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import RichTextEditor from './RichTextEditor'
 
@@ -361,7 +362,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
   }
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Confirma a exclusão deste atendimento?')) return
+    if (!await confirmAction('Confirma a exclusão deste atendimento?')) return
     setError(null)
     setSuccess(null)
     setIsDeleting(id)

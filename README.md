@@ -434,6 +434,10 @@ apos [scripts/supabase-central-servicos.sql](scripts/supabase-central-servicos.s
 As funcoes transacionais utilizam os nomes padrao das tabelas e a chave
 `SUPABASE_SERVICE_ROLE_KEY` apenas no backend.
 
+Se a API retornar `permission denied for function central_servicos_listar_repasses`,
+execute novamente essa migração no Supabase e confira se `SUPABASE_SERVICE_ROLE_KEY`
+na API corresponde à chave `service_role`.
+
 1. Abra `Novo Faturamento` ou `Editar` > `Repasses`.
 2. Clique em `Adicionar repasse` e informe recurso e valor (um repasse por recurso,
    ate 100 por faturamento). No novo faturamento, clique em `Cadastrar faturamento`;

@@ -56,3 +56,13 @@ test('invalid requests fail before RPC and database errors are surfaced', async 
   await assert.rejects(invoiceRepassesOperation(config(async () => ({ error: { message: 'Pagamento Pago' } })), 1, []), /Pagamento Pago/)
   await assert.rejects(invoiceRepassesOperation(config(async () => ({ data: null, error: null })), 1), /Resposta inválida/)
 })
+
+test('permission errors loading repasses explain how to restore backend RPC access', async () => {
+  const settings = config(async () => ({
+    error: { code: '42501', message: 'permission denied for function central_servicos_listar_repasses' },
+  }))
+  await assert.rejects(
+    invoiceRepassesOperation(settings, 1),
+    /Verifique a migração supabase-faturamento-repasses\.sql e a chave SUPABASE_SERVICE_ROLE_KEY da API/,
+  )
+})

@@ -3103,6 +3103,29 @@ button:disabled {
   }
 }
 
+.atendimento-history {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.atendimento-history-entry {
+  border: 1px solid #dce8e4;
+  border-radius: 12px;
+  padding: 1rem;
+  min-width: 0;
+}
+
+.atendimento-history-entry h4 {
+  margin: 0 0 0.4rem;
+}
+
+.atendimento-history-entry td {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 130px;
+}
+
 .invoice-repasses {
   min-width: 0;
 }

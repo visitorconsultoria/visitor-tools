@@ -401,6 +401,67 @@ As mensagens e regras de cada rotina foram preservadas.
 
 Teste: `node --test tests/confirmDialog.test.mjs`.
 
+## Planejamentos de agenda
+
+A Central de Servicos permite varios planejamentos para o mesmo recurso e cliente,
+inclusive para contratos ou vigencias diferentes. Cada planejamento tem seu proprio
+ID; cadastrar um novo nao substitui nem altera os anteriores. A sinalizacao de
+conflitos de dias e vigencias continua funcionando na agenda.
+
+Em instalacoes existentes, execute
+[scripts/supabase-agendas-multiplos-planejamentos.sql](scripts/supabase-agendas-multiplos-planejamentos.sql)
+no SQL Editor do Supabase. Isso corrige o erro
+`duplicate key value violates unique constraint "central_servicos_agendas_recurso_cliente_key"`
+sem apagar registros. O script pode ser executado novamente com seguranca.
+Novas instalacoes ja incluem a correcao em
+[scripts/supabase-central-servicos.sql](scripts/supabase-central-servicos.sql).
+Nao e necessario atualizar a API ou a tela para aplicar esta correcao.
+
+Teste SQL: `node --test tests/agendas.sql.test.mjs`, com `REPASSE_PGLITE_MODULE`
+apontando para a URL de um modulo PGlite instalado, como nos testes SQL de repasses.
+
+## Datas e historico dos atendimentos
+
+Em `Central de Servicos > Atendimentos`, o modal possui as abas `Dados do atendimento`
+e `Historico`. Data Prevista e Data Conclusao sao opcionais e aparecem tambem na
+listagem, na busca e na planilha Excel. Ao salvar a mudanca para `Concluido` sem
+Data Conclusao, o banco preenche a data atual no fuso `America/Sao_Paulo`.
+Essa orientacao aparece como tooltip ao passar o mouse sobre o campo Data Conclusao.
+Uma data informada manualmente e preservada. Cadastrar um atendimento ja concluido
+segue a mesma regra. Reabrir nao apaga a data; limpe-a antes de concluir novamente
+se quiser registrar uma nova data de conclusao. Editar outros campos de um
+atendimento que ja estava concluido nao recalcula sua data.
+
+O campo Tipo oferece: Desenvolvimento, Sustentacao / Suporte, Analise / Diagnostico,
+Reuniao, Testes / Homologacao, Documentacao, Proposta / Estimativa, Implantacao / Deploy,
+Treinamento e Outros. Valores antigos ficam disponiveis como `legado` no proprio
+registro, sem conversao automatica; novas selecoes usam as opcoes da lista.
+
+O historico registra inclusao e alteracoes efetivas com data/hora, usuario e valores
+anteriores/novos de cada campo, incluindo as datas automaticas. Salvar sem mudar
+campos nao gera uma alteracao ficticia. O historico e somente leitura e carregado
+ao abrir sua aba; no novo atendimento, salve e reabra para consulta-lo.
+Atendimentos antigos mantem seus dados e comecam a ter historico na proxima
+alteracao, sem reconstruir eventos passados. Excluir um atendimento exclui tambem
+seu historico. Registros modificados diretamente no banco sao identificados como
+`Banco de dados`, sem atribuir a alteracao ao ultimo usuario da API.
+
+Antes de atualizar a API e o frontend, execute
+[scripts/supabase-atendimentos-historico.sql](scripts/supabase-atendimentos-historico.sql)
+no SQL Editor do Supabase. Em novas instalacoes, execute-o apos
+[scripts/supabase-central-servicos.sql](scripts/supabase-central-servicos.sql).
+A migracao pode ser repetida e exige o nome padrao `central_servicos_atendimentos`;
+a API utiliza `SUPABASE_SERVICE_ROLE_KEY` no backend. Inclusao/alteracao e historico
+sao gravados na mesma transacao: falhar o historico cancela a alteracao inteira.
+O usuario e recebido pelos headers de sessao existentes `x-user` e `x-user-display`,
+nao por campos do atendimento; integracoes que salvam atendimentos devem enviar
+esses headers. A listagem principal inclui todos os status; a selecao de atendimentos
+por recurso nos apontamentos continua mostrando apenas abertos/em andamento.
+
+Testes: `node --test tests/atendimentos.test.mjs tests/atendimentoModal.test.mjs tests/atendimentoHistoryTab.test.mjs tests/atendimentos.sql.test.mjs`.
+Para executar tambem o teste SQL, defina `REPASSE_PGLITE_MODULE` com a URL de um modulo
+PGlite instalado.
+
 ## Detalhes para Faturamento
 
 Na Central de Servicos, a aba `Detalhes para Faturamento` copia do contrato selecionado

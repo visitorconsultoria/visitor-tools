@@ -4,6 +4,7 @@ import { apiUrl } from '../lib/api'
 import { confirmAction } from '../lib/confirmDialog'
 import { exportBrandedWorkbook } from '../lib/xlsxBranding'
 import RichTextEditor from './RichTextEditor'
+import AtendimentoHistoryTab from './AtendimentoHistoryTab'
 
 type AtendimentoStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
 
@@ -12,6 +13,8 @@ type AtendimentoRow = {
   numero: string
   titulo: string
   data: string
+  dataPrevista: string
+  dataConclusao: string
   tipo: string
   cliente: string
   solicitante: string
@@ -25,6 +28,8 @@ type AtendimentoForm = {
   numero: string
   titulo: string
   data: string
+  dataPrevista: string
+  dataConclusao: string
   tipo: string
   cliente: string
   solicitante: string
@@ -36,12 +41,16 @@ type AtendimentoForm = {
 
 type AtendimentoReportsToolProps = {
   resourceOptions?: string[]
+  currentUsername?: string
+  currentDisplayName?: string
 }
 
 const EMPTY_FORM: AtendimentoForm = {
   numero: '',
   titulo: '',
   data: '',
+  dataPrevista: '',
+  dataConclusao: '',
   tipo: '',
   cliente: '',
   solicitante: '',
@@ -56,6 +65,19 @@ const STATUS_OPTIONS: { value: AtendimentoStatus; label: string }[] = [
   { value: 'in_progress', label: 'Em andamento' },
   { value: 'done', label: 'Concluído' },
   { value: 'cancelled', label: 'Cancelado' },
+]
+
+const TYPE_OPTIONS: string[] = [
+  'Desenvolvimento',
+  'Sustentação / Suporte',
+  'Análise / Diagnóstico',
+  'Reunião',
+  'Testes / Homologação',
+  'Documentação',
+  'Proposta / Estimativa',
+  'Implantação / Deploy',
+  'Treinamento',
+  'Outros',
 ]
 
 function toStatusLabel(status: AtendimentoStatus): string {
@@ -98,6 +120,8 @@ function normalizeAtendimentoResponse(input: unknown): AtendimentoRow {
     numero: String(row.numero ?? ''),
     titulo: String(row.titulo ?? ''),
     data: String(row.data ?? ''),
+    dataPrevista: String(row.dataPrevista ?? ''),
+    dataConclusao: String(row.dataConclusao ?? ''),
     tipo: String(row.tipo ?? ''),
     cliente: String(row.cliente ?? ''),
     solicitante: String(row.solicitante ?? ''),
@@ -165,13 +189,14 @@ function generateNextNumber(items: AtendimentoRow[]): string {
   return `${prefix}${next}`
 }
 
-export default function AtendimentoReportsTool({ resourceOptions = [] }: AtendimentoReportsToolProps) {
+export default function AtendimentoReportsTool({ resourceOptions = [], currentUsername = '', currentDisplayName = '' }: AtendimentoReportsToolProps) {
   const [items, setItems] = useState<AtendimentoRow[]>([])
   const [clientOptions, setClientOptions] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | AtendimentoStatus>('all')
   const [isLoadingRecords, setIsLoadingRecords] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editorTab, setEditorTab] = useState<'dados' | 'historico'>('dados')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [formVersion, setFormVersion] = useState(0)
   const [form, setForm] = useState<AtendimentoForm>(EMPTY_FORM)
@@ -183,6 +208,10 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
   const [exportFilters, setExportFilters] = useState<AtendimentoExportFilters>(EMPTY_EXPORT_FILTERS)
   const [exportClientDropdownOpen, setExportClientDropdownOpen] = useState(false)
   const exportClientDropdownRef = useRef<HTMLDivElement | null>(null)
+  const userHeaders = {
+    'x-user': currentUsername.trim(),
+    'x-user-display': currentDisplayName.trim(),
+  }
 
   const fetchAtendimentos = async () => {
     setError(null)
@@ -232,7 +261,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
       .filter((item) => {
         if (statusFilter !== 'all' && item.status !== statusFilter) return false
         if (!term) return true
-        return [item.id, item.numero, item.titulo, item.data, item.tipo, item.cliente, item.solicitante, item.descricao, item.responsavel, item.observacoes]
+        return [item.id, item.numero, item.titulo, item.data, item.dataPrevista, item.dataConclusao, item.tipo, item.cliente, item.solicitante, item.descricao, item.responsavel, item.observacoes]
           .join(' ')
           .toLowerCase()
           .includes(term)
@@ -245,6 +274,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
   }, [items, search, statusFilter])
 
   const openNew = () => {
+    setEditorTab('dados')
     setEditingId(null)
     setForm({ ...EMPTY_FORM, data: getCurrentDateISO(), numero: generateNextNumber(items) })
     setFormVersion((v) => v + 1)
@@ -254,11 +284,14 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
   }
 
   const openEdit = (item: AtendimentoRow) => {
+    setEditorTab('dados')
     setEditingId(item.id)
     setForm({
       numero: item.numero,
       titulo: item.titulo,
       data: normalizeDateInput(item.data),
+      dataPrevista: normalizeDateInput(item.dataPrevista),
+      dataConclusao: normalizeDateInput(item.dataConclusao),
       tipo: item.tipo,
       cliente: item.cliente,
       solicitante: item.solicitante,
@@ -311,6 +344,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isSaving) return
     setError(null)
     setSuccess(null)
     setIsSaving(true)
@@ -318,6 +352,8 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
     const payload = {
       ...form,
       data: normalizeDateInput(form.data),
+      dataPrevista: normalizeDateInput(form.dataPrevista),
+      dataConclusao: normalizeDateInput(form.dataConclusao),
     }
 
     try {
@@ -327,7 +363,7 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...userHeaders },
         body: JSON.stringify(payload),
       })
 
@@ -418,6 +454,8 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
       Número: item.numero,
       Título: item.titulo,
       Data: toDisplayDate(item.data),
+      'Data Prevista': toDisplayDate(item.dataPrevista),
+      'Data Conclusão': toDisplayDate(item.dataConclusao),
       Tipo: item.tipo,
       Cliente: item.cliente,
       Solicitante: item.solicitante,
@@ -439,6 +477,8 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
             { header: 'Número', key: 'Número', width: 16 },
             { header: 'Título', key: 'Título', width: 32 },
             { header: 'Data', key: 'Data', width: 14 },
+            { header: 'Data Prevista', key: 'Data Prevista', width: 16 },
+            { header: 'Data Conclusão', key: 'Data Conclusão', width: 16 },
             { header: 'Tipo', key: 'Tipo', width: 16 },
             { header: 'Cliente', key: 'Cliente', width: 28 },
             { header: 'Solicitante', key: 'Solicitante', width: 22 },
@@ -528,6 +568,8 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
                 <th>Número</th>
                 <th>Título</th>
                 <th>Data</th>
+                <th>Data Prevista</th>
+                <th>Data Conclusão</th>
                 <th>Tipo</th>
                 <th>Cliente</th>
                 <th>Solicitante</th>
@@ -543,6 +585,8 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
                   <td>{item.numero || `#${item.id}`}</td>
                   <td>{item.titulo || '-'}</td>
                   <td>{toDisplayDate(item.data)}</td>
+                  <td>{toDisplayDate(item.dataPrevista) || '-'}</td>
+                  <td>{toDisplayDate(item.dataConclusao) || '-'}</td>
                   <td>{item.tipo || '-'}</td>
                   <td>{item.cliente || '-'}</td>
                   <td>{item.solicitante}</td>
@@ -701,7 +745,13 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
               </button>
             </div>
 
-            <form className="estimativas-form" onSubmit={(e) => { void handleSubmit(e) }}>
+            {error && <p className="error" role="alert">{error}</p>}
+            <form className="estimativas-form" onSubmit={(e) => { void handleSubmit(e) }} onInvalidCapture={() => setEditorTab('dados')}>
+              <div className="central-servicos-tabs estimativas-form__full" role="tablist" aria-label="Seções do atendimento">
+                <button type="button" id="atendimento-dados-tab" role="tab" aria-selected={editorTab === 'dados'} aria-controls="atendimento-dados-panel" className={editorTab === 'dados' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setEditorTab('dados')}>Dados do atendimento</button>
+                <button type="button" id="atendimento-historico-tab" role="tab" aria-selected={editorTab === 'historico'} aria-controls="atendimento-historico-panel" className={editorTab === 'historico' ? 'central-servicos-tab central-servicos-tab--active' : 'central-servicos-tab'} onClick={() => setEditorTab('historico')}>Histórico</button>
+              </div>
+              <div id="atendimento-dados-panel" role="tabpanel" aria-labelledby="atendimento-dados-tab" style={{ display: editorTab === 'dados' ? 'contents' : 'none' }}>
               <label>
                 Número
                 <input
@@ -732,13 +782,32 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
                 />
               </label>
               <label>
-                Tipo
+                Data Prevista
                 <input
-                  type="text"
+                  type="date"
+                  value={form.dataPrevista}
+                  onChange={(e) => handleFormChange('dataPrevista', e.target.value)}
+                />
+              </label>
+              <label>
+                Data Conclusão
+                <input
+                  type="date"
+                  value={form.dataConclusao}
+                  title="Se vazia ao concluir, será preenchida com a data da conclusão."
+                  onChange={(e) => handleFormChange('dataConclusao', e.target.value)}
+                />
+              </label>
+              <label>
+                Tipo
+                <select
                   value={form.tipo}
                   onChange={(e) => handleFormChange('tipo', e.target.value)}
-                  placeholder="Ex: Suporte, Consultoria, Implantação"
-                />
+                >
+                  <option value="">Selecione o tipo</option>
+                  {form.tipo && !TYPE_OPTIONS.includes(form.tipo) && <option value={form.tipo}>{form.tipo} (legado)</option>}
+                  {TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
               </label>
               <label>
                 Cliente
@@ -812,9 +881,20 @@ export default function AtendimentoReportsTool({ resourceOptions = [] }: Atendim
                   disabled={isSaving}
                 />
               </div>
+              </div>
+              {editorTab === 'historico' && (
+                <div id="atendimento-historico-panel" role="tabpanel" aria-labelledby="atendimento-historico-tab" className="estimativas-form__full">
+                  <AtendimentoHistoryTab
+                    key={editingId ?? 'novo'}
+                    atendimentoId={editingId}
+                    currentUsername={currentUsername}
+                    currentDisplayName={currentDisplayName}
+                  />
+                </div>
+              )}
 
               <div className="estimativas-actions estimativas-form__full">
-                <button type="submit" className="button-primary" disabled={isSaving}>
+                <button type="submit" className="button-primary" disabled={isSaving} hidden={editorTab !== 'dados'}>
                   {isSaving ? 'Salvando...' : editingId !== null ? 'Atualizar' : 'Salvar'}
                 </button>
               </div>

@@ -178,9 +178,12 @@ create table if not exists public.central_servicos_agendas (
   observacoes text not null default '',
   status text not null default 'Ativo' check (status in ('Ativo', 'Encerrado')),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (recurso, cliente)
+  updated_at timestamptz not null default now()
 );
+
+-- Um recurso pode ter varios planejamentos para o mesmo cliente.
+alter table public.central_servicos_agendas
+  drop constraint if exists central_servicos_agendas_recurso_cliente_key;
 
 alter table public.central_servicos_agendas
   add column if not exists contrato_id bigint;
@@ -249,6 +252,8 @@ create table if not exists public.central_servicos_atendimentos (
   numero text not null default '',
   titulo text not null default '',
   data date,
+  data_prevista date,
+  data_conclusao date,
   tipo text not null default '',
   cliente text not null default '',
   solicitante text not null default '',
@@ -262,6 +267,10 @@ create table if not exists public.central_servicos_atendimentos (
 
 alter table public.central_servicos_atendimentos
   add column if not exists titulo text not null default '';
+
+alter table public.central_servicos_atendimentos
+  add column if not exists data_prevista date,
+  add column if not exists data_conclusao date;
 
 alter table public.central_servicos_atendimentos disable row level security;
 

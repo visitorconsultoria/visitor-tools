@@ -5210,7 +5210,7 @@ export default function CentralServicosTool({ subPage, currentUsername = '', cur
 
   if (subPage === 'dashboard') return renderDashboardSection()
   if (subPage === 'agenda') return renderAgendaSection()
-  if (subPage === 'atendimentos') return <AtendimentoReportsTool resourceOptions={resourceOptions} />
+  if (subPage === 'atendimentos') return <AtendimentoReportsTool resourceOptions={resourceOptions} currentUsername={currentUsername} currentDisplayName={currentDisplayName} />
   if (subPage === 'controle-horas') return <ControleHorasTool />
   if (subPage === 'recursos') return renderResourceSection()
   if (subPage === 'contratos-servicos') return renderContractSection()

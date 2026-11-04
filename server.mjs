@@ -4063,6 +4063,8 @@ function normalizeCentralServicosAtendimentoRow(row) {
     numero: String(row.numero ?? ''),
     titulo: String(row.titulo ?? ''),
     data: String(row.data ?? ''),
+    dataPrevista: String(row.data_prevista ?? ''),
+    dataConclusao: String(row.data_conclusao ?? ''),
     tipo: String(row.tipo ?? ''),
     cliente: String(row.cliente ?? ''),
     solicitante: String(row.solicitante ?? ''),
@@ -4078,6 +4080,8 @@ function parseCentralServicosAtendimentoPayload(payload) {
     numero: parseCentralServicosTextInput(payload?.numero),
     titulo: parseCentralServicosTextInput(payload?.titulo),
     data: parseCentralServicosNullableDateInput(payload?.data),
+    data_prevista: parseCentralServicosNullableDateInput(payload?.data_prevista ?? payload?.dataPrevista),
+    data_conclusao: parseCentralServicosNullableDateInput(payload?.data_conclusao ?? payload?.dataConclusao),
     tipo: parseCentralServicosTextInput(payload?.tipo),
     cliente: parseCentralServicosTextInput(payload?.cliente),
     solicitante: parseCentralServicosTextInput(payload?.solicitante),
@@ -4099,49 +4103,84 @@ function validateCentralServicosAtendimentoPayload(parsed) {
   }
 }
 
+function throwCentralServicosAtendimentoError(error) {
+  const migrationError = ['PGRST202', '42P01', '42703', '42501'].includes(error.code)
+  throw new Error(`${error.message}${migrationError
+    ? ' Verifique a migração supabase-atendimentos-historico.sql e a chave SUPABASE_SERVICE_ROLE_KEY da API.'
+    : ''}`)
+}
+
 async function listCentralServicosAtendimentos(resourceName = '') {
   const { client, centralServicosAtendimentosTable } = getSupabaseClient()
   let query = client
     .from(centralServicosAtendimentosTable)
-    .select('id, numero, titulo, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes')
+    .select('id, numero, titulo, data, data_prevista, data_conclusao, tipo, cliente, solicitante, descricao, responsavel, status, observacoes')
     .order('data', { ascending: false })
     .order('id', { ascending: false })
 
   if (resourceName.trim()) {
-    query = query.ilike('responsavel', resourceName.trim())
+    query = query.ilike('responsavel', resourceName.trim()).in('status', ['open', 'in_progress'])
   }
-
-  query = query.in('status', ['open', 'in_progress'])
 
   const { data: rows, error } = await query
 
-  if (error) throw new Error(error.message)
+  if (error) throwCentralServicosAtendimentoError(error)
   return (rows || []).map(normalizeCentralServicosAtendimentoRow)
 }
 
-async function createCentralServicosAtendimento(payload) {
-  const { centralServicosAtendimentosTable } = getSupabaseClient()
-  return createCentralServicosItem(
-    centralServicosAtendimentosTable,
-    payload,
-    'id, numero, titulo, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
-    parseCentralServicosAtendimentoPayload,
-    validateCentralServicosAtendimentoPayload,
-    normalizeCentralServicosAtendimentoRow,
-  )
+async function saveCentralServicosAtendimento(id, payload, sessionUser) {
+  const { client, centralServicosAtendimentosTable } = getSupabaseClient()
+  if (centralServicosAtendimentosTable !== 'central_servicos_atendimentos') {
+    throw new Error('A migração do histórico exige o nome padrão da tabela de Atendimentos.')
+  }
+  if (!sessionUser?.username?.trim()) throw new Error('Usuario de sessao nao informado.')
+  if (id !== null) parseCentralServicosAtendimentoIdInput(id)
+  const parsed = parseCentralServicosAtendimentoPayload(payload)
+  validateCentralServicosAtendimentoPayload(parsed)
+  const { data: row, error } = await client.rpc('central_servicos_salvar_atendimento', {
+    p_id: id,
+    p_dados: parsed,
+    p_usuario: sessionUser.username,
+    p_usuario_nome: sessionUser.displayName,
+  })
+  if (error) throwCentralServicosAtendimentoError(error)
+  if (!row || !Number.isSafeInteger(Number(row.id)) || Number(row.id) <= 0) {
+    throw new Error('Resposta inválida ao salvar atendimento.')
+  }
+  return normalizeCentralServicosAtendimentoRow(row)
 }
 
-async function updateCentralServicosAtendimento(id, payload) {
-  const { centralServicosAtendimentosTable } = getSupabaseClient()
-  return updateCentralServicosItem(
-    centralServicosAtendimentosTable,
-    id,
-    payload,
-    'id, numero, titulo, data, tipo, cliente, solicitante, descricao, responsavel, status, observacoes',
-    parseCentralServicosAtendimentoPayload,
-    validateCentralServicosAtendimentoPayload,
-    normalizeCentralServicosAtendimentoRow,
-  )
+async function createCentralServicosAtendimento(payload, sessionUser) {
+  return saveCentralServicosAtendimento(null, payload, sessionUser)
+}
+
+async function updateCentralServicosAtendimento(id, payload, sessionUser) {
+  return saveCentralServicosAtendimento(id, payload, sessionUser)
+}
+
+async function listCentralServicosAtendimentoHistorico(id) {
+  const { client, centralServicosAtendimentosTable } = getSupabaseClient()
+  if (centralServicosAtendimentosTable !== 'central_servicos_atendimentos') {
+    throw new Error('A migração do histórico exige o nome padrão da tabela de Atendimentos.')
+  }
+  const { data: atendimento, error: atendimentoError } = await client
+    .from(centralServicosAtendimentosTable).select('id').eq('id', id).maybeSingle()
+  if (atendimentoError) throwCentralServicosAtendimentoError(atendimentoError)
+  if (!atendimento) throw new Error('Atendimento não encontrado.')
+  const { data: rows, error } = await client
+    .from('central_servicos_atendimento_historico')
+    .select('id, acao, ocorrido_em, usuario, usuario_nome, alteracoes')
+    .eq('atendimento_id', id)
+    .order('id', { ascending: false })
+  if (error) throwCentralServicosAtendimentoError(error)
+  return (rows || []).map((row) => ({
+    id: Number(row.id),
+    acao: row.acao,
+    ocorridoEm: row.ocorrido_em,
+    usuario: row.usuario,
+    usuarioNome: row.usuario_nome,
+    alteracoes: row.alteracoes,
+  }))
 }
 
 async function deleteCentralServicosAtendimento(id) {
@@ -4162,7 +4201,8 @@ app.get('/api/central-servicos/atendimentos', async (req, res) => {
 
 app.post('/api/central-servicos/atendimentos', async (req, res) => {
   try {
-    const item = await createCentralServicosAtendimento(req.body || {})
+    const sessionUser = getSessionUserFromRequest(req)
+    const item = await createCentralServicosAtendimento(req.body || {}, sessionUser)
     return res.status(201).json({ ok: true, item })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
@@ -4173,11 +4213,24 @@ app.post('/api/central-servicos/atendimentos', async (req, res) => {
 app.put('/api/central-servicos/atendimentos/:id', async (req, res) => {
   try {
     const id = parseCentralServicosAtendimentoIdInput(req.params.id)
-    const item = await updateCentralServicosAtendimento(id, req.body || {})
+    const sessionUser = getSessionUserFromRequest(req)
+    const item = await updateCentralServicosAtendimento(id, req.body || {}, sessionUser)
     return res.json({ ok: true, item })
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'erro inesperado'
     return res.status(400).json({ error: `Falha ao atualizar atendimento: ${detail}` })
+  }
+})
+
+app.get('/api/central-servicos/atendimentos/:id/historico', async (req, res) => {
+  try {
+    getSessionUserFromRequest(req)
+    const id = parseCentralServicosAtendimentoIdInput(req.params.id)
+    const items = await listCentralServicosAtendimentoHistorico(id)
+    return res.json({ items })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'erro inesperado'
+    return res.status(500).json({ error: `Falha ao buscar histórico do atendimento: ${detail}` })
   }
 })
 
